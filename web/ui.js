@@ -30,7 +30,7 @@ const ago = (ts) => `<span class="ago" data-ts="${ts}">${rel(ts)}</span>`;
 // ------------------------------------------------------------------ panels
 const PANELS = [
   { id: 'diary', icon: '📖', label: 'His diary', title: 'His diary', build() {}, update(el, s) {
-    el.innerHTML = s.journal.length ? s.journal.map((j) => { const th = j.obj_id ? api.thumb(j.obj_id) : null; return `<article class="note k-${esc(j.kind)}"><header>${ago(j.ts)}<span class="chip">${({ entry: 'journal', reflection: 'reflection', learning: 'learned', art: 'art', build: 'built' })[j.kind] || esc(j.kind)}</span><span title="${esc(j.mood)}">${MOOD[j.mood] || ''}</span></header><div class="row">${th ? `<img class="thumb" alt="" src="${th}">` : ''}<p>${esc(j.text)}</p></div></article>`; }).join('')
+    el.innerHTML = s.journal.length ? s.journal.map((j) => { const th = j.obj_id ? api.thumb(j.obj_id) : null; return `<article class="note k-${esc(j.kind)}"><header>${ago(j.ts)}<span class="chip">${({ entry: 'journal', reflection: 'reflection', learning: 'learned', art: 'art', build: 'built', review: 'looking back' })[j.kind] || esc(j.kind)}</span><span title="${esc(j.mood)}">${MOOD[j.mood] || ''}</span></header><div class="row">${th ? `<img class="thumb" alt="" src="${th}">` : ''}<p>${esc(j.text)}</p></div></article>`; }).join('')
       : '<div class="empty">His diary is still blank. He will write soon.</div>';
   } },
 
@@ -44,16 +44,18 @@ const PANELS = [
       ${others.length ? `<div class="chips">${others.map((g) => `<span class="chip" title="${esc(g.text)}">${esc(g.text.slice(0, 38))}${g.text.length > 38 ? '…' : ''}</span>`).join('')}</div>` : ''}
       <h3>Project in progress</h3>${act.length ? act.map((p) => `<div class="card"><div class="t"><span class="sw" style="background:${esc(p.color)}"></span>${esc(p.name)}</div><div class="meta">${esc(p.description || '')}</div>${stepper(p)}</div>`).join('')
         : `<div class="empty">Nothing on the workbench${last ? ` · last finished: “${esc(last.name)}”` : ''}.</div>`}
-      ${s.interests.length ? `<h3>Curious about</h3><div class="chips">${s.interests.map((i) => `<span class="chip">${esc(i.topic)}</span>`).join('')}</div>` : ''}
+      ${s.interests.length ? `<h3>Interests</h3><div class="chips">${s.interests.map((i) => `<span class="chip" style="opacity:${Math.min(1, 0.45 + i.strength / 5)};font-weight:${i.strength >= 3 ? 700 : 500}" title="strength ${i.strength}">${esc(i.topic)} ${'●'.repeat(Math.min(5, Math.max(1, Math.round(i.strength))))}</span>`).join('')}</div>` : ''}
+      ${s.mix && s.mix.n ? `<h3>Lately</h3>${Object.entries(s.mix.counts).sort((a, b) => b[1] - a[1]).map(([c, n]) => `<div class="mixrow"><span>${esc(c)}</span><i><b style="width:${Math.round(100 * n / s.mix.n)}%"></b></i><span class="small dim">${n}</span></div>`).join('')}` : ''}
+      ${s.hobbies && s.hobbies.length ? `<h3>Logs &amp; series he keeps</h3>${s.hobbies.map((h) => `<div class="card"><div class="t">📒 ${esc(h.name)} <span class="chip">${h.n} ${h.n === 1 ? 'entry' : 'entries'}</span></div>${h.entries[0] ? `<div class="small dim">${esc(h.entries[0].text)}</div>` : ''}</div>`).join('')}` : ''}
       <h3>Recent actions</h3>${s.recent.map((r) => `<div class="act"><span class="ico">${TOOL_ICON[r.tool] || '•'}</span><span class="x2" title="${esc(r.result)}"><b>${esc(TOOL_LABEL[r.tool] || r.tool)}</b> ${esc(r.args)} <span class="dim">${esc(r.result)}</span></span><span class="small dim">${ago(r.ts)}</span></div>`).join('')}`;
   } },
 
   { id: 'things', icon: '🧺', label: 'His things', title: 'His things', build(el) {
     el.innerHTML = `<div class="tabs"></div><div class="tb"></div>`;
     el.querySelector('.tabs').onclick = (e) => { const b = e.target.closest('button[data-t]'); if (b) { thingsTab = b.dataset.t; refresh(); } };
-    el.querySelector('.tb').onclick = (e) => { const b = e.target.closest('[data-art]'); if (b) openArt(+b.dataset.art); };
+    el.querySelector('.tb').onclick = (e) => { const b = e.target.closest('[data-art]'); if (b) openArt(+b.dataset.art); const t = e.target.closest('[data-tune]'); if (t) playTune(snap.tunes.find((x) => x.id === +t.dataset.tune)); };
   }, update(el, s) {
-    const tabs = [['gallery', '🖼️ Gallery'], ['built', '🔧 Built'], ['wear', '🎩 Wardrobe'], ['sketch', '✏️ Sketchbook']];
+    const tabs = [['gallery', '🖼️ Gallery'], ['built', '🔧 Built'], ['sounds', '🎵 Sounds'], ['collect', '🐚 Collection'], ['logs', '📒 Logs'], ['wear', '🎩 Wardrobe'], ['sketch', '✏️ Sketchbook']];
     el.querySelector('.tabs').innerHTML = tabs.map(([k, l]) => `<button data-t="${k}" class="${k === thingsTab ? 'on' : ''}">${l}</button>`).join('');
     const tb = el.querySelector('.tb');
     if (thingsTab === 'gallery') {
@@ -63,9 +65,16 @@ const PANELS = [
         return `<button class="art-card" data-art="${a.id}"><div class="pic">${th ? `<img class="${a.mode === 'pixel' ? 'px' : ''}" alt="" src="${th}">` : a.kind === 'sculpture' ? '🗿' : '…'}</div><div class="cap">${esc(a.title)}</div><div class="small dim">${esc(a.kind)} · ${ago(a.ts)}</div></button>`;
       }).join('')}</div>` : '<div class="empty">No art yet. He may start when he feels creative.</div>';
     } else if (thingsTab === 'built') {
-      tb.innerHTML = s.built.length ? s.built.map((b) => { const th = b.obj_id ? api.thumb(b.obj_id) : null; return `<div class="card row">${th ? `<img class="thumb" alt="" src="${th}">` : `<span class="sw" style="background:${esc(b.color || '#ccc')}"></span>`}<div><div class="t">${esc(b.name)}</div><div class="meta">${esc(b.description || '')} · ${ago(b.ts)}</div></div></div>`; }).join('')
+      tb.innerHTML = s.built.length ? s.built.map((b) => { const th = b.obj_id ? api.thumb(b.obj_id) : null; return `<div class="card row">${th ? `<img class="thumb" alt="" src="${th}">` : `<span class="sw" style="background:${esc(b.color || '#ccc')}"></span>`}<div><div class="t">${esc(b.name)}</div><div class="meta">${esc(b.description || '')} · ${ago(b.ts)}</div>${b.reason ? `<div class="small">Why: ${esc(b.reason)}</div>` : ''}${b.review ? `<div class="small dim">Looking back: ${esc(b.review)}</div>` : ''}</div></div>`; }).join('')
         : '<div class="empty">He has not finished a build yet.</div>';
       if (s.designs && s.designs.length) tb.innerHTML += `<h3>Designs he scripted &amp; saved</h3>` + s.designs.map((d) => `<div class="card"><div class="t">📐 ${esc(d.name)} <span class="chip">reused ${d.uses}×</span></div><details><summary class="small">Show his script</summary><pre class="log" style="max-height:160px">${esc(d.script)}</pre></details><div class="meta">${ago(d.ts)}</div></div>`).join('');
+    } else if (thingsTab === 'sounds') {
+      tb.innerHTML = s.tunes && s.tunes.length ? s.tunes.map((t) => `<div class="card"><div class="t">🎵 ${esc(t.title)} <button class="btn" style="float:right;padding:2px 10px" data-tune="${t.id}">▶ Play</button></div><div class="meta">${t.tempo} bpm · ${esc(t.wave)} · ${ago(t.ts)}</div><div class="small dim" style="word-break:break-word">${esc(t.notes)}</div></div>`).join('')
+        : '<div class="empty">No tunes yet.</div>';
+    } else if (thingsTab === 'collect') {
+      tb.innerHTML = s.collection && s.collection.length ? `<div class="chips">${s.collection.map((c) => `<span class="chip" title="found in the ${esc(c.place)}"><span class="sw" style="background:${esc(c.color || '#ccc')};margin-right:4px"></span>${esc(c.item)}</span>`).join('')}</div>` : '<div class="empty">He has not collected anything yet. Small things turn up around the world.</div>';
+    } else if (thingsTab === 'logs') {
+      tb.innerHTML = s.hobbies && s.hobbies.length ? s.hobbies.map((h) => `<div class="card"><div class="t">📒 ${esc(h.name)} <span class="chip">${h.n}</span></div>${h.entries.map((e) => `<div class="small" style="margin-top:3px">${esc(e.text)} <span class="dim">${ago(e.ts)}</span></div>`).join('')}</div>`).join('') : '<div class="empty">No logs yet. He starts them when he spots, collects or composes things.</div>';
     } else if (thingsTab === 'wear') {
       const slots = [['hat', 'Hat'], ['goggles', 'Goggles'], ['scarf', 'Scarf'], ['antenna', 'Antenna'], ['body', 'Paint']];
       const fav = s.prefs.filter((p) => p.subject.endsWith(' color') && p.score > 0.3).slice(0, 5);
@@ -261,6 +270,8 @@ export function update(s) {
     el.querySelector('b').style.width = Math.max(2, v) + '%'; el.title = `${el.title.split(' ')[0]} ${Math.round(v)}/100`;
     el.classList.toggle('low', good ? v < 25 : v > 80);
   });
+  const wxIcon = (w) => ({ clear: '☀️', 'clear and cold': '☀️', cloudy: '☁️', foggy: '🌫️', breezy: '🍃', 'falling leaves': '🍂', frosty: '❄️', 'light snow': '🌨️', snow: '❄️', thunderstorm: '⛈️' })[w] || (/rain|drizzle/.test(w || '') ? '🌧️' : '🌤️');
+  $('#wx').textContent = `${wxIcon(s.weather)} ${s.weather} · ${s.season}`;
   if (s.state.paused) setCaption('⏸', `Paused — ${short} is resting until you resume.`, true);
   else if (first && s.state.last_say) setCaption('💭', s.state.last_say);
   refresh();
@@ -283,3 +294,23 @@ export function placed() { toast('Placed! He will notice it soon.', 2500); }
 
 let _rt = null;
 export function refreshSoon() { clearTimeout(_rt); _rt = setTimeout(() => { if (openId) refresh(); }, 200); }
+
+// ---- his tunes: simple oscillators, only when you press Play (browsers require a click)
+let actx = null;
+const SEMI = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 };
+function freq(n) { const m = /^([A-G])([#b]?)(\d)$/.exec(n); if (!m) return 0; return 440 * 2 ** ((SEMI[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (+m[3] - 4) * 12) / 12); }
+export function playTune(t) {
+  if (!t) return;
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  const beat = 60 / (t.tempo || 100); let at = actx.currentTime + 0.05;
+  for (const tok of String(t.notes).split(' ').slice(0, 48)) {
+    const [n, d] = tok.split(':'); const dur = ({ w: 4, h: 2, q: 1, e: 0.5, s: 0.25 })[d || 'q'] * beat;
+    if (n !== 'R' && freq(n)) {
+      const o = actx.createOscillator(), g = actx.createGain(); o.type = t.wave === 'chime' ? 'sine' : t.wave; o.frequency.value = freq(n);
+      g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.16, at + 0.02); g.gain.exponentialRampToValueAtTime(0.001, at + dur * 0.95);
+      o.connect(g).connect(actx.destination); o.start(at); o.stop(at + dur);
+      if (t.wave === 'chime') { const o2 = actx.createOscillator(), g2 = actx.createGain(); o2.frequency.value = freq(n) * 2.01; g2.gain.setValueAtTime(0.06, at); g2.gain.exponentialRampToValueAtTime(0.001, at + dur); o2.connect(g2).connect(actx.destination); o2.start(at); o2.stop(at + dur); }
+    }
+    at += dur;
+  }
+}

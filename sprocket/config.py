@@ -27,7 +27,7 @@ PUBLISH_ENABLED_DEFAULT = False    # publish_page tool hidden until you switch i
 WORLD_HALF = 24                    # world spans -24..24 on x and z
 REACH = 3.0                        # distance needed to use something
 MAX_STEP = 10.0                    # max distance walked per tick
-MAX_OBJECTS = 60
+MAX_OBJECTS = 120
 HOST, PORT = "127.0.0.1", 8765     # localhost only
 
 # --- web reading (read_page) ---
@@ -52,7 +52,7 @@ MOVE_COST_PER_UNIT = {"energy": 0.025, "battery": 0.020}      # walking a full 1
 ACTION_COST = {                 # extra cost when an action is actually carried out: (energy, battery)
     "build": (0.50, 0.35), "make_art": (0.40, 0.30), "interact_with": (0.10, 0.06), "shop": (0.10, 0.06),
     "search_web": (0.03, 0.05), "read_page": (0.02, 0.04), "write_journal": (0.01, 0.02),
-    "move_to": (0.0, 0.0), "eat": (0.0, 0.0), "landscape": (0.30, 0.20), "rest": (0.0, 0.0), "publish_page": (0.03, 0.03),
+    "move_to": (0.0, 0.0), "eat": (0.0, 0.0), "landscape": (0.30, 0.20), "observe": (0.03, 0.04), "make_music": (0.15, 0.10), "tend": (0.15, 0.10), "collect": (0.08, 0.06), "rest": (0.0, 0.0), "publish_page": (0.03, 0.03),
 }
 REST_RESTORE_HOME = 100.0       # resting at the home pad refills energy completely...
 REST_BATTERY_TRICKLE_HOME = 25.0   # ...and trickle-charges the battery
@@ -110,3 +110,18 @@ SITE_CLONE_DIR = ROOT / "site"
 PRIVATE_TERMS_FILE = ROOT / "data" / "private_terms.txt"   # optional: one word/phrase per line that must never appear on his site (e.g. your real name)
 LANDSCAPE_PER_DAY = 8              # landscaping actions per world day (144 ticks)
 MAX_GROUND_PATCHES = 14
+
+# --- a full life (Stage 3): activity categories, variety pressure, interests, hobbies ---
+CATEGORIES = ("explore", "observe", "learn", "art", "music", "write", "garden", "collect", "socialize", "rest", "build")
+NOVELTY_AFTER = 25               # a category not done for this many ticks feels fresh (novelty bonus, extra boredom relief)
+REPEAT_PENALTY = 0.18            # each repeat of the same category in the last 6 actions makes it less rewarding
+LATELY_WINDOW = 20               # the "lately you have mostly done..." line looks at this many actions
+INTEREST_DECAY_EVERY = 10        # ticks between fading passes
+INTEREST_DECAY = 0.95            # strength multiplier per pass for interests that were not touched
+INTEREST_MIN = 0.35              # below this an interest has faded away
+MAX_INTERESTS = 12
+MIN_TICKS_BETWEEN_TUNES = 10
+TEND_COOLDOWN = 20               # per plant
+MAX_FINDS = 5                    # small found objects lying around at once
+FIND_SPAWN_CHANCE = 0.2          # per tick
+BUILD_REASON_MIN = 12            # characters

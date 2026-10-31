@@ -109,3 +109,5 @@ body.placing canvas{cursor:crosshair}
 .row{display:flex;gap:10px;align-items:flex-start}.row .thumb{width:64px;flex:none}
 table.kv{width:100%;border-collapse:collapse;font-size:12px}table.kv td{padding:2px 0;border-bottom:1px dashed var(--line)}table.kv td:last-child{text-align:right;font-weight:600}
 select{background:#fffdf6;border:1px solid var(--line);border-radius:10px;padding:5px 8px}
+.mixrow{display:flex;align-items:center;gap:8px;font-size:12px;margin:2px 0}.mixrow span:first-child{width:70px}.mixrow i{flex:1;height:7px;background:#e8dbbb;border-radius:5px;overflow:hidden}.mixrow b{display:block;height:100%;background:var(--acc)}
+#wx{font-size:12px}

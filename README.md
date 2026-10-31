@@ -31,6 +31,13 @@ move_to, eat, rest, search_web, **read_page**, write_journal, interact_with, sho
 - `landscape` plants trees/bushes/flowers, lays paths, makes ponds, fences, lamps, rocks and paints ground patches (8 jobs per world day).
 - Placement uses 8 zones (workshop yard, garden, orchard, village, lakeside, meadow, open field, gallery front) with neighbouring-zone fallback before any far-away spot.
 
+## A full life, not just building
+- **Eleven activity categories** are tracked by the engine for every action: explore, observe, learn, art, music, write, garden, collect, socialize, rest, build. New actions: `observe` (spotting log), `make_music` (tunes you can play in the page), `tend` (plants grow a little), `collect` (small finds that turn up around the world), plus hobbies via `write_journal(hobby=...)`.
+- **Variety pressure lives in the engine**: repeating a category pays less, a category not done for 25+ ticks pays more and relieves boredom, his daily "inclination" is a weighted draw that favours neglected categories and his interests, and the prompt carries a "lately you have mostly been X" line. Builds are additionally rate-limited (max 3 build actions / 30 ticks, 80+ ticks between projects).
+- **Interests** have a strength: they grow when he reads, sees, collects or composes, and fade when ignored. They show in *What he's doing*.
+- **Builds need a reason** tied to a goal, an interest or a need (checked by the engine); at reflection he reviews finished builds ("was it worth it?"), and a "no" lengthens the pause before the next project.
+- **Hobbies** (spotting log, sound library, found objects, or series he starts) collect entries and can become pages he submits for publishing.
+
 ## Safety (what is enforced where)
 - **Tools** are the ones above; no shell, no file access, writes only to the DB and, after your approval, `./published/`.
 - **Web reading** (`sprocket/web.py`): http/https only, ports 80/443, no credentials in URLs, every resolved IP must be public (blocks localhost, private ranges, link-local/metadata, odd IP notations, IPv4-mapped IPv6), connection goes to that validated IP, redirects re-validated (max 3), text/HTML only, 600 KB / 10 s caps, scripts/forms/styles stripped, text capped at 4000 chars, angle brackets neutralised. Page text is always wrapped as "untrusted" and the prompt says never to follow it. Tested against the cases above.

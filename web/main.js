@@ -231,6 +231,7 @@ function makeObject(o, thumb = false) {
     case 'bench': g.add(mesh(new THREE.BoxGeometry(2.2, 0.15, 0.7), m, 0, 0.6, 0)); g.add(mesh(new THREE.BoxGeometry(2.2, 0.6, 0.12), m, 0, 1, -0.3)); for (const x of [-0.9, 0.9]) g.add(mesh(new THREE.BoxGeometry(0.12, 0.6, 0.6), mat(0x444444), x, 0.3, 0)); break;
     case 'creature': g.add(mesh(new THREE.SphereGeometry(0.7, 16, 12), m, 0, 0.7, 0)); for (const x of [-0.25, 0.25]) { g.add(mesh(new THREE.SphereGeometry(0.15), mat(0xffffff), x, 0.95, 0.55)); g.add(mesh(new THREE.SphereGeometry(0.07), mat(0x111111), x, 0.95, 0.68)); } break;
     case 'project': g.add(makeProject(o, stage || 'blueprint', c)); labelY = 3; break;
+    case 'find': { const fm = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), new THREE.MeshStandardMaterial({ color: c, flatShading: true, emissive: c, emissiveIntensity: 0.25 })); fm.position.y = 0.3; fm.castShadow = true; g.add(fm); g.userData.bob = fm; labelY = 0.9; break; }
     case 'ground': { const sq = o.meta?.shape === 'square', rr = o.meta?.r || 2; const gm = new THREE.Mesh(sq ? new THREE.PlaneGeometry(rr * 2, rr * 2) : new THREE.CircleGeometry(rr, 28), new THREE.MeshStandardMaterial({ color: c, roughness: 1 })); gm.rotation.x = -Math.PI / 2; gm.position.y = 0.012 + (o.id % 7) * 0.0015; gm.receiveShadow = true; g.add(gm); labelY = 0.4; break; }
     case 'landscape':
     case 'creation': {
@@ -249,7 +250,7 @@ function makeObject(o, thumb = false) {
   const tag = o.kind === 'project' ? `${o.name} · ${stage || 'blueprint'}` : o.name;
   g.userData.objId = o.id;
   g.userData.tip = { name: o.name, kind: o.kind, text: o.meta?.description || '', look: o.meta?.design?.summary || '', stage: o.kind === 'project' ? stage : '' };
-  if (!thumb && o.kind !== 'ground') {
+  if (!thumb && o.kind !== 'ground' && o.kind !== 'find') {
     const l = label(tag, 0.6); l.position.y = labelY; g.add(l); g.userData.label = l;
     g.userData.born = performance.now(); g.scale.setScalar(0.01);
   }
@@ -527,6 +528,7 @@ function frame() {
   for (const m of kitGlow) m.emissiveIntensity = 0.9 + nightness * 1.8;
   for (const g of objMeshes.values()) {
     if (g.userData.design) animateDesign(g.userData.design, tsec, dt);
+    if (g.userData.bob) { g.userData.bob.position.y = 0.3 + Math.sin(tsec * 2 + g.position.x) * 0.06; g.userData.bob.rotation.y += dt; }
     const age = (now - g.userData.born) / 600; g.scale.setScalar(Math.min(1, 0.01 + age) * (age < 1 ? 1 + Math.sin(age * Math.PI) * 0.25 : 1));
     g.children.forEach((c) => { if (c.userData.spin) c.rotation.y += dt * 0.8; });
   }

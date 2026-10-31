@@ -24,7 +24,7 @@ ART_HELP = ("Make a small artwork; it hangs in the gallery. kind=drawing: conten
             "kind=sculpture: content is a JSON list of up to 24 parts like "
             '[{"s":"sphere|box|cone|cylinder|torus","x":0,"y":0.5,"z":0,"size":1,"c":"teal"}] and it stands in the world.')
 BUILD_HELP = ("At the workshop, make something real (an occasional thing, not your main activity). A project goes blueprint -> gather -> build -> finish: "
-              "call build with the same name each time to advance it (empty name continues your current project). Build for a PURPOSE and say why in description. "
+              "call build with the same name each time to advance it (empty name continues your current project). A new build needs a reason: a goal, an interest or a need it serves. "
               "LOOK: choose ONE way: gen=<kit generator> with params={...}; or asset=<model from search_assets>; or parts=<JSON list, up to 12, each {\"gen\":..}, {\"asset\":..} "
               "or a shape {\"s\":\"box|sphere|cylinder|cone|torus|plane|prism|pyramid\",\"size\":[w,h,d],\"c\":color,\"x\",\"y\",\"z\",\"rot\",\"mat\"}>; or script=<your own short design script>; "
               "or saved=<name of a design you saved>. Optional: scale, rotation, color (tint), anim (spin|bob|sway|blink), area (a hint like 'garden'; the engine picks the exact spot). "
@@ -49,7 +49,15 @@ def schemas(publish_enabled):
         _fn("search_web", "Read-only web search to learn something or find inspiration. Returns result snippets.", {"query": {"type": "string"}}, ["query"]),
         _fn("read_page", "Read one public web page (http/https) as plain text, e.g. a result from search_web. You then note what you learned.",
             {"url": {"type": "string"}}, ["url"]),
-        _fn("write_journal", "Write a private journal entry. Also lets you manage goals and jot sketchbook ideas.", {"entry": {"type": "string"}, **_GOALS}, ["entry"]),
+        _fn("write_journal", "Write a private journal entry. Also lets you manage goals, jot sketchbook ideas, and add to a hobby (hobby=<name of a log or series you keep, e.g. 'Field diary'>).",
+            {"entry": {"type": "string"}, "hobby": {"type": "string"}, **_GOALS}, ["entry"]),
+        _fn("observe", "Stand still and watch the world: the sky, the weather, birds, cats, plants, or something specific nearby. You may spot things; they go in your spotting log.",
+            {"target": {"type": "string", "description": "optional: sky, weather, birds, a place or an object name"}}, []),
+        _fn("make_music", "Compose a short tune. notes: up to 48 tokens like 'C4:q E4:q G4:h R:q' (letters A-G with optional #/b and octave 2-6, R = rest; :w whole :h half :q quarter :e eighth). Plays in the page.",
+            {"title": {"type": "string"}, "notes": {"type": "string"}, "tempo": {"type": "integer"}, "wave": {"type": "string", "enum": ["sine", "triangle", "square", "chime"]}}, ["title", "notes"]),
+        _fn("tend", "Look after a plant you put in the world (water, prune, tidy). Plants you tend grow a little.", {"target": {"type": "string", "description": "a plant by name, or empty for the nearest"}}, []),
+        _fn("collect", "Pick up a small found object lying around (a pebble, feather, shell...) for your collection. You walk to the nearest one if you are far.",
+            {"item": {"type": "string", "description": "optional name"}}, []),
         _fn("interact_with", "Go to and interact with an object in the world by name or id. Use 'gallery' to look at your art.",
             {"object": {"type": "string"}}, ["object"]),
         _fn("shop", "At the clothing store, wear an item in a color. item: hat, scarf, goggles, antenna, or paint (body).",
@@ -58,7 +66,7 @@ def schemas(publish_enabled):
         _fn("search_assets", "Search the library of 3D models you can build with (trees, tents, walls, doors, space things...). Returns names, tags and sizes.",
             {"query": {"type": "string", "description": "e.g. 'tree', 'door', 'space', or empty to browse"}}, []),
         _fn("build", BUILD_HELP,
-            {"name": {"type": "string"}, "description": {"type": "string"}, "gen": {"type": "string"}, "params": {"type": "string"},
+            {"name": {"type": "string"}, "reason": {"type": "string", "description": "WHY: tie it to one of your goals, interests or needs"}, "description": {"type": "string"}, "gen": {"type": "string"}, "params": {"type": "string"},
              "asset": {"type": "string"}, "parts": {"type": "string"}, "script": {"type": "string"}, "saved": {"type": "string"},
              "scale": {"type": "number"}, "rotation": {"type": "number"}, "color": {"type": "string"}, "anim": {"type": "string"},
              "area": {"type": "string"}, "quick": {"type": "boolean"}, "next_goal": {"type": "string"}}, []),
@@ -312,7 +320,11 @@ def write_journal(ctx, a):
     ctx.state["boredom"] = max(0, ctx.state["boredom"] - 8)
     if a.get("sketch_idea"):
         ctx.add_sketch(str(a["sketch_idea"]))
-    return out(True, "You wrote in your journal.", 0.3, "Idle", subject="journaling")
+    hb = re.sub(r"[^\w \-']", "", str(a.get("hobby") or "")).strip()[:40]
+    if hb:
+        ctx.hobby_entry(hb, entry[:300], kind="series")
+        ctx.touch_interest(hb, 0.4, "hobby")
+    return out(True, "You wrote in your journal." + (f" It was added to your '{hb}' series." if hb else ""), 0.3, "Idle", subject="journaling")
 
 
 # ------------------------------------------------------------------ world interaction
@@ -356,7 +368,12 @@ def interact_with(ctx, a):
     verb = world.KIND_VERB.get(tgt["kind"], "poked")
     anim = "Wave" if tgt["kind"] == "creature" else ("Jump" if v > 1 else "No" if v < -0.8 else "ThumbsUp" if v > 0.3 else "Idle")
     note = " It was new to you." if seen == 0 else (f" You have done this {seen} time(s) before." if seen > 1 else "")
-    return out(True, f"You {verb} the {tgt['label']}. {_feel_text(v)}{note}", v, anim, subject=tgt["kind"], face=(tgt["x"], tgt["z"]))
+    social = tgt.get("source") == "user" or tgt["kind"] == "creature"
+    if social:
+        v = max(v, 0.6)
+        ctx.touch_interest(f"{tgt['kind']}s" if tgt["kind"] in ("tree", "flower", "creature") else tgt["label"].lower(), 0.4, "gift")
+        note += " Your human left this here for you."
+    return out(True, f"You {verb} the {tgt['label']}. {_feel_text(v)}{note}", v, anim, subject=tgt["kind"], face=(tgt["x"], tgt["z"]), social=social)
 
 
 def _color(c):
@@ -501,6 +518,30 @@ def _design_of(p):
         return None
 
 
+_NEED_WORDS = {"home", "house", "shelter", "sleep", "rest", "live", "light", "lamp", "dark", "shop", "store", "sell", "storage", "path", "walk", "road", "garden", "plant", "grow",
+               "gallery", "art", "show", "display", "workshop", "bench", "sit", "sign", "car", "meet", "friend", "visit", "platform", "station", "train", "cat", "bird", "shelter",
+               "music", "stage", "pond", "water", "tower", "view", "watch", "observe", "market", "cafe", "bakery", "decorate", "gift", "thank", "welcome"}
+
+
+def _reason_ok(ctx, reason):
+    """A new build must be tied to one of his goals, interests or needs (judged by the engine, not left to the model)."""
+    db = ctx.db
+    goals = [g["text"] for g in db.q("SELECT text FROM goals WHERE status='active'")]
+    interests = [r["topic"] for r in db.q("SELECT topic FROM interests ORDER BY strength DESC LIMIT 8")]
+    if len(reason) < config.BUILD_REASON_MIN:
+        return False, ("Say WHY you want to build this: tie it to a goal, an interest or a need. "
+                       f"Your goals: {'; '.join(goals[:3]) or 'none'}. Your interests: {', '.join(interests[:5]) or 'none yet'}. Needs: shelter, light, a place to rest, show art, watch things.")
+    words = set(re.findall(r"[a-z]{3,}", reason.lower()))
+    stem = lambda w: w[:-1] if w.endswith("s") and len(w) > 3 else w
+    cand = set()
+    for t in goals + interests:
+        cand |= {stem(w) for w in re.findall(r"[a-z]{3,}", t.lower()) if w not in ("the", "and", "with", "for", "that", "this", "new")}
+    if {stem(w) for w in words} & (cand | _NEED_WORDS):
+        return True, ""
+    return False, ("That reason does not connect to a goal, an interest or a need. "
+                   f"Goals: {'; '.join(goals[:3]) or 'none'}. Interests: {', '.join(interests[:5]) or 'none yet'}. Try again with a reason that names one.")
+
+
 def build(ctx, a):
     s, db = ctx.state, ctx.db
     win, mx = config.BUILD_WINDOW
@@ -524,7 +565,11 @@ def build(ctx, a):
 
     if proj is None:                                             # ---- start a new project: draw the blueprint
         since = s["tick"] - s.get("last_project_tick", -999)
-        if not projs and since < config.MIN_TICKS_BETWEEN_NEW_PROJECTS:
+        reason = re.sub(r"\s+", " ", str(a.get("reason") or "")).strip()[:200]
+        ok_reason, why = _reason_ok(ctx, reason)
+        if not ok_reason:
+            return out(False, why, -0.05, noop=True)
+        if not projs and since < config.MIN_TICKS_BETWEEN_NEW_PROJECTS + int(s.get("build_penalty", 0)):
             return out(True, "You just finished a build and want to enjoy it before starting another. Do something different for a while: "
                              "explore, read, look at your gallery, make art, or tidy up your look.", 0.0, "Idle", noop=True)
         if len(projs) >= config.MAX_PROJECTS:
@@ -543,9 +588,9 @@ def build(ctx, a):
         col = hexv or random.choice(list(world.COLORS.values()))
         oid = db.x("INSERT INTO objects(ts,kind,name,x,z,color,source,meta,radius) VALUES(?,?,?,?,?,?,?,?,?)", time.time(),
                    "creation" if quick else "project", name, ox, oz, col, "build", _obj_meta("finished" if quick else "blueprint", desc, d), rad)
-        pid = db.x("INSERT INTO projects(ts,tick,name,description,stage,color,object_id,status,last_tick,design,area) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        pid = db.x("INSERT INTO projects(ts,tick,name,description,stage,color,object_id,status,last_tick,design,area,reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                    time.time(), s["tick"], name, desc, "finished" if quick else "blueprint", col, oid, "done" if quick else "active", s["tick"],
-                   json.dumps(d), where)
+                   json.dumps(d), where, reason)
         s["last_project_tick"] = s["tick"]
         proj = db.one("SELECT * FROM projects WHERE id=?", pid)
         if quick:
@@ -604,7 +649,7 @@ def _finish(ctx, proj, ng, mishap, lesson, quick=False):
         (nx, nz), _ = ctx.place_near(obj["x"], obj["z"], d["radius"] + 0.3, skip=others)
         db.x("UPDATE objects SET x=?, z=? WHERE id=?", nx, nz, obj["id"])
         rad = d["radius"] + 0.3
-    db.x("UPDATE projects SET stage='finished', status='done', finished_tick=?, last_tick=?, design=? WHERE id=?", s["tick"], s["tick"], json.dumps(d), proj["id"])
+    db.x("UPDATE projects SET stage='finished', status='done', finished_tick=?, last_tick=?, design=?, review_due=1 WHERE id=?", s["tick"], s["tick"], json.dumps(d), proj["id"])
     _set_obj(ctx, proj, "finished", d, kind="creation", radius=max(0.8, d["radius"] + 0.3) if d else 1.6)   # plot shrinks to its real size
     db.x("INSERT INTO builds(ts,tick,name,description,next_goal,object_id,stage,design) VALUES(?,?,?,?,?,?,?,?)", time.time(), s["tick"],
          name, proj["description"], ng, proj["object_id"], "finished", json.dumps(d))
@@ -688,6 +733,151 @@ def landscape(ctx, a):
     return out(True, f"You added a {label.lower()} in the {where}. {_feel_text(v)}", v, "ThumbsUp", subject="gardening", changed_objects=True)
 
 
+# ------------------------------------------------------------------ a fuller life: observe, music, tend, collect
+SKY = {"day": [("clouds", "Clouds drift slowly overhead; one looks like a sleepy whale."), ("clouds", "A wide blue sky with a few thin, high clouds.")],
+       "dawn": [("sky", "The sky turns peach and rose as the day begins.")], "dusk": [("sky", "The sky glows orange and violet as the light fades.")],
+       "night": [("stars", "Countless stars are out; you try to count them and lose track."), ("stars", "The moon hangs low and bright over the gallery roof.")]}
+
+
+def _sightings(ctx):
+    """What could be seen right now, from the real state of the world: time, weather, season and what exists nearby."""
+    s = ctx.state
+    wt = world.world_time(s["tick"]); season = kit.season_now(); wx = world.weather(wt["day"], season)
+    out_ = [(t, x) for t, x in SKY[wt["phase"]]]
+    out_.append(("weather", f"The weather today is {wx}. " + {"clear": "Everything is sharp and bright.", "cloudy": "The light is soft and grey.", "light rain": "Tiny drops patter on the leaves.",
+                                                      "foggy": "The far side of the world has vanished into mist.", "light snow": "Flakes settle quietly on your shoulders.", "snow": "The ground is turning white."}.get(wx, "")))
+    objs = ctx.objects()
+    near = lambda pred, r=16: [o for o in objs if pred(o) and world.dist(s["x"], s["z"], o["x"], o["z"]) <= r]
+    trees = near(lambda o: o["kind"] == "landscape" and ("tree" in o["name"].lower()))
+    ponds = near(lambda o: o["kind"] == "landscape" and "pond" in o["name"].lower())
+    beds = near(lambda o: o["kind"] == "landscape" and ("flower" in o["name"].lower() or "garden" in o["name"].lower()))
+    houses = near(lambda o: o["kind"] in ("creation",) and any(k in o["name"].lower() for k in ("house", "cottage", "cabin", "home", "shop", "bakery")))
+    if trees:
+        t = random.choice(trees)
+        out_.append(("birds", random.choice([f"A small brown bird hops along the {t['name'].lower()} and tilts its head at you.", f"Two sparrows argue noisily in the {t['name'].lower()}.", f"A bird sings from the top of the {t['name'].lower()}."])))
+    if ponds:
+        out_.append(("birds", "A duck paddles across the pond, leaving a long V on the water.") if season != "winter" else ("pond", "A thin skin of ice covers the edge of the pond."))
+        if season in ("spring", "summer"):
+            out_.append(("insects", "A dragonfly hovers over the pond, then zips away."))
+    if beds:
+        out_.append(("plants", "A bee works its way from flower to flower." if season in ("spring", "summer") else "The flower bed has gone quiet for the season."))
+    if houses:
+        out_.append(("cats", f"A tabby cat watches you from the step of {random.choice(houses)['name']} and slowly blinks."))
+    if season == "fall":
+        out_.append(("leaves", "Leaves spiral down and gather in little drifts."))
+    out_ += ctx.poi_sightings() if hasattr(ctx, "poi_sightings") else []
+    return out_
+
+
+def observe(ctx, a):
+    s, db = ctx.state, ctx.db
+    if s.get("inside"):
+        _exit(ctx)
+    want = str(a.get("target") or "").strip().lower()
+    cands = _sightings(ctx)
+    if want:
+        match = [c for c in cands if want in c[0] or c[0] in want or any(w in c[1].lower() for w in re.findall(r"[a-z]{4,}", want))]
+        cands = match or cands
+    interests = {r["topic"].lower(): r["strength"] for r in db.q("SELECT topic,strength FROM interests")}
+    recent = {r["text"][:40] for r in db.q("SELECT text FROM hobby_entries ORDER BY id DESC LIMIT 8")}
+    weights = [(2.5 if any(c[0] in t or t in c[0] for t in interests) else 1.0) * (0.3 if c[1][:40] in recent else 1.0) for c in cands]
+    topic, text = random.choices(cands, weights=weights)[0]
+    wt = world.world_time(s["tick"])
+    ctx.hobby_entry("Spotting log", f"[{wt['label']}, day {wt['day']}] {text}", kind="spotting_log", interest=topic)
+    new = topic.lower() not in interests
+    ctx.touch_interest(topic, 0.7 if not new else 0.8, "observed")
+    s["boredom"] = max(0, s["boredom"] - 12)
+    v = _maker_valence(ctx, "observe:" + topic, 0.5)
+    return out(True, f"You stood still and watched. {text}{' (A new thing to be curious about: ' + topic + '.)' if new else ''} {_feel_text(v)}", v, "Idle", subject="observing", spot=topic)
+
+
+_NOTE = re.compile(r"^([A-Ga-g][#b]?)([2-6])?(?::([whqes]))?$|^[Rr](?::([whqes]))?$")
+
+
+def make_music(ctx, a):
+    s, db = ctx.state, ctx.db
+    title = re.sub(r"[^\w \-'!?.,]", "", str(a.get("title", ""))).strip()[:40]
+    if not title:
+        return out(False, "Give your tune a title.")
+    if s["tick"] - s.get("last_tune_tick", -999) < config.MIN_TICKS_BETWEEN_TUNES:
+        return out(True, "You just played something and want the quiet to settle. Try something else for a while.", 0.0, "Idle", noop=True)
+    toks = [t for t in re.split(r"[\s,]+", str(a.get("notes", "")).strip()) if t]
+    if not 3 <= len(toks) <= 48:
+        return out(False, "A tune needs 3 to 48 notes like 'C4:q E4:q G4:h R:q' (letters A-G, octave 2-6, durations w h q e s).", -0.05)
+    norm = []
+    for t in toks:
+        m = _NOTE.match(t)
+        if not m:
+            return out(False, f"I could not read the note '{t[:12]}'. Use letters A-G (with # or b), an octave 2-6, and :w :h :q :e :s, or R for a rest.", -0.05)
+        if t[0] in "Rr":
+            norm.append("R:" + (m.group(4) or "q"))
+        else:
+            norm.append(f"{m.group(1)[0].upper()}{m.group(1)[1:]}{m.group(2) or 4}:{m.group(3) or 'q'}")
+    try:
+        tempo = int(max(50, min(200, float(a.get("tempo") or 100))))
+    except (TypeError, ValueError):
+        tempo = 100
+    wave = str(a.get("wave") or "sine").lower()
+    wave = wave if wave in ("sine", "triangle", "square", "chime") else "sine"
+    interest = ", ".join(r["topic"] for r in db.q("SELECT topic FROM interests ORDER BY strength DESC LIMIT 1"))
+    tid = db.x("INSERT INTO tunes(ts,tick,title,notes,tempo,wave,interest) VALUES(?,?,?,?,?,?,?)", time.time(), s["tick"], title, " ".join(norm), tempo, wave, interest)
+    ctx.hobby_entry("Sound library", f"\"{title}\" ({len(norm)} notes, {tempo} bpm, {wave})", kind="sound_library", interest="music")
+    ctx.touch_interest("music", 0.9, "composed")
+    s["last_tune_tick"] = s["tick"]; s["boredom"] = max(0, s["boredom"] - 20); _boost(ctx, "creativity", 22)
+    v = _maker_valence(ctx, "music", 0.7)
+    return out(True, f"You composed \"{title}\" ({len(norm)} notes). It is saved in your sound library; your human can press play in the page. {_feel_text(v)}", v, "Dance" if v > 1.2 else "ThumbsUp",
+               subject="music", tune=tid)
+
+
+def tend(ctx, a):
+    s, db = ctx.state, ctx.db
+    plants = [o for o in ctx.objects() if o["kind"] == "landscape" and any(k in o["name"].lower() for k in ("tree", "bush", "flower", "garden"))]
+    if not plants:
+        return out(True, "You have no plants to tend yet. Put a tree, bush or flower bed in the world first (landscape).", 0.0, "Idle", noop=True)
+    want = str(a.get("target") or "").strip().lower()
+    cands = [o for o in plants if want and (want in o["name"].lower())] or plants
+    tgt = min(cands, key=lambda o: world.dist(s["x"], s["z"], o["x"], o["z"]))
+    t = {"label": tgt["name"], "kind": "landscape", "x": tgt["x"], "z": tgt["z"], "key": None, "id": tgt["id"]}
+    r = _approach(ctx, t, "tend it")
+    if r:
+        return r
+    row = db.one("SELECT meta FROM objects WHERE id=?", tgt["id"]); meta = json.loads(row["meta"] or "{}")
+    if s["tick"] - meta.get("last_tended", -999) < config.TEND_COOLDOWN:
+        return out(True, f"The {tgt['name'].lower()} was looked after recently and is doing fine.", 0.05, "Idle", noop=True)
+    meta["last_tended"], meta["care"] = s["tick"], meta.get("care", 0) + 1
+    d = meta.get("design")
+    if d and d.get("parts") and meta["care"] <= 6 and any(p.get("g") in ("tree", "bush") for p in d["parts"]):
+        d["scale"] = round(min(1.35, d.get("scale", 1.0) + 0.05), 3)
+    db.x("UPDATE objects SET meta=? WHERE id=?", json.dumps(meta), tgt["id"])
+    ctx.touch_interest("gardening", 0.5, "tended"); ctx.learn("gardening", 0.5)
+    s["boredom"] = max(0, s["boredom"] - 8)
+    v = _maker_valence(ctx, "tend", 0.5)
+    return out(True, f"You watered and tidied the {tgt['name'].lower()}. It looks a little happier (cared for {meta['care']} time(s)). {_feel_text(v)}", v, "ThumbsUp", subject="gardening", changed_objects=True)
+
+
+def collect(ctx, a):
+    s, db = ctx.state, ctx.db
+    finds = [o for o in ctx.objects() if o["kind"] == "find"]
+    if not finds:
+        return out(True, "There are no small found things lying around right now. Wander and look; new ones turn up over time.", 0.0, "Idle", noop=True)
+    want = str(a.get("item") or "").strip().lower()
+    cands = [o for o in finds if want and want in o["name"].lower()] or finds
+    tgt = min(cands, key=lambda o: world.dist(s["x"], s["z"], o["x"], o["z"]))
+    t = {"label": tgt["name"], "kind": "find", "x": tgt["x"], "z": tgt["z"], "key": None, "id": tgt["id"]}
+    r = _approach(ctx, t, "pick it up")
+    if r:
+        return r
+    place = (layout.zone_at(tgt["x"], tgt["z"]) and layout.ZONES[layout.zone_at(tgt["x"], tgt["z"])]["label"]) or "an open spot"
+    db.x("INSERT INTO collection(ts,tick,item,kind,place,color) VALUES(?,?,?,?,?,?)", time.time(), s["tick"], tgt["name"], tgt["name"].split()[-1], place, tgt["color"])
+    db.x("DELETE FROM objects WHERE id=?", tgt["id"])
+    n = db.one("SELECT COUNT(*) n FROM collection")["n"]
+    ctx.hobby_entry("Found objects", f"{tgt['name']} (found in the {place})", kind="collection", interest="collecting")
+    ctx.touch_interest("collecting", 0.9, "collected")
+    s["boredom"] = max(0, s["boredom"] - 14)
+    v = _maker_valence(ctx, "collect", 0.5)
+    return out(True, f"You picked up a {tgt['name'].lower()} from the {place} and added it to your collection ({n} item(s)). {_feel_text(v)}", v, "ThumbsUp", subject="collecting", changed_objects=True)
+
+
 # ------------------------------------------------------------------ art
 def make_art(ctx, a):
     s, db = ctx.state, ctx.db
@@ -753,7 +943,7 @@ def publish_page(ctx, a):
 
 
 REGISTRY = {"move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
-            "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "make_art": make_art, "publish_page": publish_page}
+            "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')
 

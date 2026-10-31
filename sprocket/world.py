@@ -95,7 +95,7 @@ def resolve_target(text, x, z, objects):
 
 
 def _obj(o):
-    return {"label": o["name"], "kind": o["kind"], "x": o["x"], "z": o["z"], "key": None, "id": o["id"], "color": o.get("color")}
+    return {"label": o["name"], "kind": o["kind"], "x": o["x"], "z": o["z"], "key": None, "id": o["id"], "color": o.get("color"), "source": o.get("source")}
 
 
 def affinity(seed, key):
@@ -162,3 +162,14 @@ def build_yard():
     """Open ground east of the workshop where projects and creations are set down."""
     ws = PLACES["workshop"]
     return ws["x"] + 9.0, ws["z"] - 4.0
+
+
+WEATHER = {"spring": ["clear", "clear", "cloudy", "light rain", "light rain", "breezy"], "summer": ["clear", "clear", "clear", "cloudy", "thunderstorm", "warm and hazy"],
+           "fall": ["clear", "cloudy", "cloudy", "drizzle", "foggy", "breezy", "falling leaves"], "winter": ["clear and cold", "cloudy", "light snow", "snow", "foggy", "frosty"]}
+
+
+def weather(day, season):
+    """Deterministic weather for a world day (so it is the same for him, the prompt and the UI)."""
+    h = int.from_bytes(hashlib.sha256(f"wx:{day}".encode()).digest()[:2], "big")
+    opts = WEATHER.get(season, WEATHER["summer"])
+    return opts[h % len(opts)]

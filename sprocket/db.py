@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS blocked_sites(host TEXT PRIMARY KEY, ts REAL, until R
 CREATE TABLE IF NOT EXISTS publish_log(id INTEGER PRIMARY KEY, ts REAL, page_id INT, title TEXT, slug TEXT, mode TEXT, ok INT,
   commit_sha TEXT, url TEXT, commit_url TEXT, error TEXT);
 CREATE TABLE IF NOT EXISTS designs(id INTEGER PRIMARY KEY, ts REAL, tick INT, name TEXT, kind TEXT, script TEXT, design TEXT, uses INT DEFAULT 0);
+CREATE TABLE IF NOT EXISTS tunes(id INTEGER PRIMARY KEY, ts REAL, tick INT, title TEXT, notes TEXT, tempo INT, wave TEXT, interest TEXT);
+CREATE TABLE IF NOT EXISTS collection(id INTEGER PRIMARY KEY, ts REAL, tick INT, item TEXT, kind TEXT, place TEXT, color TEXT);
+CREATE TABLE IF NOT EXISTS hobbies(id INTEGER PRIMARY KEY, ts REAL, name TEXT UNIQUE, kind TEXT, interest TEXT, last_tick INT);
+CREATE TABLE IF NOT EXISTS hobby_entries(id INTEGER PRIMARY KEY, ts REAL, tick INT, hobby_id INT, text TEXT);
 CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY, ts REAL, what TEXT);
 """
 
@@ -56,7 +60,8 @@ class DB:
                                 ("pages", "slug", "TEXT"), ("pages", "html", "TEXT"), ("pages", "tags", "TEXT"), ("pages", "excerpt", "TEXT"),
                                 ("pages", "last_error", "TEXT"), ("pages", "attempts", "INT"), ("pages", "next_try", "REAL"),
                                 ("pages", "approved_ts", "REAL"), ("pages", "published_ts", "REAL"), ("pages", "commit_sha", "TEXT"),
-                                ("pages", "url", "TEXT"), ("pages", "mode", "TEXT"), ("pages", "submitted_tick", "INT")):
+                                ("pages", "url", "TEXT"), ("pages", "mode", "TEXT"), ("pages", "submitted_tick", "INT"), ("actions", "cat", "TEXT"), ("interests", "last_tick", "INT"), ("projects", "reason", "TEXT"),
+                                ("projects", "review", "TEXT"), ("projects", "review_due", "INT")):
             if col not in [r["name"] for r in self.c.execute(f"PRAGMA table_info({table})")]:
                 self.c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
         self.c.commit()
