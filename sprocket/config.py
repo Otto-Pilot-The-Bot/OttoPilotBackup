@@ -162,3 +162,6 @@ WISH_DECLINE_COOLDOWN = 600      # ticks during which a declined wish (or anythi
 
 # Fixed buildings (home cabin, clothing store, workshop, gallery). Off: the places remain as plain named spots/pads, nothing to enter or see.
 FIXED_BUILDINGS = os.environ.get("SPROCKET_FIXED_BUILDINGS", "0").lower() in ("1", "true", "yes")
+
+# Starting points of interest (bench, noticeboard, snack machine, train line...). Off: none are created or arrive.
+POIS_ENABLED = os.environ.get("SPROCKET_POIS", "0").lower() in ("1", "true", "yes")

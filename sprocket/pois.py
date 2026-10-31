@@ -105,6 +105,8 @@ def add(agent, kind, announce=True):
 
 def ensure(agent):
     """Called every tick: seed the starting POIs, let new ones turn up, and retire the ones whose time is up."""
+    if not config.POIS_ENABLED:
+        return
     db, s = agent.db, agent.state
     have = {}
     for o in db.q("SELECT id,name,meta FROM objects WHERE kind='poi'"):
