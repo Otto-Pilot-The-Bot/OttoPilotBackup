@@ -329,6 +329,35 @@ class Agent:
                 self.log("  !! " + self.memory_note)
             return None
 
+    def cooldowns(self):
+        s, db = self.state, self.db
+        out = []
+        left = config.MIN_TICKS_BETWEEN_TUNES - (s["tick"] - s.get("last_tune_tick", -999))
+        if left > 0: out.append(f"music ({left} ticks)")
+        left = config.MIN_TICKS_BETWEEN_ART - (s["tick"] - s.get("last_art_tick", -999))
+        if left > 0: out.append(f"art ({left} ticks)")
+        win, mx = config.BUILD_WINDOW
+        recent_b = db.q("SELECT tick FROM actions WHERE tool='build' AND tick>? ORDER BY tick", s["tick"] - win)
+        if len(recent_b) >= mx:
+            out.append(f"building ({recent_b[0]['tick'] + win - s['tick'] + 1} ticks)")
+        elif not db.one("SELECT 1 FROM projects WHERE status='active'"):
+            left = config.MIN_TICKS_BETWEEN_NEW_PROJECTS + int(s.get("build_penalty", 0)) - (s["tick"] - s.get("last_project_tick", -999))
+            if left > 0: out.append(f"starting a new project ({left} ticks)")
+        if len([t for t in s.get("land_log", []) if t > s["tick"] - 144]) >= config.LANDSCAPE_PER_DAY: out.append("landscaping (done for today)")
+        return out
+
+    POI_FOR = {"explore": ("market_stall", "noticeboard", "cat_spot"), "observe": ("bird_feeder", "cat_spot", "train_line"), "learn": ("noticeboard",), "rest": ("bench", "snack_machine"),
+               "socialize": ("cat_spot",), "write": ("bench",), "music": ("bench",)}
+
+    def poi_suggestion(self, cat, prow):
+        s = self.state
+        want = self.POI_FOR.get(cat, ())
+        cands = [p for p in prow if p["m"].get("poi") in want]
+        if not cands:
+            return None
+        p = min(cands, key=lambda p: world.dist(s["x"], s["z"], p["x"], p["z"]))
+        return f"The world offers: {p['name']} (d={world.dist(s['x'], s['z'], p['x'], p['z']):.0f}): {p['m'].get('description', '').replace('Here you can: ', '')}."
+
     def poi_rows(self):
         out = []
         for o in self.db.q("SELECT id,name,x,z,meta,radius FROM objects WHERE kind='poi'"):
@@ -571,9 +600,10 @@ class Agent:
         here = sorted([p for p in prow if world.dist(s["x"], s["z"], p["x"], p["z"]) <= pois.TRIGGER], key=lambda p: world.dist(s["x"], s["z"], p["x"], p["z"]))
         if here:
             L.append("HERE YOU CAN: " + " | ".join(f"{p['name']}: {p['m'].get('description', '').replace('Here you can: ', '')}" for p in here[:3]) + " (use it with interact_with)")
-        elif prow:
-            far = sorted(prow, key=lambda p: world.dist(s["x"], s["z"], p["x"], p["z"]))[:4]
-            L.append("PLACES OF INTEREST: " + "; ".join(f"{p['name']} d={world.dist(s['x'], s['z'], p['x'], p['z']):.0f} ({(p['m'].get('offers') or [''])[0]})" for p in far))
+        if prow:
+            far = sorted([p for p in prow if p not in here], key=lambda p: world.dist(s["x"], s["z"], p["x"], p["z"]))[:4]
+            if far:
+                L.append("PLACES OF INTEREST: " + "; ".join(f"{p['name']} d={world.dist(s['x'], s['z'], p['x'], p['z']):.0f} ({(p['m'].get('offers') or [''])[0]})" for p in far))
         gift = s.get("new_gift")
         if gift and s["tick"] - gift["tick"] <= 10:
             L.append(f"YOUR HUMAN JUST LEFT SOMETHING: a {gift['kind']} called '{gift['name']}' near ({gift['x']},{gift['z']}). You may want to look at it.")
@@ -590,6 +620,12 @@ class Agent:
             L.append(f"GALLERY: you have {n_art} piece(s) on display.")
         cat = self._focus()
         L.append(f"TODAY YOU FEEL LIKE: {self.FOCUS_TEXT[cat]}. (An inclination, not an order.)")
+        sug = self.poi_suggestion(cat, prow)
+        if sug:
+            L.append(sug)
+        cd = self.cooldowns()
+        if cd:
+            L.append("NOT READY YET (do not try these now): " + ", ".join(cd) + ".")
         cnt, n = self.category_shares(config.LATELY_WINDOW)
         if n >= 8 and cnt:
             top = max(cnt, key=cnt.get)
@@ -732,7 +768,10 @@ class Agent:
             except Exception as e:
                 res = tools.out(False, f"Tool error: {type(e).__name__}: {e}")
         self.charge(name, res, world.dist(x0, z0, s["x"], s["z"]))
-        cat = self.category_of(name, res) if res["ok"] and not res.get("moved") or name == "move_to" else None
+        if res.get("noop"):                                   # "not ready / nothing to do" must not count as activity or earn novelty
+            s["boredom"] = min(100, s["boredom"] + 2.5)
+            res["valence"] = min(res["valence"], -0.1)
+        cat = self.category_of(name, res) if (res["ok"] and not res.get("moved") or name == "move_to") and not res.get("noop") else None
         if cat:                                           # variety pressure: repeating a category pays less, a fresh one pays more
             hist, _ = self.recent_cats(6)
             rep = sum(1 for c in hist if c == cat)
