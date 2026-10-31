@@ -161,6 +161,7 @@ const PANELS = [
   { id: 'you', icon: '🕹️', label: 'You', title: 'You', build(el) {
     el.innerHTML = `<button class="btn primary wide" id="pauseBtn"></button>
       <h3>How fast he thinks</h3><input type="range" id="speed" min="3" max="60" step="1"><div class="small dim" id="speedLbl"></div>
+      <h3>Pace</h3><div class="tabs" id="paceBtns" style="margin-bottom:2px"></div><div class="small dim" id="paceNote"></div>
       <h3>Web pages</h3><label class="switch"><input type="checkbox" id="pubChk"><span>Let him draft web pages.<br><span class="small dim">Pages he writes wait for your approval (see <b>My site</b>). Nothing goes online unless you approve it.</span></span></label>
       <div id="pending"></div>
       <h3>Emergency</h3><button class="btn danger wide" id="killBtn">Kill switch — stop ${short}</button>
@@ -170,6 +171,7 @@ const PANELS = [
     sp.oninput = () => { draggingSpeed = true; $('#speedLbl', el).textContent = `Thinks every ${sp.value}s`; };
     sp.onchange = () => { draggingSpeed = false; api.send({ type: 'set_interval', seconds: +sp.value }); };
     $('#pubChk', el).onchange = (e) => api.send({ type: 'toggle_publish', on: e.target.checked });
+    $('#paceBtns', el).onclick = (e) => { const b = e.target.closest('button[data-pace]'); if (b) api.send({ type: 'set_pace', name: b.dataset.pace }); };
     $('#killBtn', el).onclick = (e) => {
       if (!killArmed) { killArmed = true; e.target.textContent = 'Really stop him? Click again to confirm'; setTimeout(() => { killArmed = false; e.target.textContent = `Kill switch — stop ${short}`; }, 4000); return; }
       api.send({ type: 'kill' });
@@ -180,6 +182,8 @@ const PANELS = [
     $('#pauseBtn', el).textContent = p ? `▶ Resume ${short}` : `⏸ Pause ${short}`;
     if (!draggingSpeed) { $('#speed', el).value = Math.round(s.interval); $('#speedLbl', el).textContent = `Thinks every ${Math.round(s.interval)}s`; }
     $('#pubChk', el).checked = s.state.publish_enabled;
+    $('#paceBtns', el).innerHTML = Object.entries(s.pace_presets || {}).map(([k, v]) => `<button data-pace="${k}" class="${s.state.pace === k ? 'on' : ''}">${({ calm: '🌿 Calm', normal: '🙂 Normal', lively: '⚡ Lively' })[k] || k} · ${v.interval}s</button>`).join('');
+    $('#paceNote', el).textContent = `Thinking mode for decisions: ${s.think === 'False' ? 'off' : s.think}. Slower pace = longer actions and more quiet moments.`;
     $('#pending', el).innerHTML = s.pages.length ? '<h3>Drafts awaiting approval</h3>' + s.pages.map((pg) => `<div class="card"><div class="t">${esc(pg.title)}</div><div class="small">${esc(pg.body)}…</div><div class="field"><button class="btn primary" data-a="approve_page" data-id="${pg.id}">${s.site.mode === 'live' ? 'Approve & publish' : 'Approve (dry run)'}</button><button class="btn" data-a="reject_page" data-id="${pg.id}">Reject</button></div></div>`).join('') : '';
   } },
 
@@ -315,3 +319,5 @@ export function playTune(t) {
     at += dur;
   }
 }
+
+export function status(text) { setCaption('💭', `${short} is ${text}`, true); }

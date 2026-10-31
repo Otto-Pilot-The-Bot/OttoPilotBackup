@@ -55,7 +55,13 @@ async def serve(agent, runner, interval=None):
 
     def handle(m, ws=None):
         t, s, db = m.get("type"), agent.state, agent.db
-        if t == "set_interval":
+        if t == "set_pace":
+            name = m.get("name")
+            if name in config.PACE_PRESETS:
+                s["pace"] = name
+                db.control(f"pace = {name}")
+                runner.set_interval(config.PACE_PRESETS[name]["interval"])
+        elif t == "set_interval":
             runner.set_interval(float(m.get("seconds", config.TICK_SECONDS)))
         elif t == "get_log" and ws is not None:
             asyncio.ensure_future(_send(ws, json.dumps({"type": "log", "rows": agent.raw_log(int(min(300, max(10, m.get("limit", 150)))))})))

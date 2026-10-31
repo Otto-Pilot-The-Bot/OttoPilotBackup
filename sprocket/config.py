@@ -11,13 +11,15 @@ MODEL = os.environ.get("SPROCKET_MODEL", "gemma4:e4b")      # the one model sett
 FALLBACK_MODEL = os.environ.get("SPROCKET_FALLBACK", "qwen3:8b")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 NUM_CTX = 8192
-THINK = False                 # thinking off for the tick loop (speed)
+THINK = False                 # thinking for small helper calls (summaries, reflections JSON, learning notes): keep OFF for speed
+THINK_MAIN = os.environ.get("SPROCKET_THINK", "low")   # thinking for the main decision step: False | "low" | "medium" | "high" | True
+THINK_TIMEOUT_NOTE = 60       # a decision slower than this many seconds is logged as slow (the loop and UI keep going either way)
 TEMPERATURE = 0.9
 KEEP_ALIVE = "30m"
 
-TICK_SECONDS = float(os.environ.get("SPROCKET_TICK", 12))   # start-to-start interval
+TICK_SECONDS = float(os.environ.get("SPROCKET_TICK", 20))   # start-to-start interval (default 20 s; adjustable in the You panel)
 REFLECT_EVERY = 10            # ticks between reflection calls
-REQUEST_TIMEOUT = 90          # seconds per model call
+REQUEST_TIMEOUT = 180         # seconds per model call (thinking mode can be slow)
 
 DB_PATH = Path(os.environ.get("SPROCKET_DB", ROOT / "data" / "sprocket.db"))
 PUBLISH_DIR = ROOT / "published"   # approved pages are exported here, locally only
@@ -42,13 +44,13 @@ MAX_PROJECTS = 2
 
 # =====================================================================================================
 # BALANCE: every rate and threshold lives here (and is shown in the page under "More").
-# All numbers are PER TICK, tuned for ~12 s per tick. Needs run 0..100.
+# All numbers are PER TICK, tuned for ~20 s per tick. Needs run 0..100.
 # =====================================================================================================
-ENERGY_BASE_DRAIN = 0.05        # just existing
-BATTERY_BASE_DRAIN = 0.06
-CREATIVITY_DECAY = 0.9          # creativity slowly fades; low creativity = itch to make something
-BOREDOM_RISE = 1.4              # boredom creeps up; novel things bring it down
-MOVE_COST_PER_UNIT = {"energy": 0.025, "battery": 0.020}      # walking a full 10-unit step costs ~0.25 / 0.20
+ENERGY_BASE_DRAIN = 0.08        # just existing
+BATTERY_BASE_DRAIN = 0.10
+CREATIVITY_DECAY = 1.4          # creativity slowly fades; low creativity = itch to make something
+BOREDOM_RISE = 2.2              # boredom creeps up; novel things bring it down
+MOVE_COST_PER_UNIT = {"energy": 0.040, "battery": 0.032}      # walking a full 10-unit step costs ~0.25 / 0.20
 ACTION_COST = {                 # extra cost when an action is actually carried out: (energy, battery)
     "build": (0.50, 0.35), "make_art": (0.40, 0.30), "interact_with": (0.10, 0.06), "shop": (0.10, 0.06),
     "search_web": (0.03, 0.05), "read_page": (0.02, 0.04), "write_journal": (0.01, 0.02),
@@ -112,7 +114,7 @@ LANDSCAPE_PER_DAY = 8              # landscaping actions per world day (144 tick
 MAX_GROUND_PATCHES = 14
 
 # --- a full life (Stage 3): activity categories, variety pressure, interests, hobbies ---
-CATEGORIES = ("explore", "observe", "learn", "art", "music", "write", "garden", "collect", "socialize", "rest", "build", "organize")
+CATEGORIES = ("explore", "observe", "learn", "art", "music", "write", "garden", "collect", "socialize", "rest", "build", "organize", "reflect")
 NOVELTY_AFTER = 25               # a category not done for this many ticks feels fresh (novelty bonus, extra boredom relief)
 REPEAT_PENALTY = 0.18            # each repeat of the same category in the last 6 actions makes it less rewarding
 LATELY_WINDOW = 20               # the "lately you have mostly done..." line looks at this many actions
@@ -136,3 +138,15 @@ BENCH_RESTORE = 15.0
 ARRANGE_PER_DAY = 6                # arrange jobs per world day (144 ticks)
 ARRANGE_MAX_OBJECTS = 8
 ATTRACT_DECAY = 0.96             # per tick; things placed in his world pull on him, fading unless he goes to them
+
+# =====================================================================================================
+# PACE AND DELIBERATION
+# =====================================================================================================
+PACE_PRESETS = {"calm": {"interval": 30, "dur": 1.5}, "normal": {"interval": 20, "dur": 1.0}, "lively": {"interval": 10, "dur": 0.6}}   # tick seconds, action-duration factor
+# extra ticks an action keeps him busy AFTER it starts (no model call while busy); scaled by the pace preset's "dur"
+DURATION_EXTRA = {"build": 2, "make_art": 2, "read_page": 1, "make_music": 1, "landscape": 1, "arrange": 1, "observe": 1, "tend": 1, "write_journal": 0, "rest": 1}
+BUSY_VERB = {"build": "working on", "make_art": "making", "read_page": "reading", "make_music": "composing", "landscape": "shaping the land with", "arrange": "arranging",
+             "observe": "watching", "tend": "tending", "rest": "resting"}
+WALK_MAX_TICKS = 14             # a walk continues by itself for at most this many ticks
+BURST_MAX = 4                   # after this many busy actions in a row he takes a quiet breather
+REFLECT_GAP = 8                 # ticks between reflection beats after meaningful events

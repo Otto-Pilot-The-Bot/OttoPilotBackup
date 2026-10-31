@@ -446,6 +446,7 @@ function connect() {
     const m = JSON.parse(e.data);
     if (m.type === 'snapshot') { const first = !last; last = m; applySnapshot(m, first); }
     else if (m.type === 'action') onAction(m);
+    else if (m.type === 'status') UI.status(m.text);
     else if (m.type === 'log') UI.setLog(m.rows);
     else if (m.type === 'art_content') art.receive(m);
   };
@@ -462,6 +463,7 @@ function applySnapshot(m, teleport) {
   syncObjects(m.objects);
   syncOutfit(m.outfit);
   setMood(s.mood);
+  { const dd = Math.hypot(s.x - robotPos.x, s.z - robotPos.z); walkSpeed = Math.max(1.3, Math.min(6, dd / Math.max(2, m.interval * 0.75))); }
   targetPos.set(s.x, 0, s.z);
   snapHour = m.world.hour; snapAt = performance.now(); intervalMs = m.interval * 1000; paused = s.paused;
   if (teleport && robot) { robotPos.copy(targetPos); robot.position.copy(robotPos); }
@@ -493,7 +495,7 @@ UI.init({ send, art, startPlace, cancelPlace, setFollow: (v) => { follow = v; },
 
 // ------------------------------------------------------------------ frame loop
 const clock = new THREE.Clock(), tmp = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
-let lastClock = '', frameN = 0;
+let lastClock = '', frameN = 0, walkSpeed = 3;
 const shortest = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 function frame() {
   requestAnimationFrame(frame);
@@ -506,9 +508,9 @@ function frame() {
   if (robot) {
     const d = tmp.subVectors(targetPos, robotPos); d.y = 0; const dist = d.length();
     if (dist > 0.12) {
-      const speed = dist > 14 ? 6 : 3; robotPos.addScaledVector(d.normalize(), Math.min(dist, speed * dt));
+      const speed = walkSpeed; robotPos.addScaledVector(d.normalize(), Math.min(dist, speed * dt));
       robot.rotation.y += shortest(Math.atan2(d.x, d.z) - robot.rotation.y) * Math.min(1, dt * 8);
-      const want = speed > 4 ? 'Running' : 'Walking'; holdLoop = null;
+      const want = speed > 4.2 ? 'Running' : 'Walking'; holdLoop = null;
       if (!current || current.name !== want) { oneShot = false; play(want); }
     } else if (current && (current.name === 'Walking' || current.name === 'Running')) {
       if (targetFace) { const f = targetFace.clone().sub(robotPos); robot.rotation.y = Math.atan2(f.x, f.z); }

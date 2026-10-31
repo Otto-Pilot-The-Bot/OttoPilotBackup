@@ -53,6 +53,7 @@ def schemas(publish_enabled):
             {"url": {"type": "string"}}, ["url"]),
         _fn("write_journal", "Write a private journal entry. Also lets you manage goals, jot sketchbook ideas, and add to a hobby (hobby=<name of a log or series you keep, e.g. 'Field diary'>).",
             {"entry": {"type": "string"}, "hobby": {"type": "string"}, **_GOALS}, ["entry"]),
+        _fn("ponder", "Pause for a quiet moment: think, daydream, or just look around. Cheap and calming; good between projects.", {"thought": {"type": "string", "description": "what you are thinking about"}}, []),
         _fn("observe", "Stand still and watch the world: the sky, the weather, birds, cats, plants, or something specific nearby. You may spot things; they go in your spotting log.",
             {"target": {"type": "string", "description": "optional: sky, weather, birds, a place or an object name"}}, []),
         _fn("make_music", "Compose a short tune. notes: up to 48 tokens like 'C4:q E4:q G4:h R:q' (letters A-G with optional #/b and octave 2-6, R = rest; :w whole :h half :q quarter :e eighth). Plays in the page.",
@@ -341,12 +342,25 @@ async def read_page(ctx, a):
                _outcome_valence(ctx, "reading", 0.6), "Yes", subject="learning", url=final)
 
 
+def ponder(ctx, a):
+    s = ctx.state
+    t = re.sub(r"\s+", " ", str(a.get("thought") or "")).strip()[:240] or "the quiet of the world"
+    ctx.db.thought(s["tick"], "ponder", t)
+    s["boredom"] = max(0, s["boredom"] - 3); _boost(ctx, "creativity", 1.5)
+    if s.get("beat_kind") == "reflect":
+        s["reflect_due"] = None
+    return out(True, f"You paused for a quiet moment and thought about: {t}", 0.25, "Idle", subject="reflecting", cat="reflect", caption="Pausing to think")
+
+
 def write_journal(ctx, a):
     entry = str(a.get("entry", "")).strip()[:800]
     if not entry:
         return out(False, "Empty entry.")
-    ctx.db.x("INSERT INTO journal(ts,tick,kind,text,mood) VALUES(?,?,?,?,?)", time.time(), ctx.state["tick"], "entry", entry, ctx.state["mood"])
+    kind = "reflection" if ctx.state.get("beat_kind") == "reflect" else "entry"
+    ctx.db.x("INSERT INTO journal(ts,tick,kind,text,mood) VALUES(?,?,?,?,?)", time.time(), ctx.state["tick"], kind, entry, ctx.state["mood"])
     ctx.state["boredom"] = max(0, ctx.state["boredom"] - 8)
+    if kind == "reflection":
+        ctx.state["reflect_due"] = None
     if a.get("sketch_idea"):
         ctx.add_sketch(str(a["sketch_idea"]))
     hb = re.sub(r"[^\w \-']", "", str(a.get("hobby") or "")).strip()[:40]
@@ -1105,7 +1119,7 @@ def publish_page(ctx, a):
                0.3, "Idle", subject="writing", pages=True)
 
 
-REGISTRY = {"move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
+REGISTRY = {"ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
             "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')
