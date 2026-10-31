@@ -9,17 +9,21 @@ from .world import dist
 
 # ---- zones: where things naturally go --------------------------------------------------------------
 ZONES = {
-    "workshop_yard": {"label": "workshop yard", "c": (-5.0, 4.0), "r": 9.0, "aliases": ["workshop", "yard", "workbench", "build area"]},
-    "garden":        {"label": "garden", "c": (-18.0, -2.0), "r": 6.5, "aliases": ["garden", "park", "plants", "nature", "flower bed"]},
+    "workshop_yard": {"label": "workshop yard", "c": (-5.0, 4.0), "r": 10.0, "aliases": ["workshop", "yard", "workbench", "build area"]},
+    "garden":        {"label": "garden", "c": (-18.0, -3.0), "r": 8.0, "aliases": ["garden", "park", "plants", "nature", "flower bed"]},
     "gallery_front": {"label": "gallery front", "c": (0.0, -10.5), "r": 6.5, "aliases": ["gallery", "art area", "sculpture garden", "exhibit"]},
     "open_field":    {"label": "open field", "c": (5.0, 4.0), "r": 10.0, "aliases": ["field", "meadow", "open", "middle", "center", "centre", "plaza"]},
+    "meadow":        {"label": "east meadow", "c": (17.0, -3.0), "r": 7.0, "aliases": ["east", "east meadow", "grassland"]},
+    "lakeside":      {"label": "lakeside", "c": (-4.0, 16.0), "r": 7.0, "aliases": ["lake", "lakeside", "pond area", "waterside"]},
+    "village":       {"label": "village", "c": (10.0, 16.0), "r": 7.5, "aliases": ["village", "town", "street", "neighbourhood", "neighborhood"]},
+    "orchard":       {"label": "orchard", "c": (-18.0, -15.0), "r": 6.0, "aliases": ["orchard", "grove", "woods", "forest"]},
 }
 # "near <place>" -> where that means
 NEAR_PLACE = {"home": (-5.5, -6.0), "fuel_station": (6.0, -7.5), "clothing_store": (9.0, 12.5), "workshop": None, "gallery": None}
 PLACE_ZONE = {"workshop": "workshop_yard", "gallery": "gallery_front"}
 
 # ---- footprints --------------------------------------------------------------------------------------
-KIND_RADIUS = {"tree": 1.5, "rock": 1.1, "flower": 0.6, "ball": 0.7, "box": 1.0, "lamp": 0.6, "house": 2.6, "fountain": 2.3,
+KIND_RADIUS = {"landscape": 1.2, "ground": 0.05, "tree": 1.5, "rock": 1.1, "flower": 0.6, "ball": 0.7, "box": 1.0, "lamp": 0.6, "house": 2.6, "fountain": 2.3,
                "statue": 1.2, "bench": 1.5, "creature": 1.0, "other": 1.0, "creation": 1.6, "project": 2.3, "sculpture": 1.7}
 
 
@@ -51,16 +55,18 @@ def is_free(objects, x, z, r, margin=config.SPACING_MARGIN, skip_id=None, half=N
         return False
     if _hit_obstacle(x, z, r, margin):
         return False
-    return all(dist(x, z, o["x"], o["z"]) >= radius_of(o) + r + margin for o in objects if o["id"] != skip_id)
+    return all(dist(x, z, o["x"], o["z"]) >= radius_of(o) + r + margin for o in objects if o["id"] != skip_id and o.get("kind") != "ground")
 
 
-def find_spot(objects, cx, cz, r, rng=None, skip_id=None, max_tries=900):
+def find_spot(objects, cx, cz, r, rng=None, skip_id=None, max_tries=900, max_radius=None):
     """Spiral outward (golden angle + random jitter) from (cx,cz) until a free spot is found. None if the world is full."""
     rng = rng or random
     step = 0.9 + r * 0.7
     for i in range(max_tries):
         rad = 0.0 if i == 0 else step * math.sqrt(i) * rng.uniform(0.85, 1.15)
         ang = i * 2.399963 + rng.uniform(-0.45, 0.45)
+        if max_radius and rad > max_radius:
+            return None
         x, z = cx + rad * math.cos(ang) + (rng.uniform(-0.4, 0.4) if i == 0 else 0), cz + rad * math.sin(ang)
         if is_free(objects, x, z, r, skip_id=skip_id):
             return round(x, 2), round(z, 2)
@@ -69,7 +75,7 @@ def find_spot(objects, cx, cz, r, rng=None, skip_id=None, max_tries=900):
 
 def crowding(objects):
     area = (2 * world.half()) ** 2
-    return sum(math.pi * radius_of(o) ** 2 for o in objects) / area
+    return sum(math.pi * radius_of(o) ** 2 for o in objects if o.get("kind") != "ground") / area
 
 
 def maybe_grow(state, objects, log=None):
@@ -93,8 +99,18 @@ def grow(state, log=None):
 
 
 def place(state, objects, cx, cz, r, rng=None, log=None, skip_id=None):
-    """Find a spot near (cx,cz); grow the world if needed. Always returns a position (last resort: far corner of a bigger world)."""
+    """Find a spot near (cx,cz). Order: inside its own zone -> the closest other zones that still have room -> anywhere (growing the world if needed)."""
     maybe_grow(state, objects, log)
+    home = zone_at(cx, cz)
+    order = ([home] if home else []) + sorted((k for k in ZONES if k != home), key=lambda k: dist(cx, cz, *ZONES[k]["c"]))
+    for k in order:
+        zn = ZONES[k]
+        if k != home and zone_used(objects, k) > 0.55:
+            continue
+        centre = (cx, cz) if k == home else zn["c"]
+        spot = find_spot(objects, centre[0], centre[1], r, rng, skip_id=skip_id, max_radius=zn["r"] * 1.25)
+        if spot:
+            return spot, False
     for _ in range(4):
         spot = find_spot(objects, cx, cz, r, rng, skip_id=skip_id)
         if spot:
@@ -110,15 +126,40 @@ _FILLER = re.compile(r"\b(near|next to|beside|by|in|at|around|the|a|an|my|on|to|
 _COORD = re.compile(r"^\(?\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*\)?$")
 
 
+GEN_ZONE = {"house": "village", "cottage": "village", "tower": "village", "shop": "village", "sign": "village", "car": "village", "workshop_building": "workshop_yard",
+            "tree": "garden", "bush": "garden", "flower_bed": "garden", "rock": "garden", "pond": "lakeside", "path": "village", "fence": "garden", "lamp": "village"}
+
+
 def default_zone_for(tags=(), kind=None):
     t = set(tags or ())
+    for g, z in GEN_ZONE.items():
+        if g in t:
+            return z
     if t & {"plant", "tree", "nature", "flower", "cactus", "camp", "fire", "garden", "stone"} or kind in ("tree", "flower", "rock", "fountain", "bench"):
         return "garden"
     if t & {"animal", "creature", "space", "celestial", "vehicle"} or kind in ("creature", "ball"):
         return "open_field"
+    if t & {"wall", "door", "roof", "building", "structure", "stairs"}:
+        return "village"
     if kind == "sculpture":
         return "gallery_front"
     return "workshop_yard"
+
+
+def zone_at(x, z):
+    """The zone a point belongs to (or None)."""
+    best = None
+    for k, zn in ZONES.items():
+        d = dist(x, z, *zn["c"])
+        if d <= zn["r"] * 1.15 and (best is None or d < best[0]):
+            best = (d, k)
+    return best[1] if best else None
+
+
+def zone_used(objects, key):
+    zn = ZONES[key]
+    inside = [o for o in objects if dist(o["x"], o["z"], *zn["c"]) <= zn["r"] and o.get("kind") != "ground"]
+    return sum(math.pi * radius_of(o) ** 2 for o in inside) / (math.pi * zn["r"] ** 2)
 
 
 def resolve_area(text, state, objects, default_zone="workshop_yard"):
@@ -156,8 +197,8 @@ def resolve_area(text, state, objects, default_zone="workshop_yard"):
 def zone_report(objects):
     """Compact list of zones and how filled they are, for his prompt."""
     out = []
-    for z in ZONES.values():
-        inside = [o for o in objects if dist(o["x"], o["z"], *z["c"]) <= z["r"]]
-        used = sum(math.pi * radius_of(o) ** 2 for o in inside) / (math.pi * z["r"] ** 2)
-        out.append(f"{z['label']} ({len(inside)} things, {'roomy' if used < 0.2 else 'filling up' if used < 0.45 else 'crowded'})")
+    for k, z in ZONES.items():
+        n = len([o for o in objects if dist(o["x"], o["z"], *z["c"]) <= z["r"] and o.get("kind") != "ground"])
+        used = zone_used(objects, k)
+        out.append(f"{z['label']} ({n}, {'roomy' if used < 0.2 else 'filling up' if used < 0.45 else 'crowded'})")
     return "; ".join(out)

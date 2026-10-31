@@ -7,7 +7,7 @@ import re
 import time
 from urllib.parse import urlsplit
 
-from . import artcheck, assets, config, design, layout, sanitize, web, world
+from . import artcheck, assets, config, design, kit, layout, sanitize, scriptlang, web, world
 from .world import dist
 
 FEELING_ENUM = list(world.FEELINGS)
@@ -23,12 +23,15 @@ ART_HELP = ("Make a small artwork; it hangs in the gallery. kind=drawing: conten
             "kind=pixel: content is rows of letters (max 32x32) plus palette like 'R=red B=#2244ff' ('.'=empty). "
             "kind=sculpture: content is a JSON list of up to 24 parts like "
             '[{"s":"sphere|box|cone|cylinder|torus","x":0,"y":0.5,"z":0,"size":1,"c":"teal"}] and it stands in the world.')
-BUILD_HELP = ("At the workshop, make something real (an occasional thing, not your main activity). A project goes blueprint -> gather -> build -> finish: call build with the same name "
-              "each time to advance it (empty name continues your current project). Build things with a PURPOSE (for a goal, an interest, "
-              "or something the world lacks); say why in description. LOOK: asset=<name or id from search_assets>, or parts=<JSON list, up to 12, "
-              "each {\"asset\":..} or {\"s\":\"box|sphere|cylinder|cone|torus|plane\",\"size\":[w,h,d],\"c\":color,\"x\",\"y\",\"z\",\"rot\",\"mat\":\"matte|shiny|metal|glow|glass\"}>; "
-              "optional scale, rotation, color (tint), anim (spin|bob|sway|blink), area (a hint like 'garden' or 'near the workshop': the engine picks the exact spot). "
-              "If you give no look, the engine picks the asset that best matches the name. quick=true is only for a tiny trinket.")
+BUILD_HELP = ("At the workshop, make something real (an occasional thing, not your main activity). A project goes blueprint -> gather -> build -> finish: "
+              "call build with the same name each time to advance it (empty name continues your current project). Build for a PURPOSE and say why in description. "
+              "LOOK: choose ONE way: gen=<kit generator> with params={...}; or asset=<model from search_assets>; or parts=<JSON list, up to 12, each {\"gen\":..}, {\"asset\":..} "
+              "or a shape {\"s\":\"box|sphere|cylinder|cone|torus|plane|prism|pyramid\",\"size\":[w,h,d],\"c\":color,\"x\",\"y\",\"z\",\"rot\",\"mat\"}>; or script=<your own short design script>; "
+              "or saved=<name of a design you saved>. Optional: scale, rotation, color (tint), anim (spin|bob|sway|blink), area (a hint like 'garden'; the engine picks the exact spot). "
+              "With no look given, the engine picks what best matches the name. quick=true is only for a tiny trinket.")
+LAND_HELP = ("Shape the land: what=tree|bush|flowers|path|pond|fence|lamp|rocks|ground. kind picks the variety (tree: leaf|pine|blossom|aspen|autumn; path: stone|dirt|brick|sand; "
+             "fence: picket|rail|stone), size is a rough size, color for flowers/ground, area is a hint ('garden', 'lakeside'...). what=ground paints a patch of ground in a color. "
+             "A limited number of landscaping jobs per day.")
 
 
 def _fn(name, desc, props, required):
@@ -55,9 +58,11 @@ def schemas(publish_enabled):
         _fn("search_assets", "Search the library of 3D models you can build with (trees, tents, walls, doors, space things...). Returns names, tags and sizes.",
             {"query": {"type": "string", "description": "e.g. 'tree', 'door', 'space', or empty to browse"}}, []),
         _fn("build", BUILD_HELP,
-            {"name": {"type": "string"}, "description": {"type": "string"}, "asset": {"type": "string"}, "parts": {"type": "string"},
+            {"name": {"type": "string"}, "description": {"type": "string"}, "gen": {"type": "string"}, "params": {"type": "string"},
+             "asset": {"type": "string"}, "parts": {"type": "string"}, "script": {"type": "string"}, "saved": {"type": "string"},
              "scale": {"type": "number"}, "rotation": {"type": "number"}, "color": {"type": "string"}, "anim": {"type": "string"},
              "area": {"type": "string"}, "quick": {"type": "boolean"}, "next_goal": {"type": "string"}}, []),
+        _fn("landscape", LAND_HELP, {"what": {"type": "string"}, "kind": {"type": "string"}, "size": {"type": "number"}, "color": {"type": "string"}, "area": {"type": "string"}}, ["what"]),
         _fn("make_art", ART_HELP,
             {"title": {"type": "string"}, "kind": {"type": "string", "enum": list(artcheck.KINDS)}, "content": {"type": "string"},
              "statement": {"type": "string", "description": "one sentence about what it means to you"}}, ["title", "kind", "content"]),
@@ -424,18 +429,55 @@ def _asset_tags(db, d):
             r = db.one("SELECT tags FROM assets WHERE id=?", p["a"])
             if r:
                 tags |= set(json.loads(r["tags"]))
+        if p.get("g"):
+            tags.add(p["g"])
     return tags
 
 
-def _make_design(ctx, a, name, description, strict):
-    """-> (design|None, error|None). If he gave no look, the engine picks the asset that best matches the name."""
-    has = any(a.get(k) not in (None, "", []) for k in ("asset", "parts"))
-    if has:
+def _jsonish(v):
+    if isinstance(v, (dict, list)) or v in (None, ""):
+        return v
+    try:
+        return json.loads(v)
+    except Exception:
         try:
-            return design.clean_design(ctx.db, a.get("parts"), a.get("asset"), a.get("scale"), a.get("rotation"), a.get("color"), a.get("anim")), None
-        except design.DesignError as e:
-            return None, str(e)
-    return design.auto_design(ctx.db, name, description, a.get("color")), None
+            import ast
+            return ast.literal_eval(v)
+        except Exception:
+            raise design.DesignError("params must be a JSON object like {\"floors\": 2, \"wall\": \"sage\"}")
+
+
+def _make_design(ctx, a, name, description, strict):
+    """-> (design|None, error|None). Ways: saved design, his own script, kit generator, asset, parts, else the engine matches the NAME."""
+    db = ctx.db
+    try:
+        if a.get("saved"):
+            row = db.one("SELECT * FROM designs WHERE lower(name)=lower(?) ORDER BY id DESC", str(a["saved"]).strip())
+            if not row:
+                names = ", ".join(r["name"] for r in db.q("SELECT DISTINCT name FROM designs ORDER BY id DESC LIMIT 8")) or "none yet"
+                return None, f"no saved design called '{a['saved']}' (saved: {names})"
+            db.x("UPDATE designs SET uses=uses+1 WHERE id=?", row["id"])
+            d = json.loads(row["design"])
+            if a.get("color") and world.to_hex(a["color"]):
+                d["tint"] = world.to_hex(a["color"])
+            return d, None
+        if a.get("script"):
+            parts = scriptlang.run_script(a["script"], seed=sum(map(ord, name)) or 1)
+            d = design.clean_design(db, parts=parts, scale=a.get("scale"), rotation=a.get("rotation"), color=a.get("color"), anim=a.get("anim"), max_parts=scriptlang.MAX_PARTS)
+            d["src"] = "script"
+            db.x("INSERT INTO designs(ts,tick,name,kind,script,design) VALUES(?,?,?,?,?,?)", time.time(), ctx.state["tick"], name or "design", "script", str(a["script"])[:scriptlang.MAX_SRC], json.dumps(d))
+            return d, None
+        if any(a.get(k) not in (None, "", []) for k in ("asset", "parts", "gen")):
+            d = design.clean_design(db, a.get("parts"), a.get("asset"), a.get("scale"), a.get("rotation"), a.get("color"), a.get("anim"),
+                                    gen=a.get("gen"), gparams=_jsonish(a.get("params")))
+            d["src"] = "kit" if a.get("gen") else "asset" if a.get("asset") else "parts"
+            return d, None
+    except (design.DesignError, scriptlang.ScriptError, kit.KitError) as e:
+        return None, str(e)
+    d = design.auto_design(db, name, description, a.get("color"))
+    if d:
+        d["src"] = "auto"
+    return d, None
 
 
 def _obj_meta(stage, description, d):
@@ -489,10 +531,10 @@ def build(ctx, a):
             return out(False, f"You already have {len(projs)} projects in progress ({', '.join(p['name'] for p in projs)}). Continue one first.")
         d, err = _make_design(ctx, a, name, desc, True)
         if err:
-            return out(False, f"Design problem: {err}. Fix it and call build again (you can use search_assets).", -0.05)
+            return out(False, f"Design problem: {err}. Fix it and call build again.", -0.05)
         if not d:                                           # no model matches the name and he gave no look: never make a meaningless blob
-            return out(False, f"No model in the library looks like '{name}'. Use search_assets to find one, or call build again with "
-                              f"parts=[...] (up to 12 shapes) or asset=<name> so it really looks like what you call it.", -0.05)
+            return out(False, f"Nothing in the library or the kit looks like '{name}'. Pick gen=<kit generator>, asset=<name> (search_assets), parts=[...] or your own script=... "
+                              f"so it really looks like what you call it.", -0.05)
         quick = _truthy(a.get("quick"))
         tags = _asset_tags(db, d)
         cx, cz, where = layout.resolve_area(a.get("area"), s, ctx.objects(), layout.default_zone_for(tags))
@@ -522,7 +564,7 @@ def build(ctx, a):
     name = proj["name"]
     stage = NEXT_STAGE.get(proj["stage"], "finish")
     d = _design_of(proj)
-    if any(a.get(k) not in (None, "", []) for k in ("asset", "parts")):                      # he may refine the look at any stage
+    if any(a.get(k) not in (None, "", []) for k in ("asset", "parts", "gen", "script", "saved")):   # he may refine the look at any stage
         nd, err = _make_design(ctx, a, name, proj["description"], True)
         if err:
             return out(False, f"Design problem: {err}. Fix it and call build again.", -0.05)
@@ -585,6 +627,65 @@ def _finish(ctx, proj, ng, mishap, lesson, quick=False):
     return out(True, f"You finished '{name}' and it now stands outside the workshop area.{look} "
                      f"{'A small trinket, but yours.' if quick else 'You feel proud!'}{extra} {_feel_text(v)}",
                v, "Dance" if not quick else "ThumbsUp", subject="building", changed_objects=True, mood=None if quick else "proud")
+
+
+# ------------------------------------------------------------------ landscape
+LAND_MAP = {"tree": "tree", "trees": "tree", "bush": "bush", "hedge": "bush", "flowers": "flower_bed", "flower": "flower_bed", "garden": "flower_bed", "flower bed": "flower_bed",
+            "path": "path", "pond": "pond", "fence": "fence", "lamp": "lamp", "rocks": "rock", "rock": "rock"}
+
+
+def landscape(ctx, a):
+    s, db = ctx.state, ctx.db
+    what = str(a.get("what", "")).strip().lower()
+    recent = [t for t in s.get("land_log", []) if t > s["tick"] - 144]
+    if len(recent) >= config.LANDSCAPE_PER_DAY:
+        return out(True, "You have done plenty of landscaping for today. Enjoy the view, or do something else.", 0.0, "Idle", noop=True)
+    if s.get("inside"):
+        _exit(ctx)
+    kind, size, area = str(a.get("kind") or "").strip().lower(), a.get("size"), a.get("area")
+    if what in ("ground", "grass", "lawn", "soil"):
+        hx = world.to_hex(a.get("color"))
+        if not hx:
+            return out(False, f"Give the ground patch a color, e.g. sage, sand, brick, forest or #rrggbb.", -0.05)
+        r = max(1.0, min(8.0, float(size) if isinstance(size, (int, float)) else 3.0))
+        cx, cz, where = layout.resolve_area(area, s, ctx.objects(), "garden") if area else (s["x"], s["z"], "here")
+        n = db.one("SELECT COUNT(*) n FROM objects WHERE kind='ground'")["n"]
+        if n >= config.MAX_GROUND_PATCHES:
+            db.x("DELETE FROM objects WHERE id=(SELECT MIN(id) FROM objects WHERE kind='ground')")
+        db.x("INSERT INTO objects(ts,kind,name,x,z,color,source,meta,radius) VALUES(?,?,?,?,?,?,?,?,?)", time.time(), "ground", f"{world.color_name(hx)} ground",
+             world.clamp(cx), world.clamp(cz), hx, "land", json.dumps({"shape": "square" if "square" in kind else "round", "r": r}), 0.05)
+        s.setdefault("land_log", []).append(s["tick"]); s["land_log"] = s["land_log"][-30:]
+        _boost(ctx, "creativity", 4); s["boredom"] = max(0, s["boredom"] - 8)
+        v = _maker_valence(ctx, "ground", 0.4); ctx.learn("gardening", 0.4)
+        return out(True, f"You painted a patch of {world.color_name(hx)} ground in the {where}. {_feel_text(v)}", v, "ThumbsUp", subject="gardening", changed_objects=True)
+    gen = LAND_MAP.get(what)
+    if not gen:
+        return out(False, f"what must be one of: tree, bush, flowers, path, pond, fence, lamp, rocks, ground.")
+    params = {}
+    if gen == "tree" and kind: params["kind"] = kind
+    elif gen == "bush" and kind: params["kind"] = kind
+    elif gen == "path": params.update({"material": kind or "stone", "length": size or 6})
+    elif gen == "pond": params["r"] = size or 2.2
+    elif gen == "fence": params.update({"style": kind or "picket", "length": size or 5})
+    elif gen == "flower_bed": params.update({"colors": a.get("color") or "rose, gold, plum", "w": size or 2.4})
+    elif gen == "rock": params["size"] = size or 1.0
+    elif gen == "lamp" and kind: params["style"] = kind
+    params["seed"] = random.randint(0, 999)
+    try:
+        d = design.clean_design(db, gen=gen, gparams=params)
+    except design.DesignError as e:
+        return out(False, f"Could not do that: {e}.")
+    rad = min(d["radius"], 3.2) + 0.3 if gen == "path" else d["radius"] + 0.3
+    dz = layout.default_zone_for({gen})
+    cx, cz, where = layout.resolve_area(area, s, ctx.objects(), dz)
+    (x, z), _ = ctx.place_near(cx, cz, rad)
+    label = f"{kind + ' ' if kind and gen in ('tree', 'bush', 'fence', 'path') else ''}{what}".strip().title()
+    oid = db.x("INSERT INTO objects(ts,kind,name,x,z,color,source,meta,radius) VALUES(?,?,?,?,?,?,?,?,?)", time.time(), "landscape", label[:30], x, z, "#6fa055", "land",
+               json.dumps({"stage": "finished", "description": f"landscaping: {label}", "design": d}), rad)
+    s.setdefault("land_log", []).append(s["tick"]); s["land_log"] = s["land_log"][-30:]
+    s["boredom"] = max(0, s["boredom"] - 12); _boost(ctx, "creativity", 6)
+    v = _maker_valence(ctx, "gardening", 0.5); ctx.learn("gardening", 0.6)
+    return out(True, f"You added a {label.lower()} in the {where}. {_feel_text(v)}", v, "ThumbsUp", subject="gardening", changed_objects=True)
 
 
 # ------------------------------------------------------------------ art
@@ -652,7 +753,7 @@ def publish_page(ctx, a):
 
 
 REGISTRY = {"move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
-            "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "make_art": make_art, "publish_page": publish_page}
+            "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "make_art": make_art, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')
 

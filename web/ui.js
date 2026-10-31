@@ -65,6 +65,7 @@ const PANELS = [
     } else if (thingsTab === 'built') {
       tb.innerHTML = s.built.length ? s.built.map((b) => { const th = b.obj_id ? api.thumb(b.obj_id) : null; return `<div class="card row">${th ? `<img class="thumb" alt="" src="${th}">` : `<span class="sw" style="background:${esc(b.color || '#ccc')}"></span>`}<div><div class="t">${esc(b.name)}</div><div class="meta">${esc(b.description || '')} · ${ago(b.ts)}</div></div></div>`; }).join('')
         : '<div class="empty">He has not finished a build yet.</div>';
+      if (s.designs && s.designs.length) tb.innerHTML += `<h3>Designs he scripted &amp; saved</h3>` + s.designs.map((d) => `<div class="card"><div class="t">📐 ${esc(d.name)} <span class="chip">reused ${d.uses}×</span></div><details><summary class="small">Show his script</summary><pre class="log" style="max-height:160px">${esc(d.script)}</pre></details><div class="meta">${ago(d.ts)}</div></div>`).join('');
     } else if (thingsTab === 'wear') {
       const slots = [['hat', 'Hat'], ['goggles', 'Goggles'], ['scarf', 'Scarf'], ['antenna', 'Antenna'], ['body', 'Paint']];
       const fav = s.prefs.filter((p) => p.subject.endsWith(' color') && p.score > 0.3).slice(0, 5);

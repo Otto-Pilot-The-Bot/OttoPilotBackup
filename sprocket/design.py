@@ -4,9 +4,9 @@ import ast
 import json
 import math
 
-from . import assets, world
+from . import assets, kit, world
 
-SHAPES = ("box", "sphere", "cylinder", "cone", "torus", "plane")
+SHAPES = ("box", "sphere", "cylinder", "cone", "torus", "plane", "prism", "pyramid")
 MATS = ("matte", "shiny", "metal", "glow", "glass")
 ANIMS = ("none", "spin", "bob", "sway", "blink")
 MAX_PARTS, MAX_TRIS = 12, 24000
@@ -49,17 +49,21 @@ def parse_parts(raw):
     return raw
 
 
-def clean_design(db, parts=None, asset=None, scale=None, rotation=None, color=None, anim=None):
+def clean_design(db, parts=None, asset=None, scale=None, rotation=None, color=None, anim=None, gen=None, gparams=None, max_parts=MAX_PARTS):
     """Returns {"parts":[...], "anim":..., "height":..., "radius":..., "summary":"..."} or raises DesignError (message is for the model)."""
     raw = parse_parts(parts)
+    big = max_parts > MAX_PARTS                                  # script designs may be larger and use bigger shapes
+    pmax, cmax = (12.0, 12.0) if big else (4.0, 6.0)
+    if gen:
+        raw = [{"gen": gen, **(gparams if isinstance(gparams, dict) else {})}] + list(raw)
     if asset and not raw:
         raw = [{"asset": asset}]
     elif asset and raw:
         raw = [{"asset": asset}] + raw
     if not raw:
         raise DesignError("give an asset (see search_assets) or parts")
-    if len(raw) > MAX_PARTS:
-        raise DesignError(f"at most {MAX_PARTS} parts (you gave {len(raw)})")
+    if len(raw) > max_parts:
+        raise DesignError(f"at most {max_parts} parts (you gave {len(raw)})")
     out, tris, extent, top, names = [], 0, 0.0, 0.0, []
     g_scale = _num(scale, 1.0, 0.3, 3.0)
     g_rot = _num(rotation, 0.0, -720, 720)
@@ -68,12 +72,23 @@ def clean_design(db, parts=None, asset=None, scale=None, rotation=None, color=No
         if not isinstance(p, dict):
             raise DesignError("every part must be an object")
         pos = _vec(p.get("offset"), [0, 0, 0]) if p.get("offset") else [0, 0, 0]
-        x, y, z = _num(p.get("x"), pos[0], -6, 6), _num(p.get("y"), pos[1], -1, 8), _num(p.get("z"), pos[2], -6, 6)
+        x, y, z = _num(p.get("x"), pos[0], -cmax, cmax), _num(p.get("y"), pos[1], -1, 12 if big else 8), _num(p.get("z"), pos[2], -cmax, cmax)
         rot = p.get("rot", p.get("rotation", p.get("r", 0)))
         rv = _vec(rot, [0, 0, 0]) if isinstance(rot, (list, tuple)) else [0, _num(rot, 0, -720, 720), 0]
         col = world.to_hex(p.get("c") or p.get("color"))
         a_ref = p.get("asset") or p.get("a")
-        if a_ref:
+        g_ref = p.get("gen") or p.get("g")
+        if g_ref:                                                        # a generator from the builder kit
+            try:
+                kp = kit.clean(g_ref, p.get("params") or {k: v for k, v in p.items() if k not in ("gen", "g", "x", "y", "z", "rot", "rotation", "r", "scale", "anim", "params", "c", "color")})
+            except kit.KitError as e:
+                raise DesignError(str(e))
+            sc = _num(p.get("scale"), 1.0, 0.4, 2.5)
+            pp = kp["pp"]
+            part = {"g": kp["g"], "pp": pp, "x": x, "y": y, "z": z, "s": round(sc, 3), "r": rv}
+            hw, hh = max(pp["w_"], pp["d_"]) * sc / 2, pp["h_"] * sc
+            names.append(kp["g"])
+        elif a_ref:
             row = assets.find(db, a_ref)
             if not row:
                 hits = [h["name"] for h in assets.search(db, str(a_ref), 4)]
@@ -90,10 +105,10 @@ def clean_design(db, parts=None, asset=None, scale=None, rotation=None, color=No
                 raise DesignError(f"shape must be one of {', '.join(SHAPES)} (or give an asset)")
             size = p.get("size", p.get("dims"))
             if isinstance(size, (list, tuple)):
-                w, h, d = [_num(v, 1.0, 0.05, 4.0) for v in (list(size) + [size[-1]] * 3)[:3]]
+                w, h, d = [_num(v, 1.0, 0.05, pmax) for v in (list(size) + [size[-1]] * 3)[:3]]
             else:
-                base = _num(size, 1.0, 0.05, 4.0)
-                w, h, d = _num(p.get("w", p.get("sx")), base, 0.05, 4.0), _num(p.get("h", p.get("sy")), base, 0.05, 4.0), _num(p.get("d", p.get("sz")), base, 0.05, 4.0)
+                base = _num(size, 1.0, 0.05, pmax)
+                w, h, d = _num(p.get("w", p.get("sx")), base, 0.05, pmax), _num(p.get("h", p.get("sy")), base, 0.05, pmax), _num(p.get("d", p.get("sz")), base, 0.05, pmax)
             mat = str(p.get("mat") or p.get("material") or p.get("m") or "matte").lower()
             part = {"p": shape, "x": x, "y": y, "z": z, "w": round(w, 3), "h": round(h, 3), "d": round(d, 3), "r": rv,
                     "c": col or "#b0bec5", "m": mat if mat in MATS else "matte"}
@@ -109,15 +124,21 @@ def clean_design(db, parts=None, asset=None, scale=None, rotation=None, color=No
         raise DesignError(f"too many polygons ({tris}); use fewer or simpler assets")
     ga = str(anim or "").lower()
     d = {"parts": out, "anim": ga if ga in ANIMS and ga != "none" else None, "scale": round(g_scale, 3), "rot": round(g_rot, 1),
-         "tint": g_tint, "height": round(top, 2), "radius": round(max(0.5, min(7.0, extent)), 2)}
+         "tint": g_tint, "height": round(top, 2), "radius": round(max(0.5, min(12.0 if big else 7.0, extent)), 2)}
     d["summary"] = ", ".join(dict.fromkeys(names))[:80]
     return d
 
 
 def auto_design(db, name, description="", color=None):
-    """When he does not specify a design, pick the best-matching asset for the NAME so the object looks like what it is called."""
+    """When he does not specify a design, pick what best matches the NAME (a model, else a kit generator) so the object looks like what it is called."""
     row, sc = assets.best_match(db, name)
     if not row:
+        g = kit.match_name(name)
+        if g:
+            try:
+                return clean_design(db, gen=g, gparams={"wall": color} if color and g in ("house", "cottage", "tower", "shop", "workshop_building") else {})
+            except DesignError:
+                return None
         return None
     try:
         return clean_design(db, asset=row["id"], color=color)

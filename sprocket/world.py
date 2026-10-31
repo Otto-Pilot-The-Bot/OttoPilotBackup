@@ -23,7 +23,11 @@ KIND_VERB = {"tree": "touched the bark of", "rock": "knocked on", "flower": "sni
 
 COLORS = {"red": "#e53935", "orange": "#fb8c00", "yellow": "#fdd835", "green": "#43a047", "teal": "#00897b",
           "blue": "#1e88e5", "navy": "#1a237e", "purple": "#8e24aa", "pink": "#ec407a", "white": "#f5f5f5",
-          "black": "#212121", "grey": "#9e9e9e", "brown": "#6d4c41", "gold": "#ffc107", "silver": "#b0bec5"}
+          "black": "#212121", "grey": "#9e9e9e", "brown": "#6d4c41", "gold": "#ffc107", "silver": "#b0bec5",
+          # the soft palette of the city kit
+          "cream": "#f4e8cc", "tan": "#e8caa4", "sage": "#dbe5d1", "ivory": "#f1eee2", "terracotta": "#c4604b", "brick": "#b5694f",
+          "slate": "#6e8da3", "plum": "#7d6c92", "forest": "#5f8159", "olive": "#8a9a4a", "sky": "#8fb9cd", "rose": "#eaa0b4",
+          "charcoal": "#3b3a3f", "stone": "#c9c2b2", "sand": "#e6d3a0", "wood": "#8a6240"}
 
 FEELINGS = {"happy": 1.0, "excited": 1.0, "proud": 0.9, "content": 0.5, "curious": 0.4, "surprised": 0.1,
             "tired": -0.3, "bored": -0.4, "scared": -0.7, "sad": -0.8, "angry": -0.8}

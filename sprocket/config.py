@@ -52,7 +52,7 @@ MOVE_COST_PER_UNIT = {"energy": 0.025, "battery": 0.020}      # walking a full 1
 ACTION_COST = {                 # extra cost when an action is actually carried out: (energy, battery)
     "build": (0.50, 0.35), "make_art": (0.40, 0.30), "interact_with": (0.10, 0.06), "shop": (0.10, 0.06),
     "search_web": (0.03, 0.05), "read_page": (0.02, 0.04), "write_journal": (0.01, 0.02),
-    "move_to": (0.0, 0.0), "eat": (0.0, 0.0), "rest": (0.0, 0.0), "publish_page": (0.03, 0.03),
+    "move_to": (0.0, 0.0), "eat": (0.0, 0.0), "landscape": (0.30, 0.20), "rest": (0.0, 0.0), "publish_page": (0.03, 0.03),
 }
 REST_RESTORE_HOME = 100.0       # resting at the home pad refills energy completely...
 REST_BATTERY_TRICKLE_HOME = 25.0   # ...and trickle-charges the battery
@@ -108,3 +108,5 @@ PAGE_MIN_CHARS, PAGE_MAX_CHARS, TITLE_MAX = 40, 8000, 90
 DRYRUN_DIR = ROOT / "site_dryrun"
 SITE_CLONE_DIR = ROOT / "site"
 PRIVATE_TERMS_FILE = ROOT / "data" / "private_terms.txt"   # optional: one word/phrase per line that must never appear on his site (e.g. your real name)
+LANDSCAPE_PER_DAY = 8              # landscaping actions per world day (144 ticks)
+MAX_GROUND_PATCHES = 14

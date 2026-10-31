@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as UI from './ui.js';
 import { ArtStore } from './art.js';
-import { buildDesign, animateDesign, mixers, glowMats } from './models.js';
+import { buildDesign, animateDesign, mixers, glowMats, kitGlow } from './models.js';
 
 const HALF = 24;
 
@@ -58,10 +58,10 @@ function label(text, scale = 1, color = '#fff') {
 const key = (arr, h) => { for (let i = 1; i < arr.length; i++) if (h <= arr[i][0]) { const [h0, a] = arr[i - 1], [h1, b] = arr[i], t = (h - h0) / (h1 - h0 || 1); return [a, b, t]; } const l = arr.at(-1)[1]; return [l, l, 0]; };
 const numAt = (arr, h) => { const [a, b, t] = key(arr, h); return a + (b - a) * t; };
 const colAt = (arr, h) => { const [a, b, t] = key(arr, h); return new THREE.Color(a).lerp(new THREE.Color(b), t); };
-const SKY = [[0, 0x2f3d73], [5, 0x2f3d73], [6.5, 0xf0b48a], [8, 0x9ec5e8], [17, 0x9ec5e8], [18.5, 0xf0a070], [20, 0x34427a], [24, 0x2f3d73]];
+const SKY = [[0, 0x4a5c94], [5, 0x4a5c94], [6.5, 0xf4c49a], [8, 0x9ec5e8], [17, 0x9ec5e8], [18.5, 0xf2b080], [20, 0x52659e], [24, 0x4a5c94]];
 const SUNC = [[0, 0x9fb0ff], [5, 0x9fb0ff], [6.5, 0xffb070], [8, 0xfff2d6], [17, 0xfff2d6], [18.5, 0xffa060], [20, 0x9fb0ff], [24, 0x9fb0ff]];
-const SUNI = [[0, 0.9], [5, 0.9], [6.5, 1.3], [8, 2.2], [17, 2.2], [18.5, 1.3], [20, 0.9], [24, 0.9]];
-const HEMI = [[0, 0.75], [5, 0.75], [6.5, 0.8], [8, 1], [17, 1], [18.5, 0.8], [20, 0.75], [24, 0.75]];
+const SUNI = [[0, 1.3], [5, 1.3], [6.5, 1.6], [8, 2.2], [17, 2.2], [18.5, 1.6], [20, 1.3], [24, 1.3]];
+const HEMI = [[0, 1.05], [5, 1.05], [6.5, 1.0], [8, 1], [17, 1], [18.5, 1.0], [20, 1.05], [24, 1.05]];
 const lampMats = [];
 let nightness = 0;
 function applyTime(h) {
@@ -69,7 +69,7 @@ function applyTime(h) {
   scene.background.copy(sky); scene.fog.color.copy(sky);
   sun.color.copy(colAt(SUNC, h)); sun.intensity = numAt(SUNI, h); hemi.intensity = numAt(HEMI, h);
   if (h > 6 && h < 18) { const a = ((h - 6) / 12) * Math.PI; sun.position.set(Math.cos(a) * 36, Math.sin(a) * 30 + 3, 12); } else sun.position.set(-20, 28, -8);
-  nightness = 1 - Math.min(1, Math.max(0, (numAt(SUNI, h) - 0.9) / 1.3));
+  nightness = 1 - Math.min(1, Math.max(0, (numAt(SUNI, h) - 1.3) / 0.9));
   for (const m of lampMats) m.emissiveIntensity = 0.5 + nightness * 2.2;
 }
 
@@ -231,6 +231,8 @@ function makeObject(o, thumb = false) {
     case 'bench': g.add(mesh(new THREE.BoxGeometry(2.2, 0.15, 0.7), m, 0, 0.6, 0)); g.add(mesh(new THREE.BoxGeometry(2.2, 0.6, 0.12), m, 0, 1, -0.3)); for (const x of [-0.9, 0.9]) g.add(mesh(new THREE.BoxGeometry(0.12, 0.6, 0.6), mat(0x444444), x, 0.3, 0)); break;
     case 'creature': g.add(mesh(new THREE.SphereGeometry(0.7, 16, 12), m, 0, 0.7, 0)); for (const x of [-0.25, 0.25]) { g.add(mesh(new THREE.SphereGeometry(0.15), mat(0xffffff), x, 0.95, 0.55)); g.add(mesh(new THREE.SphereGeometry(0.07), mat(0x111111), x, 0.95, 0.68)); } break;
     case 'project': g.add(makeProject(o, stage || 'blueprint', c)); labelY = 3; break;
+    case 'ground': { const sq = o.meta?.shape === 'square', rr = o.meta?.r || 2; const gm = new THREE.Mesh(sq ? new THREE.PlaneGeometry(rr * 2, rr * 2) : new THREE.CircleGeometry(rr, 28), new THREE.MeshStandardMaterial({ color: c, roughness: 1 })); gm.rotation.x = -Math.PI / 2; gm.position.y = 0.012 + (o.id % 7) * 0.0015; gm.receiveShadow = true; g.add(gm); labelY = 0.4; break; }
+    case 'landscape':
     case 'creation': {
       if (o.meta?.design) { const dg = buildDesign(o.meta.design, o.color); g.add(dg); g.userData.design = dg; labelY = Math.max(2.2, (o.meta.design.height || 1.5) + 0.9); break; }
       const b = mesh(creationGeo(o.name), mat(c, { metalness: 0.4, roughness: 0.4 }), 0, 1.0, 0); b.userData.spin = true; g.add(b); g.add(mesh(new THREE.CylinderGeometry(0.6, 0.7, 0.3, 16), mat(0x37474f), 0, 0.15, 0)); break; }
@@ -247,10 +249,11 @@ function makeObject(o, thumb = false) {
   const tag = o.kind === 'project' ? `${o.name} · ${stage || 'blueprint'}` : o.name;
   g.userData.objId = o.id;
   g.userData.tip = { name: o.name, kind: o.kind, text: o.meta?.description || '', look: o.meta?.design?.summary || '', stage: o.kind === 'project' ? stage : '' };
-  if (!thumb) {
+  if (!thumb && o.kind !== 'ground') {
     const l = label(tag, 0.6); l.position.y = labelY; g.add(l); g.userData.label = l;
     g.userData.born = performance.now(); g.scale.setScalar(0.01);
   }
+  else if (!thumb) { g.userData.born = performance.now() - 5000; }
   g.position.set(o.x, 0, o.z);
   return g;
 }
@@ -521,6 +524,7 @@ function frame() {
   fadeBuildings(dt);
   for (const m of mixers) m.update(dt);
   for (const m of glowMats) m.emissiveIntensity = 1.0 + nightness * 1.6;
+  for (const m of kitGlow) m.emissiveIntensity = 0.9 + nightness * 1.8;
   for (const g of objMeshes.values()) {
     if (g.userData.design) animateDesign(g.userData.design, tsec, dt);
     const age = (now - g.userData.born) / 600; g.scale.setScalar(Math.min(1, 0.01 + age) * (age < 1 ? 1 + Math.sin(age * Math.PI) * 0.25 : 1));

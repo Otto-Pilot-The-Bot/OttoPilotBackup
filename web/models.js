@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as skClone } from 'three/addons/utils/SkeletonUtils.js';
+import { buildGen, prismGeo, pyramidGeo, kitGlow } from './kit/gens.js';
 
 const FIT_MIN = 0.6, FIT_MAX = 5.0, KEEP_LO = 0.4, KEEP_HI = 6.0;   // same rule as the server's footprint calculation
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -15,6 +16,7 @@ const MAX_PARALLEL = 3;
 
 export const mixers = new Set();      // AnimationMixers of models that carry their own animations
 export const glowMats = new Set();    // glowing materials (boosted at night by main.js)
+export { kitGlow };
 
 function pump() {
   while (active < MAX_PARALLEL && waiting.length) {
@@ -69,6 +71,8 @@ const GEO = {
   cone: (w, h, d) => { const g = new THREE.ConeGeometry(0.5, 1, 22); g.scale(w, h, d); return g; },
   torus: (w, h, d) => { const g = new THREE.TorusGeometry(0.38, 0.13, 12, 28); g.scale(w, h, d); return g; },
   plane: (w, h, d) => { const g = new THREE.PlaneGeometry(w, d); g.rotateX(-Math.PI / 2); return g; },
+  prism: (w, h, d) => prismGeo(w, h, d),
+  pyramid: (w, h, d) => pyramidGeo(w, h, d),
 };
 const rad = (d) => (d || 0) * Math.PI / 180;
 
@@ -90,7 +94,10 @@ export function buildDesign(design, objectColor) {
     node.position.set(p.x || 0, p.y || 0, p.z || 0);
     const r = p.r || [0, 0, 0];
     node.rotation.set(rad(r[0]), rad(r[1]), rad(r[2]));
-    if (p.a) {                                                              // model from the asset library
+    if (p.g) {                                                              // generator from the builder kit (already validated server-side)
+      node.scale.setScalar(p.s || 1);
+      node.add(buildGen(p.g, p.pp || {}));
+    } else if (p.a) {                                                       // model from the asset library
       node.scale.setScalar(p.s || 1);
       const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xcfc6b0, transparent: true, opacity: 0.35 }));
       ph.position.y = 0.4; node.add(ph);                                    // placeholder until the model arrives

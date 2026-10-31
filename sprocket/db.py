@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS asset_packs(pack TEXT PRIMARY KEY, path TEXT, n INT, 
 CREATE TABLE IF NOT EXISTS blocked_sites(host TEXT PRIMARY KEY, ts REAL, until REAL, reason TEXT, hits INT);
 CREATE TABLE IF NOT EXISTS publish_log(id INTEGER PRIMARY KEY, ts REAL, page_id INT, title TEXT, slug TEXT, mode TEXT, ok INT,
   commit_sha TEXT, url TEXT, commit_url TEXT, error TEXT);
+CREATE TABLE IF NOT EXISTS designs(id INTEGER PRIMARY KEY, ts REAL, tick INT, name TEXT, kind TEXT, script TEXT, design TEXT, uses INT DEFAULT 0);
 CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY, ts REAL, what TEXT);
 """
 
