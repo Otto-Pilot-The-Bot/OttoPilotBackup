@@ -89,16 +89,18 @@ function wallsWithDoor(g, w, h, d, cz, color, doorW = 1.8, doorH = 2.0, doorSide
   box(g, doorW, h - doorH, 0.2, 0, doorH + (h - doorH) / 2, fz, wm);                  // lintel
 }
 function buildPlaces(P) {
-  // ---- home: a small cabin with an open front and a bed
+  const FB = P.home.enter;                                  // fixed buildings exist only if the server says places are enterable
   const home = new THREE.Group(); home.position.set(P.home.x, 0, P.home.z);
   home.add(mesh(new THREE.CylinderGeometry(3.4, 3.4, 0.2, 32), mat(0x7e8fa8), 0, 0.1, 0));
+  if (FB) {
   startBuilding('home');
   const hm = shell(wallMats, 0xd9c7a3);
   box(home, 4.6, 2.6, 0.2, 0, 1.3, -1.9, hm); box(home, 0.2, 2.6, 3.8, -2.3, 1.3, 0, hm); box(home, 0.2, 2.6, 3.8, 2.3, 1.3, 0, hm);
   box(home, 5.2, 0.25, 4.6, 0, 2.72, 0, shell(roofMats, 0x8d3b2e));
   box(home, 2.0, 0.45, 1.2, -1.1, 0.45, -1.0, mat(0xd9534f)); box(home, 0.7, 0.2, 0.8, -1.6, 0.8, -1.0, mat(0xffffff));
   const lamp = mat(0xffe29a, { emissive: 0xffd36a, emissiveIntensity: 0.8 }); lampMats.push(lamp); box(home, 0.4, 0.4, 0.4, 1.6, 0.45, -1.3, lamp);
-  addLabel(home, 'home', 0.8, 3.8); scene.add(home);
+  }
+  addLabel(home, FB ? 'home' : 'home pad', 0.8, FB ? 3.8 : 1.2); scene.add(home);
 
   // ---- fuel station (not enterable)
   const fuel = new THREE.Group(); fuel.position.set(P.fuel_station.x, 0, P.fuel_station.z);
@@ -109,6 +111,7 @@ function buildPlaces(P) {
   fuel.add(mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.4), mat(0x222222), 0.9, 0.9, 0));
   addLabel(fuel, 'fuel station', 0.8, 3.2); scene.add(fuel);
 
+  if (!FB) return;
   // ---- clothing store: racks, mirror, counter inside
   const store = new THREE.Group(); store.position.set(P.clothing_store.x, 0, P.clothing_store.z);
   store.add(mesh(new THREE.BoxGeometry(5.2, 0.12, 4.2), mat(0xe8dcc0), 0, 0.06, -1.5));

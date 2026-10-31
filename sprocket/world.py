@@ -16,6 +16,10 @@ PLACES = {
                       "enter": True, "inside": [-14.4, 10.6]},
 }
 
+if not config.FIXED_BUILDINGS:                      # no buildings to walk into: places stay as named spots (pads)
+    for _p in PLACES.values():
+        _p.pop("enter", None); _p.pop("inside", None)
+
 KINDS = ["tree", "rock", "flower", "ball", "box", "lamp", "house", "fountain", "statue", "bench", "creature", "other"]
 KIND_VERB = {"tree": "touched the bark of", "rock": "knocked on", "flower": "sniffed", "ball": "kicked", "box": "peeked inside",
              "lamp": "studied the glow of", "house": "knocked on the door of", "fountain": "dipped a hand into",

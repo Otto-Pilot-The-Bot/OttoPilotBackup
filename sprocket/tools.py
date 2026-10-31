@@ -275,7 +275,7 @@ def rest(ctx, a):
         return out(True, f"You are not tired (energy {s['energy']:.0f}%). You sit quietly for a moment.", 0.05, "Sitting", noop=True)
     home = world.PLACES["home"]
     at_home = s.get("inside") == "home" or dist(s["x"], s["z"], home["x"], home["z"]) <= config.REACH
-    if at_home and s.get("inside") != "home":
+    if at_home and s.get("inside") != "home" and home.get("enter"):
         _enter(ctx, "home")
     was, bat = s["energy"], s["battery"]
     if at_home:
@@ -283,7 +283,7 @@ def rest(ctx, a):
         s["battery"] = min(100.0, bat + config.REST_BATTERY_TRICKLE_HOME)
         s["boredom"] = min(100.0, s["boredom"] + 3)
         v = 1.0 if was < config.LOW_HINT else 0.5
-        return out(True, f"You curled up in the cabin and recharged: energy {was:.0f} -> {s['energy']:.0f}, battery {bat:.0f} -> {s['battery']:.0f}.",
+        return out(True, f"You curled up {'in the cabin' if home.get('enter') else 'on the home pad'} and recharged: energy {was:.0f} -> {s['energy']:.0f}, battery {bat:.0f} -> {s['battery']:.0f}.",
                    v, "Sitting", subject="resting")
     bench = next((o for o in ctx.objects() if o["kind"] == "poi" and "bench" in o["name"].lower() and dist(s["x"], s["z"], o["x"], o["z"]) <= config.REACH + 1.5), None)
     s["energy"] = min(100.0, was + config.REST_RESTORE_AWAY + (config.BENCH_RESTORE if bench else 0))

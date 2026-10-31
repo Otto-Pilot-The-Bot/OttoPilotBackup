@@ -159,3 +159,6 @@ BUILDING_ENABLED = os.environ.get("SPROCKET_BUILDING", "0").lower() in ("1", "tr
 WISHES_PER_DAY = 3               # new wishes per world day (144 ticks)
 WISH_MAX_OPEN = 6                # open wishes at once
 WISH_DECLINE_COOLDOWN = 600      # ticks during which a declined wish (or anything like it) is not asked for again
+
+# Fixed buildings (home cabin, clothing store, workshop, gallery). Off: the places remain as plain named spots/pads, nothing to enter or see.
+FIXED_BUILDINGS = os.environ.get("SPROCKET_FIXED_BUILDINGS", "0").lower() in ("1", "true", "yes")
