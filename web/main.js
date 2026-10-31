@@ -268,7 +268,7 @@ function syncObjects(list) {
     if (cur) scene.remove(cur);
     const g = makeObject(o); g.userData.sig = sig; g.position.set(o.x, 0, o.z); scene.add(g); objMeshes.set(o.id, g);
   }
-  for (const o of list) { const g = objMeshes.get(o.id); if (g && (g.position.x !== o.x || g.position.z !== o.z)) g.position.set(o.x, 0, o.z); }   // the engine may move things
+  for (const o of list) { const g = objMeshes.get(o.id); if (g && (g.position.x !== o.x || g.position.z !== o.z)) g.userData.glide = { x: o.x, z: o.z }; }   // the engine may move things
   objectsById = new Map(list.map((o) => [o.id, o]));
   for (const [id, g] of objMeshes) if (!ids.has(id)) { scene.remove(g); objMeshes.delete(id); }
 }
@@ -529,6 +529,7 @@ function frame() {
   for (const m of kitGlow) m.emissiveIntensity = 0.9 + nightness * 1.8;
   for (const g of objMeshes.values()) {
     if (g.userData.design) animateDesign(g.userData.design, tsec, dt);
+    if (g.userData.glide) { const gl = g.userData.glide, k = Math.min(1, dt * 3); g.position.x += (gl.x - g.position.x) * k; g.position.z += (gl.z - g.position.z) * k; if (Math.hypot(gl.x - g.position.x, gl.z - g.position.z) < 0.03) { g.position.set(gl.x, 0, gl.z); g.userData.glide = null; } }
     if (g.userData.bob) { g.userData.bob.position.y = 0.3 + Math.sin(tsec * 2 + g.position.x) * 0.06; g.userData.bob.rotation.y += dt; }
     const age = (now - g.userData.born) / 600; g.scale.setScalar(Math.min(1, 0.01 + age) * (age < 1 ? 1 + Math.sin(age * Math.PI) * 0.25 : 1));
     g.children.forEach((c) => { if (c.userData.spin) c.rotation.y += dt * 0.8; });

@@ -52,7 +52,7 @@ MOVE_COST_PER_UNIT = {"energy": 0.025, "battery": 0.020}      # walking a full 1
 ACTION_COST = {                 # extra cost when an action is actually carried out: (energy, battery)
     "build": (0.50, 0.35), "make_art": (0.40, 0.30), "interact_with": (0.10, 0.06), "shop": (0.10, 0.06),
     "search_web": (0.03, 0.05), "read_page": (0.02, 0.04), "write_journal": (0.01, 0.02),
-    "move_to": (0.0, 0.0), "eat": (0.0, 0.0), "landscape": (0.30, 0.20), "observe": (0.03, 0.04), "make_music": (0.15, 0.10), "tend": (0.15, 0.10), "collect": (0.08, 0.06), "rest": (0.0, 0.0), "publish_page": (0.03, 0.03),
+    "move_to": (0.0, 0.0), "eat": (0.0, 0.0), "landscape": (0.30, 0.20), "arrange": (0.25, 0.15), "observe": (0.03, 0.04), "make_music": (0.15, 0.10), "tend": (0.15, 0.10), "collect": (0.08, 0.06), "rest": (0.0, 0.0), "publish_page": (0.03, 0.03),
 }
 REST_RESTORE_HOME = 100.0       # resting at the home pad refills energy completely...
 REST_BATTERY_TRICKLE_HOME = 25.0   # ...and trickle-charges the battery
@@ -112,7 +112,7 @@ LANDSCAPE_PER_DAY = 8              # landscaping actions per world day (144 tick
 MAX_GROUND_PATCHES = 14
 
 # --- a full life (Stage 3): activity categories, variety pressure, interests, hobbies ---
-CATEGORIES = ("explore", "observe", "learn", "art", "music", "write", "garden", "collect", "socialize", "rest", "build")
+CATEGORIES = ("explore", "observe", "learn", "art", "music", "write", "garden", "collect", "socialize", "rest", "build", "organize")
 NOVELTY_AFTER = 25               # a category not done for this many ticks feels fresh (novelty bonus, extra boredom relief)
 REPEAT_PENALTY = 0.18            # each repeat of the same category in the last 6 actions makes it less rewarding
 LATELY_WINDOW = 20               # the "lately you have mostly done..." line looks at this many actions
@@ -133,3 +133,6 @@ RECALL_POOL = 800               # most recent memories considered (plus all impo
 EMBED_BATCH = 16
 SNACK_RESTORE = 45.0              # a snack machine refuels less than the fuel station
 BENCH_RESTORE = 15.0
+ARRANGE_PER_DAY = 6                # arrange jobs per world day (144 ticks)
+ARRANGE_MAX_OBJECTS = 8
+ATTRACT_DECAY = 0.96             # per tick; things placed in his world pull on him, fading unless he goes to them

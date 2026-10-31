@@ -29,6 +29,8 @@ BUILD_HELP = ("At the workshop, make something real (an occasional thing, not yo
               "or a shape {\"s\":\"box|sphere|cylinder|cone|torus|plane|prism|pyramid\",\"size\":[w,h,d],\"c\":color,\"x\",\"y\",\"z\",\"rot\",\"mat\"}>; or script=<your own short design script>; "
               "or saved=<name of a design you saved>. Optional: scale, rotation, color (tint), anim (spin|bob|sway|blink), area (a hint like 'garden'; the engine picks the exact spot). "
               "With no look given, the engine picks what best matches the name. quick=true is only for a tiny trinket.")
+ARRANGE_HELP = ("Organize the world: move things you already placed or built. what = an object name (or several, comma separated), 'all trees', or an area name to tidy. "
+                "pattern: move (to the spot), row, column, circle, grid, cluster, or tidy (sort a whole area into neat rows by kind). to = where. The engine finds free spots and keeps things from overlapping. A few jobs per day.")
 LAND_HELP = ("Shape the land: what=tree|bush|flowers|path|pond|fence|lamp|rocks|ground. kind picks the variety (tree: leaf|pine|blossom|aspen|autumn; path: stone|dirt|brick|sand; "
              "fence: picket|rail|stone), size is a rough size, color for flowers/ground, area is a hint ('garden', 'lakeside'...). what=ground paints a patch of ground in a color. "
              "A limited number of landscaping jobs per day.")
@@ -70,6 +72,8 @@ def schemas(publish_enabled):
              "asset": {"type": "string"}, "parts": {"type": "string"}, "script": {"type": "string"}, "saved": {"type": "string"},
              "scale": {"type": "number"}, "rotation": {"type": "number"}, "color": {"type": "string"}, "anim": {"type": "string"},
              "area": {"type": "string"}, "quick": {"type": "boolean"}, "next_goal": {"type": "string"}}, []),
+        _fn("arrange", ARRANGE_HELP, {"what": {"type": "string"}, "pattern": {"type": "string", "enum": ["move", "row", "column", "circle", "grid", "cluster", "tidy"]},
+                                     "to": {"type": "string", "description": "where: an area, a place or an object name"}}, ["what"]),
         _fn("landscape", LAND_HELP, {"what": {"type": "string"}, "kind": {"type": "string"}, "size": {"type": "number"}, "color": {"type": "string"}, "area": {"type": "string"}}, ["what"]),
         _fn("make_art", ART_HELP,
             {"title": {"type": "string"}, "kind": {"type": "string", "enum": list(artcheck.KINDS)}, "content": {"type": "string"},
@@ -193,7 +197,7 @@ def move_to(ctx, a):
         msg = f"You arrived at the {tgt['label']}."
     else:
         msg = f"You walked toward the {tgt['label']}; {dist(nx, nz, tgt['x'], tgt['z']):.0f} units left."
-    return out(True, msg, 0.1, "Running" if d0 > 15 else "Walking", moved=True, subject=tgt["label"], caption=cap)
+    return out(True, msg, 0.1, "Running" if d0 > 15 else "Walking", moved=True, subject=tgt["label"], caption=cap, target_id=tgt.get("id"))
 
 
 PLACE_WHY = {"home": "to rest and recharge", "fuel_station": "to refuel", "clothing_store": "to look at hats and clothes", "gallery": "to look at the art", "workshop": "to make something"}
@@ -430,7 +434,7 @@ def interact_with(ctx, a):
     if r:
         return r
     if tgt["kind"] == "poi":
-        return _use_poi(ctx, tgt)
+        r_ = _use_poi(ctx, tgt); r_["target_id"] = tgt["id"]; return r_
     seen = ctx.db.one("SELECT COUNT(*) n FROM actions WHERE tool='interact_with' AND args LIKE ?", f'%"{tgt["label"]}"%')["n"]
     novelty = 0.6 if seen == 0 else (-0.2 * min(seen, 4))
     own = tgt["kind"] in ("creation", "sculpture", "project")
@@ -448,7 +452,7 @@ def interact_with(ctx, a):
         v = max(v, 0.6)
         ctx.touch_interest(f"{tgt['kind']}s" if tgt["kind"] in ("tree", "flower", "creature") else tgt["label"].lower(), 0.4, "gift")
         note += " Your human left this here for you."
-    return out(True, f"You {verb} the {tgt['label']}. {_feel_text(v)}{note}", v, anim, subject=tgt["kind"], face=(tgt["x"], tgt["z"]), social=social)
+    return out(True, f"You {verb} the {tgt['label']}. {_feel_text(v)}{note}", v, anim, subject=tgt["kind"], face=(tgt["x"], tgt["z"]), social=social, target_id=tgt["id"])
 
 
 def _color(c):
@@ -557,12 +561,18 @@ def _make_design(ctx, a, name, description, strict):
             parts = scriptlang.run_script(a["script"], seed=sum(map(ord, name)) or 1)
             d = design.clean_design(db, parts=parts, scale=a.get("scale"), rotation=a.get("rotation"), color=a.get("color"), anim=a.get("anim"), max_parts=scriptlang.MAX_PARTS)
             d["src"] = "script"
+            hint = design.too_plain(d)
+            if hint:
+                return None, hint
             db.x("INSERT INTO designs(ts,tick,name,kind,script,design) VALUES(?,?,?,?,?,?)", time.time(), ctx.state["tick"], name or "design", "script", str(a["script"])[:scriptlang.MAX_SRC], json.dumps(d))
             return d, None
         if any(a.get(k) not in (None, "", []) for k in ("asset", "parts", "gen")):
             d = design.clean_design(db, a.get("parts"), a.get("asset"), a.get("scale"), a.get("rotation"), a.get("color"), a.get("anim"),
                                     gen=a.get("gen"), gparams=_jsonish(a.get("params")))
             d["src"] = "kit" if a.get("gen") else "asset" if a.get("asset") else "parts"
+            hint = design.too_plain(d)
+            if hint:
+                return None, hint
             return d, None
     except (design.DesignError, scriptlang.ScriptError, kit.KitError) as e:
         return None, str(e)
@@ -659,7 +669,7 @@ def build(ctx, a):
         tags = _asset_tags(db, d)
         cx, cz, where = layout.resolve_area(a.get("area"), s, ctx.objects(), layout.default_zone_for(tags))
         rad = max(layout.KIND_RADIUS["project"], (d or {}).get("radius", 0) + 0.3)
-        (ox, oz), _ = ctx.place_near(cx, cz, rad)
+        (ox, oz), _ = ctx.place_near(cx, cz, rad, group=layout.group_of(name))
         col = hexv or random.choice(list(world.COLORS.values()))
         oid = db.x("INSERT INTO objects(ts,kind,name,x,z,color,source,meta,radius) VALUES(?,?,?,?,?,?,?,?,?)", time.time(),
                    "creation" if quick else "project", name, ox, oz, col, "build", _obj_meta("finished" if quick else "blueprint", desc, d), rad)
@@ -749,6 +759,84 @@ def _finish(ctx, proj, ng, mishap, lesson, quick=False):
                v, "Dance" if not quick else "ThumbsUp", subject="building", changed_objects=True, mood=None if quick else "proud")
 
 
+# ------------------------------------------------------------------ organizing
+MOVABLE = {"creation", "landscape", "sculpture", "tree", "rock", "flower", "ball", "box", "lamp", "house", "fountain", "statue", "bench", "creature", "other", "gift_picture", "gift_model"}
+
+
+def arrange(ctx, a):
+    s, db = ctx.state, ctx.db
+    recent = [t for t in s.get("arrange_log", []) if t > s["tick"] - 144]
+    if len(recent) >= config.ARRANGE_PER_DAY:
+        return out(True, "You have rearranged plenty for today. Step back and enjoy how it looks.", 0.0, "Idle", noop=True)
+    objs = ctx.objects()
+    mov = [o for o in objs if o["kind"] in MOVABLE]
+    what, pattern = str(a.get("what", "")).strip().lower(), str(a.get("pattern") or "move").lower()
+    if pattern not in ("move", "row", "column", "circle", "grid", "cluster", "tidy", "line"):
+        pattern = "move"
+    sel, zone = [], None
+    for zk, zn in layout.ZONES.items():
+        if what in (zk, zn["label"]) or any(al == what for al in zn["aliases"]):
+            zone = zk
+    if zone:
+        zc = layout.ZONES[zone]
+        sel = [o for o in mov if world.dist(o["x"], o["z"], *zc["c"]) <= zc["r"]]
+        pattern = "tidy" if pattern == "move" else pattern
+    elif what.startswith("all ") or what in {layout.group_of(o["name"]) for o in mov} | {o["kind"] for o in mov}:
+        grp = layout.group_of(what.replace("all ", ""))
+        sel = [o for o in mov if layout.group_of(o["name"]) == grp or o["kind"] == grp]
+    else:
+        for part in re.split(r",| and ", what):
+            part = part.strip().lstrip("#")
+            hit = [o for o in mov if part and (str(o["id"]) == part or part == o["name"].lower() or part in o["name"].lower())]
+            sel += hit[:1]
+    sel = list({o["id"]: o for o in sel}.values())
+    if not sel:
+        names = ", ".join(o["name"] for o in mov[:10]) or "nothing yet"
+        return out(False, f"I could not find anything to move called '{what}'. Things you can move: {names}.", -0.05, noop=True)
+    sel = sorted(sel, key=lambda o: world.dist(s["x"], s["z"], o["x"], o["z"]))[:config.ARRANGE_MAX_OBJECTS]
+    if len(sel) == 1 and pattern in ("row", "column", "circle", "grid", "tidy"):
+        pattern = "move"
+    cx0, cz0 = sum(o["x"] for o in sel) / len(sel), sum(o["z"] for o in sel) / len(sel)
+    dz = layout.default_zone_for({layout.group_of(sel[0]["name"])}, sel[0]["kind"])
+    cx, cz, where = layout.resolve_area(a.get("to"), s, objs, dz) if a.get("to") else ((layout.ZONES[zone]["c"] + (zone,))[0:2] + ("the " + layout.ZONES[zone]["label"],) if zone else (cx0, cz0, "where they are"))
+    pseudo = {"label": where, "kind": "point", "x": cx, "z": cz, "key": None, "id": None}
+    if s.get("inside"):
+        _exit(ctx)
+    r = _approach(ctx, pseudo, "start arranging")
+    if r:
+        r["caption"] = f"Walking to {where} to arrange things"
+        return r
+    moved = {}
+    if pattern == "tidy":
+        work = [dict(o) for o in objs]; groups = {}
+        for o in sel: groups.setdefault(layout.group_of(o["name"]), []).append(o)
+        zrow = cz - 2.0 * (len(groups) - 1)
+        for g, items in sorted(groups.items()):
+            pos = layout.arrange_positions(work, items, "row", cx, zrow)
+            if not pos:
+                pos = layout.arrange_positions(work, items, "cluster", cx, zrow)
+            if pos:
+                moved.update(pos)
+                for o in work:
+                    if o["id"] in pos: o["x"], o["z"] = pos[o["id"]]
+            zrow += 4.0 + max((layout.radius_of(o) for o in items), default=1) * 0.5
+    else:
+        moved = layout.arrange_positions(objs, sel, pattern, cx, cz) or {}
+    if not moved:
+        return out(False, "There is not enough free room there for that arrangement. Try another area, fewer things, or a looser pattern like cluster.", -0.05, noop=True)
+    for oid, (x, z) in moved.items():
+        db.x("UPDATE objects SET x=?, z=? WHERE id=?", x, z, oid)
+    s.setdefault("arrange_log", []).append(s["tick"]); s["arrange_log"] = s["arrange_log"][-30:]
+    s["organizing_skill"] = s.get("organizing_skill", 0) + 1
+    names = ", ".join(o["name"] for o in sel[:4]) + (" and more" if len(sel) > 4 else "")
+    ctx.touch_interest("organizing", 0.8, "arranged"); ctx.learn("organizing", 0.6)
+    db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"I arranged {names} into a {pattern} {where}."[:200], 2)
+    s["boredom"] = max(0, s["boredom"] - 10)
+    v = _maker_valence(ctx, "organizing", 0.6)
+    return out(True, f"You arranged {len(moved)} thing(s) ({names}) in a {pattern} {where}. It looks neater. {_feel_text(v)}", v, "ThumbsUp", subject="organizing", changed_objects=True, cat="organize",
+               caption=f"Tidying up: {names}")
+
+
 # ------------------------------------------------------------------ landscape
 LAND_MAP = {"tree": "tree", "trees": "tree", "bush": "bush", "hedge": "bush", "flowers": "flower_bed", "flower": "flower_bed", "garden": "flower_bed", "flower bed": "flower_bed",
             "path": "path", "pond": "pond", "fence": "fence", "lamp": "lamp", "rocks": "rock", "rock": "rock"}
@@ -798,7 +886,7 @@ def landscape(ctx, a):
     rad = min(d["radius"], 3.2) + 0.3 if gen == "path" else d["radius"] + 0.3
     dz = layout.default_zone_for({gen})
     cx, cz, where = layout.resolve_area(area, s, ctx.objects(), dz)
-    (x, z), _ = ctx.place_near(cx, cz, rad)
+    (x, z), _ = ctx.place_near(cx, cz, rad, group=layout.group_of(what))
     label = f"{kind + ' ' if kind and gen in ('tree', 'bush', 'fence', 'path') else ''}{what}".strip().title()
     oid = db.x("INSERT INTO objects(ts,kind,name,x,z,color,source,meta,radius) VALUES(?,?,?,?,?,?,?,?,?)", time.time(), "landscape", label[:30], x, z, "#6fa055", "land",
                json.dumps({"stage": "finished", "description": f"landscaping: {label}", "design": d}), rad)
@@ -974,7 +1062,7 @@ def make_art(ctx, a):
                kind, mode, content, statement, insp or "", json.dumps(colors))
     if kind == "sculpture":
         cx, cz, _ = layout.resolve_area("gallery", s, ctx.objects())
-        (sx, sz), _ = ctx.place_near(cx, cz, layout.KIND_RADIUS["sculpture"])
+        (sx, sz), _ = ctx.place_near(cx, cz, layout.KIND_RADIUS["sculpture"], group="sculpture")
         db.x("INSERT INTO objects(ts,kind,name,x,z,color,source,meta,radius) VALUES(?,?,?,?,?,?,?,?,?)", time.time(), "sculpture", title, sx, sz,
              colors[0] if colors else "#b0bec5", "art", json.dumps({"art_id": aid, "parts": json.loads(content)}), layout.KIND_RADIUS["sculpture"])
     v = _maker_valence(ctx, f"art:{kind}", 1.0)
@@ -1018,7 +1106,7 @@ def publish_page(ctx, a):
 
 
 REGISTRY = {"move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
-            "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
+            "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')
 

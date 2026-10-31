@@ -144,3 +144,15 @@ def auto_design(db, name, description="", color=None):
         return clean_design(db, asset=row["id"], color=color)
     except DesignError:
         return None
+
+
+def too_plain(d):
+    """A build made only of a few plain boxes is just a block. Returns a hint for the model, or None if it has real detail."""
+    prim = [p for p in d["parts"] if p.get("p")]
+    if len(prim) != len(d["parts"]) or not prim:
+        return None                                              # uses generators or models: already detailed
+    shapes = {p["p"] for p in prim}
+    if len(prim) < 4 or shapes <= {"box"}:
+        return ("That is just a plain block. Give it real detail: a roof (prism or pyramid), windows, a door, trim, different shapes and colours "
+                "(at least 4 parts, not only boxes), or use a kit generator like gen=\"cottage\".")
+    return None

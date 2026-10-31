@@ -97,6 +97,7 @@ def add(agent, kind, announce=True):
     name = label_for(kind, v)
     oid = db.x("INSERT INTO objects(ts,kind,name,x,z,color,source,meta,radius) VALUES(?,?,?,?,?,?,?,?,?)", time.time(), "poi", name, x, z, "#c9a97c", "poi", json.dumps(meta), c["r"] + 0.3)
     if announce:
+        agent.attract(oid, name, "poi", 0.6)
         db.thought(s["tick"], "system", f"Something new in the world: {name.lower()}.")
         db.control(f"poi appeared: {name}")
     return oid

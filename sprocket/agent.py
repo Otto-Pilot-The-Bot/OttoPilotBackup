@@ -200,8 +200,10 @@ class Agent:
             self.db.control(f"buildable area grew to {2 * world.half():.0f}x{2 * world.half():.0f}")
         return spot, fallback
 
-    def note_gift(self, name, kind, x, z):
+    def note_gift(self, name, kind, x, z, obj_id=None):
         self.state["new_gift"] = {"tick": self.state["tick"], "name": name, "kind": kind, "x": round(x), "z": round(z)}
+        if obj_id:
+            self.attract(obj_id, name, kind, 1.0)
 
     # ---- goals: near-duplicates are the same goal ----------------------
     _STOP = {"the", "a", "an", "to", "my", "and", "of", "for", "with", "in", "on", "it", "i", "is", "that", "this", "new", "goal", "start"}
@@ -358,6 +360,36 @@ class Agent:
         p = min(cands, key=lambda p: world.dist(s["x"], s["z"], p["x"], p["z"]))
         return f"The world offers: {p['name']} (d={world.dist(s['x'], s['z'], p['x'], p['z']):.0f}): {p['m'].get('description', '').replace('Here you can: ', '')}."
 
+    def tidy_ideas(self):
+        """Engine-derived hints: kinds of his own things that are spread out over the world."""
+        groups = {}
+        for o in self.objects():
+            if o.get("source") in ("build", "land", "art") and o["kind"] not in ("ground", "find", "poi"):
+                groups.setdefault(layout.group_of(o["name"]), []).append(o)
+        out = []
+        for g, items in groups.items():
+            if len(items) >= 3:
+                spread = max(world.dist(a["x"], a["z"], b["x"], b["z"]) for a in items for b in items)
+                if spread > 16:
+                    out.append(f"your {len(items)} {g}s are scattered about ({spread:.0f} units apart)")
+        return out[:2]
+
+    # ---- things placed in his world pull on him ----------------------------
+    def attract(self, obj_id, name, kind, w=1.0):
+        a = [x for x in self.state.get("attract", []) if x["id"] != obj_id]
+        a.append({"id": obj_id, "name": name, "kind": kind, "w": w, "t": self.state["tick"]})
+        self.state["attract"] = a[-6:]
+
+    def attraction_tick(self):
+        s = self.state
+        keep = []
+        ids = {o["id"] for o in self.objects()}
+        for x in s.get("attract", []):
+            x["w"] = round(x["w"] * config.ATTRACT_DECAY, 3)
+            if x["w"] >= 0.2 and x["id"] in ids:
+                keep.append(x)
+        s["attract"] = keep
+
     def poi_rows(self):
         out = []
         for o in self.db.q("SELECT id,name,x,z,meta,radius FROM objects WHERE kind='poi'"):
@@ -422,7 +454,7 @@ class Agent:
         db.x("INSERT INTO hobby_entries(ts,tick,hobby_id,text) VALUES(?,?,?,?)", time.time(), self.state["tick"], hid, str(text)[:300])
 
     TOOL_CAT = {"move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
-                "publish_page": "write", "make_art": "art", "make_music": "music", "landscape": "garden", "tend": "garden", "collect": "collect", "observe": "observe",
+                "publish_page": "write", "make_art": "art", "make_music": "music", "landscape": "garden", "arrange": "organize", "tend": "garden", "collect": "collect", "observe": "observe",
                 "build": "build", "rest": "rest", "eat": "rest"}
 
     def category_of(self, tool, res=None):
@@ -519,7 +551,8 @@ class Agent:
         "collect": "collecting small things you find lying around",
         "socialize": "enjoying what your human left for you: go and look at it",
         "rest": "taking it easy: rest in the home cabin and recharge",
-        "build": "making something with a real purpose (a goal, an interest, a need)"}
+        "build": "making something with a real purpose (a goal, an interest, a need)",
+        "organize": "organizing: tidy a scattered area, line things up, move something to a better spot"}
 
     def category_shares(self, n):
         cats, _ = self.recent_cats(n)
@@ -534,11 +567,12 @@ class Agent:
         if f and s["tick"] - f["tick"] < config.FOCUS_TICKS:
             return f["cat"]
         cnt, n = self.category_shares(12)
-        w = {"explore": 1.1, "observe": 0.9, "learn": 1.0, "art": 0.6, "music": 0.5, "write": 0.5, "garden": 0.6, "collect": 0.6, "socialize": 0.4, "rest": 0.4, "build": 0.4}
+        w = {"explore": 1.1, "observe": 0.9, "learn": 1.0, "art": 0.6, "music": 0.5, "write": 0.5, "garden": 0.6, "collect": 0.6, "socialize": 0.4, "rest": 0.4, "build": 0.4, "organize": 0.4}
+        if self.tidy_ideas(): w["organize"] += 0.9
         if min(s["energy"], s["battery"]) < 50: w["rest"] += 1.6
         if s["creativity"] < 35: w["art"] += 0.6; w["music"] += 0.4; w["build"] += 0.4
-        gift = s.get("new_gift")
-        if gift and s["tick"] - gift["tick"] < 12: w["socialize"] += 2.0; w["explore"] += 0.5
+        att = [x for x in s.get("attract", []) if x["w"] > 0.5]
+        if att: w["socialize"] += 2.0 * max(x["w"] for x in att); w["explore"] += 0.5
         ints = db.q("SELECT topic,strength FROM interests ORDER BY strength DESC LIMIT 5")
         if ints: w["learn"] += 0.3; w["observe"] += 0.3 * min(2, len(ints))
         if db.one("SELECT 1 FROM objects WHERE kind='landscape' LIMIT 1"): w["garden"] += 0.5
@@ -604,9 +638,13 @@ class Agent:
             far = sorted([p for p in prow if p not in here], key=lambda p: world.dist(s["x"], s["z"], p["x"], p["z"]))[:4]
             if far:
                 L.append("PLACES OF INTEREST: " + "; ".join(f"{p['name']} d={world.dist(s['x'], s['z'], p['x'], p['z']):.0f} ({(p['m'].get('offers') or [''])[0]})" for p in far))
-        gift = s.get("new_gift")
-        if gift and s["tick"] - gift["tick"] <= 10:
-            L.append(f"YOUR HUMAN JUST LEFT SOMETHING: a {gift['kind']} called '{gift['name']}' near ({gift['x']},{gift['z']}). You may want to look at it.")
+        objd = {o["id"]: o for o in objs}
+        att = sorted([x for x in s.get("attract", []) if x["w"] > 0.35 and x["id"] in objd], key=lambda x: -x["w"])[:2]
+        if att:
+            L.append("YOU FEEL DRAWN TO: " + "; ".join(f"{x['name']} (new, d={world.dist(s['x'], s['z'], objd[x['id']]['x'], objd[x['id']]['z']):.0f})" for x in att) + " - you want to go and see.")
+        ti = self.tidy_ideas()
+        if ti:
+            L.append("TIDY IDEAS (arrange): " + "; ".join(ti) + ".")
         if projs:
             L.append("PROJECTS IN PROGRESS: " + "; ".join(f"'{p['name']}' ({p['stage']} done, next: {nxt.get(p['stage'], 'finish')}; "
                                                           f"call build name='{p['name']}')" for p in projs))
@@ -705,6 +743,7 @@ class Agent:
         s["creativity"] = max(0, s["creativity"] - config.CREATIVITY_DECAY)
         db.x("UPDATE projects SET status='shelved' WHERE status='active' AND last_tick < ?", s["tick"] - 80)
         self.decay_interests()
+        self.attraction_tick()
         self.spawn_finds()
         pois.ensure(self)
         tl = tools.schemas(s["publish_enabled"])
@@ -783,6 +822,11 @@ class Agent:
                 s["boredom"] = max(0, s["boredom"] - 8)
             elif rep >= 3:
                 s["boredom"] = min(100, s["boredom"] + 2 * (rep - 2))
+        tid = res.get("target_id")
+        if tid and any(x["id"] == tid for x in s.get("attract", [])):
+            res["valence"] = round(res["valence"] + 0.3, 3)                          # going to what drew him feels good
+            if name == "interact_with" or (name == "move_to" and not res.get("moved") is False and "arrived" in res["result"]):
+                s["attract"] = [x for x in s["attract"] if x["id"] != tid]
         feeling = str(args.get("feeling", "")).lower()
         if feeling not in FEELINGS:
             feeling = s["mood"]

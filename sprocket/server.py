@@ -92,7 +92,7 @@ async def serve(agent, runner, interval=None):
             r = layout.KIND_RADIUS.get(kind, 1.2)
             (x, z), _ = agent.place_near(world.clamp(float(m.get("x", 0))), world.clamp(float(m.get("z", 0))), r)   # engine avoids overlaps
             oid = db.x("INSERT INTO objects(ts,kind,name,x,z,color,source,radius) VALUES(?,?,?,?,?,?,'user',?)", time.time(), kind, name, x, z, col, r)
-            agent.note_gift(name, kind, x, z)
+            agent.note_gift(name, kind, x, z, oid)
             db.thought(s["tick"], "system", f"The human placed a {kind} called '{name}' at ({x:.0f},{z:.0f}).")
             db.control(f"placed {kind} {name} #{oid}")
             agent.save()
