@@ -321,6 +321,12 @@ function thumbOf(id) {
   if (!thumbWanted.has(key)) { thumbWanted.add(key); thumbQueue.push({ key, o }); pumpThumbs(); }
   return null;
 }
+function thumbOfDesign(key, design, name) {                 // preview of any design (library model or kit building), rendered once and cached
+  const k = 'd:' + key;
+  if (thumbCache.has(k)) return thumbCache.get(k) || null;
+  if (!thumbWanted.has(k)) { thumbWanted.add(k); thumbQueue.push({ key: k, o: { id: -1, kind: 'creation', name: name || 'x', color: '#9e9e9e', x: 0, z: 0, meta: { design } } }); pumpThumbs(); }
+  return null;
+}
 function thumbOfArt(artId) {
   for (const o of objectsById.values()) if (o.meta?.art_id === artId) return thumbOf(o.id);
   return null;
@@ -456,6 +462,9 @@ function connect() {
     else if (m.type === 'action') onAction(m);
     else if (m.type === 'status') UI.status(m.text);
     else if (m.type === 'wish_result') UI.wishResult(m);
+    else if (m.type === 'assets') UI.assetsData(m);
+    else if (m.type === 'design_preview') UI.designPreview(m);
+    else if (m.type === 'toast') UI.toast(m.text, m.ok === false ? 5000 : 2500);
     else if (m.type === 'log') UI.setLog(m.rows);
     else if (m.type === 'art_content') art.receive(m);
   };
@@ -496,11 +505,13 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (!placing || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
   ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
   const hit = ray.intersectObject(ground)[0]; if (!hit) return;
-  send({ type: placing.wish ? 'wish_fulfil' : 'place_object', ...placing, x: hit.point.x, z: hit.point.z });
+  const base = placing.design ? { type: 'place_design', ...placing.payload } : placing.move ? { type: 'object_move', id: placing.id, exact: placing.exact, snap: placing.snap }
+    : placing.wish ? { type: 'wish_fulfil', ...placing } : { type: 'place_object', ...placing };
+  send({ ...base, x: hit.point.x, z: hit.point.z });
   cancelPlace(); UI.placed();
 });
 
-UI.init({ send, art, startPlace, cancelPlace, setFollow: (v) => { follow = v; }, resetCamera, thumb: thumbOf, thumbArt: thumbOfArt, setLabelMode: (m) => { labelMode = m; } });
+UI.init({ send, art, startPlace, cancelPlace, setFollow: (v) => { follow = v; }, resetCamera, thumb: thumbOf, thumbArt: thumbOfArt, thumbDesign: thumbOfDesign, setLabelMode: (m) => { labelMode = m; } });
 
 // ------------------------------------------------------------------ frame loop
 const clock = new THREE.Clock(), tmp = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);

@@ -142,3 +142,20 @@ def catalog_text():
             elif s[0] == "text": bits.append(n + "(text)")
         out.append(f"{g}({', '.join(bits)})")
     return "; ".join(out) + ". All also take season=auto|spring|summer|fall|winter."
+
+
+def spec_json():
+    """The kit's parameter forms for the human-only asset browser: [{name, kind, min, max, default, options}] per generator."""
+    out = {}
+    for g, spec in SPEC.items():
+        rows = []
+        for n, t in {**spec, **COMMON}.items():
+            k = t[0]
+            if k in ("num", "int"): rows.append({"name": n, "kind": k, "min": t[1], "max": t[2], "default": t[3]})
+            elif k == "choice": rows.append({"name": n, "kind": k, "options": t[1], "default": t[2]})
+            elif k == "bool": rows.append({"name": n, "kind": k, "default": t[1]})
+            elif k == "color": rows.append({"name": n, "kind": k, "default": world.to_hex(t[1])})
+            elif k == "text": rows.append({"name": n, "kind": k, "max": t[1], "default": t[2]})
+            elif k == "colors": rows.append({"name": n, "kind": k, "default": ", ".join(t[1])})
+        out[g] = rows
+    return out

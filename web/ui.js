@@ -15,6 +15,7 @@ let short = 'Otto', api, snap = null, skew = 0, openId = null, art = null, lastC
 const openPrev = new Set();
 let armedGift = 0;
 let confirmLive = false;
+let A = { data: null, tab: 'models', q: '', pack: '', page: 0, sel: null, pf: null, kitDesigns: {}, asked: false, count: -1 }, armedObj = 0;
 let wishBanner = null, fulfilId = 0, assetFilter = '', pickedAsset = '';
 let thingsTab = 'world', browseFilter = 'all', draggingSpeed = false, killArmed = false, logRows = null, showLog = false;
 const gift = { kind: 'tree', color: '#43a047' };
@@ -55,7 +56,12 @@ const PANELS = [
   { id: 'things', icon: '🌍', label: 'In his world', title: 'In his world', build(el) {
     el.innerHTML = `<div class="tabs"></div><div class="tb"></div>`;
     el.querySelector('.tabs').onclick = (e) => { const b = e.target.closest('button[data-t]'); if (b) { thingsTab = b.dataset.t; refresh(); } };
-    el.querySelector('.tb').onclick = (e) => { const b = e.target.closest('[data-art]'); if (b) openArt(+b.dataset.art); const t = e.target.closest('[data-tune]'); if (t) playTune(snap.tunes.find((x) => x.id === +t.dataset.tune)); const d = e.target.closest('[data-gdel]'); if (d) { const id = +d.dataset.gdel; if (armedGift === id) { api.send({ type: 'delete_gift', id }); armedGift = 0; } else { armedGift = id; setTimeout(() => { armedGift = 0; refresh(); }, 4000); } refresh(); } };
+    el.querySelector('.tb').onclick = (e) => { const b = e.target.closest('[data-art]'); if (b) openArt(+b.dataset.art); const t = e.target.closest('[data-tune]'); if (t) playTune(snap.tunes.find((x) => x.id === +t.dataset.tune)); const oe = e.target.closest('[data-oe]'); if (oe) { const id = +oe.dataset.id, k = oe.dataset.oe;
+        if (k === 'move') { api.startPlace({ move: true, id }); closePanel(); toast('Click the ground to move it · Esc to cancel', 5000); }
+        else if (k === 'rot') api.send({ type: 'object_rotate', id, deg: -45 }); else if (k === 'rotr') api.send({ type: 'object_rotate', id, deg: 45 });
+        else if (k === 'smaller') api.send({ type: 'object_scale', id, factor: 0.9 }); else if (k === 'bigger') api.send({ type: 'object_scale', id, factor: 1.1 });
+        else if (k === 'rm') { if (armedObj === id) { api.send({ type: 'object_remove', id }); armedObj = 0; } else { armedObj = id; setTimeout(() => { armedObj = 0; refresh(); }, 4000); refresh(); } } }
+      const d = e.target.closest('[data-gdel]'); if (d) { const id = +d.dataset.gdel; if (armedGift === id) { api.send({ type: 'delete_gift', id }); armedGift = 0; } else { armedGift = id; setTimeout(() => { armedGift = 0; refresh(); }, 4000); } refresh(); } };
   }, update(el, s) {
     const tabs = [['world', '🌍 In his world'], ['gifts', '🎁 Gifts'], ['gallery', '🖼️ Gallery'], ...(s.building_enabled ? [['built', '🔧 Built']] : []), ['sounds', '🎵 Sounds'], ['collect', '🐚 Collection'], ['logs', '📒 Logs'], ['wear', '🎩 Wardrobe'], ['sketch', '✏️ Sketchbook']];
     el.querySelector('.tabs').innerHTML = tabs.map(([k, l]) => `<button data-t="${k}" class="${k === thingsTab ? 'on' : ''}">${l}</button>`).join('');
@@ -64,7 +70,8 @@ const PANELS = [
       const mine = (s.objects || []).filter((o) => o.source === 'user' || o.source === 'gift');
       tb.innerHTML = mine.length ? mine.map((o) => { const w = o.meta && o.meta.wish_id, th = o.kind === 'gift_picture' ? `/gift/${o.meta.gift_id}/file` : api.thumb(o.id);
         return `<div class="card row">${th ? `<img class="thumb" alt="" src="${th}">` : '<div class="thumb" style="display:grid;place-items:center;font-size:28px">📦</div>'}<div><div class="t">${esc(o.name)}</div>
-          <div class="chips" style="margin-top:3px"><span class="chip">${w ? '💫 granted wish' : o.source === 'gift' ? '🎁 gift' : 'placed by you'}</span><span class="chip">${esc(o.kind.replace('gift_', ''))}</span></div></div></div>`; }).join('')
+          <div class="chips" style="margin-top:3px"><span class="chip">${w ? '💫 granted wish' : o.source === 'gift' ? '🎁 gift' : 'placed by you'}</span><span class="chip">${esc(o.kind.replace('gift_', ''))}</span></div>
+          <div class="field" style="gap:4px;margin:6px 0 0;flex-wrap:wrap"><button class="btn ob" data-oe="move" data-id="${o.id}">Move…</button>${o.meta && o.meta.design ? `<button class="btn ob" data-oe="rot" data-id="${o.id}" title="rotate">⟲</button><button class="btn ob" data-oe="rotr" data-id="${o.id}" title="rotate">⟳</button><button class="btn ob" data-oe="smaller" data-id="${o.id}">−</button><button class="btn ob" data-oe="bigger" data-id="${o.id}">+</button>` : ''}<button class="btn ob" data-oe="rm" data-id="${o.id}">${armedObj === o.id ? 'Really remove?' : 'Remove'}</button></div></div></div>`; }).join('')
         : '<div class="empty">Nothing yet. Place something with “Leave him something”, give him a gift, or grant a wish.</div>';
     } else if (thingsTab === 'gallery') {
       const list = s.art.filter((a) => a.status !== 'broken');
@@ -189,6 +196,85 @@ const PANELS = [
           : `<div class="field"><button class="btn primary" data-w="open" data-id="${w.id}">Fulfil…</button><button class="btn" data-w="decline" data-id="${w.id}">Not now</button><button class="btn" data-w="hide" data-id="${w.id}">Hide</button></div>`}</div>`).join('')
       : '<div class="empty">No open wishes. He asks when something would make sense for his interests.</div>');
     $('#wHist', el).innerHTML = done.length ? `<h3>Answered</h3>` + done.map((w) => `<div class="act"><span class="ico">${w.status === 'granted' ? '✅' : '🕊️'}</span><span class="x2"><b>${esc(w.item)}</b> <span class="dim">${w.status === 'granted' ? 'granted' : 'not now'}${w.asset_name ? ' · ' + esc(w.asset_name) : ''}</span></span><span class="small dim">${ago(w.resolved_ts || w.ts)}</span><button class="btn" style="padding:0 8px;font-size:11px" data-w="hide" data-id="${w.id}">Hide</button></div>`).join('') : '';
+  } },
+
+  { id: 'assets', icon: '🧰', label: 'Assets', title: 'Asset library (yours)', build(el) {
+    if (!A.asked || A.count !== (snap.assets_total || {}).n) { A.asked = true; A.count = (snap.assets_total || {}).n; api.send({ type: 'get_assets' }); }
+    el.innerHTML = '<div id="aBody"></div>';
+    const send = (kind) => {
+      const pf = A.pf, base = { src: A.sel.src, asset: A.sel.id, gen: A.sel.gen, params: pf.params, name: pf.name, scale: pf.scale, rot: pf.rot, color: pf.tint ? pf.color : undefined, zone: pf.zone || undefined, exact: pf.exact, snap: pf.snap };
+      if (kind === 'place') { api.send({ type: 'place_design', ...base }); } else { api.startPlace({ design: true, payload: base }); closePanel(); toast('Click the ground to place it · Esc to cancel', 6000); }
+    };
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a;
+      if (a === 'tab') { A.tab = b.dataset.t; A.page = 0; A.sel = null; }
+      else if (a === 'page') A.page = Math.max(0, A.page + +b.dataset.d);
+      else if (a === 'pick') { const src = b.dataset.src, key = b.dataset.key; A.sel = src === 'kit' ? { src, gen: key } : { src, id: +key };
+        const row = src === 'asset' ? A.data.rows.find((r) => r.id === +key) : null, spec = src === 'kit' ? A.data.kit[key] : [];
+        A.pf = { name: row ? row.name : key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()), scale: 1, rot: 0, tint: false, color: '#c4604b', zone: '', exact: false, snap: '', params: Object.fromEntries((spec || []).map((p) => [p.name, p.default])) };
+        if (src === 'kit') api.send({ type: 'design_preview', gen: key, params: A.pf.params, key: 'form' }); }
+      else if (a === 'back' || a === 'cancel') A.sel = null;
+      else if (a === 'place' || a === 'click') { send(a); if (a === 'place') A.sel = null; }
+      render(el, snap);
+    });
+    const onChange = (e) => {
+      const t = e.target, f = A.pf; if (!t.dataset) return;
+      if (t.id === 'aQ') { A.q = t.value; A.page = 0; return render(el, snap, true); }
+      if (t.id === 'aPack') { A.pack = t.value; A.page = 0; return render(el, snap); }
+      if (!f) return;
+      if (t.dataset.f) f[t.dataset.f] = t.type === 'checkbox' ? t.checked : (t.type === 'range' || t.dataset.num ? +t.value : t.value);
+      if (t.dataset.p) { const sp = A.data.kit[A.sel.gen].find((x) => x.name === t.dataset.p); f.params[t.dataset.p] = t.type === 'checkbox' ? t.checked : (sp.kind === 'num' || sp.kind === 'int') ? +t.value : t.value;
+        clearTimeout(A._t); A._t = setTimeout(() => api.send({ type: 'design_preview', gen: A.sel.gen, params: f.params, key: 'form' }), 350); }
+      if (t.type === 'range') { const o = t.parentElement.querySelector('output'); if (o) o.textContent = t.value; }
+    };
+    el.addEventListener('input', (e) => { if (e.target.id === 'aQ') onChange(e); else if (e.target.type === 'range') onChange(e); });
+    el.addEventListener('change', onChange);
+    el._render = () => render(el, snap);
+    function render(el, s, keepFocus) {
+      if (!A.data) { $('#aBody', el).innerHTML = '<div class="empty">Loading the library…</div>'; return; }
+      const host = $('#aBody', el);
+      if (A.sel) return renderForm(host);
+      const q = A.q.toLowerCase(), isKit = A.tab === 'kit';
+      const rows = isKit ? Object.keys(A.data.kit).map((g) => ({ gen: g })) : A.data.rows.filter((r) => (!A.pack || r.pack === A.pack) && (!q || (r.name + ' ' + r.tags.join(' ') + ' ' + r.pack).toLowerCase().includes(q)));
+      const per = 12, pages = Math.max(1, Math.ceil(rows.length / per)); A.page = Math.min(A.page, pages - 1);
+      const view = rows.slice(A.page * per, A.page * per + per), packs = [...new Set(A.data.rows.map((r) => r.pack))];
+      const prev = keepFocus ? document.activeElement : null, val = prev && prev.id === 'aQ' ? prev.selectionStart : null;
+      host.innerHTML = `<div class="tabs"><button data-a="tab" data-t="models" class="${!isKit ? 'on' : ''}">🗂️ Model packs (${A.data.rows.length})</button><button data-a="tab" data-t="kit" class="${isKit ? 'on' : ''}">🏠 Buildings &amp; props</button></div>
+        ${isKit ? '<p class="dim small" style="margin-top:0">Adjustable buildings, trees, lamps, ponds, cars… Pick one, tweak it, place it.</p>' : `<div class="field"><input type="text" id="aQ" placeholder="search ${A.data.rows.length} models…" value="${esc(A.q)}"><select id="aPack"><option value="">all packs</option>${packs.map((p) => `<option ${p === A.pack ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>`}
+        <div class="grid">${view.map((r) => { const key = isKit ? r.gen : r.id, d = isKit ? A.kitDesigns['k:' + r.gen] : { parts: [{ a: r.id, f: r.fit, x: 0, y: 0, z: 0, s: 1, r: [0, 0, 0] }], scale: 1, rot: 0 };
+          const th = d ? api.thumbDesign((isKit ? 'k:' : 'a:') + key, d, isKit ? r.gen : r.name) : null; if (isKit && !d && !A.kitDesigns['asked:' + r.gen]) { A.kitDesigns['asked:' + r.gen] = 1; api.send({ type: 'design_preview', gen: r.gen, params: {}, key: 'k:' + r.gen }); }
+          return `<button class="art-card" data-a="pick" data-src="${isKit ? 'kit' : 'asset'}" data-key="${key}"><div class="pic">${th ? `<img alt="" src="${th}">` : '⏳'}</div><div class="cap">${esc(isKit ? r.gen.replace(/_/g, ' ') : r.name)}</div>
+            <div class="small dim">${isKit ? 'adjustable' : `${(Math.max(r.sx, r.sz) * r.fit).toFixed(1)}×${(r.sy * r.fit).toFixed(1)} · ${esc(r.tags.slice(0, 2).join(', '))}`}</div></button>`; }).join('') || '<div class="empty">Nothing matches.</div>'}</div>
+        <div class="field" style="justify-content:center"><button class="btn" data-a="page" data-d="-1" ${A.page ? '' : 'disabled'}>‹</button><span class="small dim">page ${A.page + 1} / ${pages}</span><button class="btn" data-a="page" data-d="1" ${A.page < pages - 1 ? '' : 'disabled'}>›</button></div>`;
+      if (prev && prev.id === 'aQ') { const n = $('#aQ', el); n.focus(); n.setSelectionRange(val, val); }
+    }
+    function renderForm(host) {
+      const f = A.pf, kit = A.sel.src === 'kit', spec = kit ? A.data.kit[A.sel.gen] : [], key = kit ? 'kitform' : null;
+      const row = !kit ? A.data.rows.find((r) => r.id === A.sel.id) : null;
+      const th = kit ? A.kitDesigns.form && api.thumbDesign('form:' + JSON.stringify(f.params), A.kitDesigns.form, f.name) : api.thumbDesign('a:' + A.sel.id, { parts: [{ a: row.id, f: row.fit, x: 0, y: 0, z: 0, s: 1, r: [0, 0, 0] }], scale: 1, rot: 0 }, row.name);
+      const ctl = (p) => p.kind === 'num' || p.kind === 'int' ? `<label class="rng"><span>${esc(p.name.replace(/_/g, ' '))}</span><input type="range" data-p="${p.name}" min="${p.min}" max="${p.max}" step="${p.kind === 'int' ? 1 : 0.1}" value="${f.params[p.name]}"><output>${f.params[p.name]}</output></label>`
+        : p.kind === 'choice' ? `<label class="rng"><span>${esc(p.name.replace(/_/g, ' '))}</span><select data-p="${p.name}">${p.options.map((o) => `<option ${o === f.params[p.name] ? 'selected' : ''}>${o}</option>`).join('')}</select></label>`
+        : p.kind === 'color' ? `<label class="rng"><span>${esc(p.name.replace(/_/g, ' '))}</span><input type="color" data-p="${p.name}" value="${f.params[p.name]}"></label>`
+        : p.kind === 'bool' ? `<label class="rng"><span>${esc(p.name.replace(/_/g, ' '))}</span><input type="checkbox" data-p="${p.name}" ${f.params[p.name] ? 'checked' : ''}></label>`
+        : `<label class="rng"><span>${esc(p.name)}</span><input type="text" data-p="${p.name}" value="${esc(f.params[p.name] ?? '')}" maxlength="40"></label>`;
+      host.innerHTML = `<button class="btn" data-a="back">← Back to the library</button>
+        <div class="row" style="margin-top:10px"><img class="thumb" id="pvThumb" style="width:110px" alt="" ${th ? `src="${th}"` : ''}><div style="flex:1"><div class="field"><input type="text" data-f="name" value="${esc(f.name)}" maxlength="30"></div>
+          ${row ? `<div class="small dim">${esc(row.pack)} · ${row.tris.toLocaleString()} triangles · ${row.tags.map(esc).join(', ')}</div>` : '<div class="small dim">adjustable kit item</div>'}</div></div>
+        ${kit ? `<h3>Options</h3>${spec.filter((p) => p.name !== 'seed').map(ctl).join('')}` : ''}
+        <h3>Placement</h3>
+        <label class="rng"><span>scale</span><input type="range" data-f="scale" min="0.4" max="3" step="0.05" value="${f.scale}"><output>${f.scale}</output></label>
+        <label class="rng"><span>rotation °</span><input type="range" data-f="rot" min="0" max="355" step="5" value="${f.rot}"><output>${f.rot}</output></label>
+        <label class="rng"><span>tint</span><input type="checkbox" data-f="tint" ${f.tint ? 'checked' : ''}><input type="color" data-f="color" value="${f.color}"></label>
+        <label class="rng"><span>where</span><select data-f="zone"><option value="">engine chooses a fitting spot</option>${A.data.zones.map((z) => `<option value="${z.key}" ${z.key === f.zone ? 'selected' : ''}>${esc(z.label)}</option>`).join('')}</select></label>
+        <label class="rng"><span>exact spot</span><input type="checkbox" data-f="exact" ${f.exact ? 'checked' : ''}><span class="small dim">allow touching others (for assembling pieces)</span></label>
+        <label class="rng"><span>snap to grid</span><select data-f="snap"><option value="">off</option>${['0.5', '1', '2'].map((v) => `<option ${v === f.snap ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+        <div class="field"><button class="btn primary" data-a="place">Place it</button><button class="btn" data-a="click">Click on the ground…</button><button class="btn" data-a="cancel">Cancel</button></div>
+        <div class="small dim">“Place it” uses the zone above (or lets the engine choose). “Click on the ground” puts it exactly where you click.</div>`;
+    }
+  }, update(el, s) {
+    if (A.count !== (s.assets_total || {}).n) { A.count = (s.assets_total || {}).n; api.send({ type: 'get_assets' }); }
+    if (A.sel) { const im = $('#pvThumb', el); if (im && !im.getAttribute('src')) el._render && el._render(); return; }
+    el._render && el._render();
   } },
 
   { id: 'gift', icon: '🎁', label: 'Leave him something', title: 'Leave him something', build(el, s) {
@@ -409,3 +495,6 @@ export function playTune(t) {
 export function status(text) { setCaption('💭', `${short} is ${text}`, true); }
 
 export function wishResult(m) { wishBanner = { text: m.text, ok: m.ok, ts: m.ts }; if (openId === 'wishes') refresh(true); }
+
+export function assetsData(m) { A.data = m; if (openId === 'assets') { const b = $('#panelBody'); const el = b.querySelector('.pbody'); el && el._render && el._render(); } }
+export function designPreview(m) { A.kitDesigns[m.key === 'form' ? 'form' : m.key] = m.design; if (openId === 'assets') { const el = $('#panelBody .pbody'); el && el._render && el._render(); } }

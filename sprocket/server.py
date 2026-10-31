@@ -11,7 +11,7 @@ import time
 
 from aiohttp import web, WSMsgType
 
-from . import assets as assetlib, config, design, gifts as giftlib, layout, world
+from . import assets as assetlib, config, design, gifts as giftlib, kit, layout, world
 
 WEB = config.ROOT / "web"
 
@@ -103,6 +103,19 @@ async def serve(agent, runner, interval=None):
             db.control(f"placed {kind} {name} #{oid}")
             agent.save()
             push(agent.snapshot())
+        elif t == "get_assets" and ws is not None:
+            rows = [dict(r, tags=json.loads(r["tags"])[:6]) for r in db.q("SELECT id,name,pack,tags,sx,sy,sz,fit,tris FROM assets WHERE usable=1 ORDER BY pack,name")]
+            asyncio.ensure_future(_send(ws, json.dumps({"type": "assets", "rows": rows, "kit": kit.spec_json(), "zones": [{"key": k, "label": z["label"]} for k, z in layout.ZONES.items()]})))
+        elif t == "design_preview" and ws is not None:
+            try:
+                d = design.clean_design(db, gen=m.get("gen"), gparams=m.get("params") if isinstance(m.get("params"), dict) else {})
+                asyncio.ensure_future(_send(ws, json.dumps({"type": "design_preview", "key": str(m.get("key", "")), "design": d})))
+            except design.DesignError as e:
+                asyncio.ensure_future(_send(ws, json.dumps({"type": "toast", "ok": False, "text": str(e)})))
+        elif t == "place_design":
+            place_design(m)
+        elif t in ("object_move", "object_rotate", "object_scale", "object_remove"):
+            edit_object(t, m)
         elif t in ("wish_fulfil", "wish_decline", "wish_hide"):
             wish_action(t, m)
         elif t == "delete_gift":
@@ -132,6 +145,83 @@ async def serve(agent, runner, interval=None):
                        "LIVE: approved pages will be pushed to the website.", True)
         elif t == "check_site":
             asyncio.ensure_future(check_site())
+
+    def toast(text, ok=True):
+        push({"type": "toast", "text": text, "ok": ok})
+
+    def spot(m, radius, group):
+        """Where something goes: a clicked spot or zone, nudged by the engine so nothing overlaps - unless 'exact' (for assembling pieces)."""
+        snap = float(m["snap"]) if str(m.get("snap") or "0") in ("0.5", "1", "1.0", "2") else 0.0
+        sn = (lambda v: round(v / snap) * snap) if snap else (lambda v: v)
+        try:
+            x0, z0 = sn(world.clamp(float(m["x"]))), sn(world.clamp(float(m["z"])))
+        except (KeyError, TypeError, ValueError):
+            zk = m.get("zone") if m.get("zone") in layout.ZONES else "open_field"
+            x0, z0 = layout.ZONES[zk]["c"]
+            if not m.get("zone"):
+                x0, z0 = None, None
+        if m.get("exact") and x0 is not None:
+            return round(max(-world.half() + 0.5, min(world.half() - 0.5, x0)), 2), round(max(-world.half() + 0.5, min(world.half() - 0.5, z0)), 2)
+        if x0 is None:
+            x0, z0 = layout.ZONES[layout.default_zone_for({group})]["c"]
+        (x, z), _ = agent.place_near(x0, z0, radius, group=group)
+        return x, z
+
+    def place_design(m):
+        """Human-only: place a model from the asset library or a kit building/prop, with scale, rotation, tint and spot."""
+        db, s = agent.db, agent.state
+        try:
+            if m.get("src") == "kit":
+                d = design.clean_design(db, gen=m.get("gen"), gparams=m.get("params") if isinstance(m.get("params"), dict) else {}, scale=m.get("scale"), rotation=m.get("rot"), color=m.get("color"))
+                base = str(m.get("gen")).replace("_", " ").title()
+            else:
+                row = db.one("SELECT id,name FROM assets WHERE id=? AND usable=1", int(m.get("asset", 0)))
+                if not row:
+                    return toast("Choose a model first.", False)
+                d = design.clean_design(db, asset=row["id"], scale=m.get("scale"), rotation=m.get("rot"), color=m.get("color"))
+                base = row["name"]
+        except (design.DesignError, ValueError, TypeError) as e:
+            return toast(str(e), False)
+        name = re.sub(r"[^\w \-']", "", str(m.get("name") or base)).strip()[:30] or base
+        x, z = spot(m, d["radius"] + (0.05 if m.get("exact") else 0.3), layout.group_of(name))
+        meta = {"stage": "finished", "description": "Placed by you", "design": d}
+        oid = db.x("INSERT INTO objects(ts,kind,name,x,z,color,source,meta,radius) VALUES(?,?,?,?,?,?,'user',?,?)", time.time(), "creation", name, x, z, "#9e9e9e", json.dumps(meta), d["radius"] + 0.05)
+        agent.note_gift(name, "creation", x, z, oid)
+        db.thought(s["tick"], "system", f"Your human placed a {name} at ({x:.0f},{z:.0f}).")
+        db.control(f"placed {name} #{oid}"); agent.save()
+        push(agent.snapshot()); toast(f"Placed {name}.")
+
+    def edit_object(t, m):
+        """Human-only edits of things YOU placed (or gifts set out): move, rotate, resize, remove. His own world features are not touched."""
+        db = agent.db
+        o = db.one("SELECT * FROM objects WHERE id=? AND source IN ('user','gift')", int(m.get("id", 0)))
+        if not o:
+            return toast("That item cannot be edited.", False)
+        meta = json.loads(o["meta"] or "{}")
+        if t == "object_remove":
+            db.x("DELETE FROM objects WHERE id=?", o["id"])
+            db.x("UPDATE gifts SET status='kept', obj_id=NULL WHERE obj_id=?", o["id"])
+            db.x("UPDATE wishes SET obj_id=NULL WHERE obj_id=?", o["id"])
+            db.control(f"removed {o['name']} #{o['id']}")
+        elif t == "object_move":
+            try:
+                x, z = spot({**m, "exact": bool(m.get("exact"))}, o["radius"] or 1.0, layout.group_of(o["name"]))
+            except Exception:
+                return toast("Could not move it there.", False)
+            db.x("UPDATE objects SET x=?, z=? WHERE id=?", x, z, o["id"])
+        else:
+            d = meta.get("design")
+            if not d:
+                return toast("This item cannot be rotated or resized.", False)
+            if t == "object_rotate":
+                d["rot"] = round((float(d.get("rot", 0)) + float(m.get("deg", 45))) % 360, 1)
+            else:
+                f = max(0.5, min(2.0, float(m.get("factor", 1.1))))
+                new = max(0.3, min(3.0, float(d.get("scale", 1.0)) * f))
+                db.x("UPDATE objects SET radius=? WHERE id=?", max(0.4, (o["radius"] or 1.0) * new / float(d.get("scale", 1.0))), o["id"])
+                d["scale"] = round(new, 3)
+            db.x("UPDATE objects SET meta=? WHERE id=?", json.dumps(meta), o["id"])
+        agent.save(); push(agent.snapshot())
 
     def wish_result(text, ok):
         push({"type": "wish_result", "text": text, "ok": ok, "ts": time.time()})

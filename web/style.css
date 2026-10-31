@@ -113,3 +113,4 @@ select{background:#fffdf6;border:1px solid var(--line);border-radius:10px;paddin
 #wx{font-size:12px}
 .drop{border:2px dashed var(--line);border-radius:14px;padding:22px 10px;text-align:center;background:#fffdf6;cursor:pointer}.drop.over,.drop:hover{border-color:var(--acc);background:var(--acc-soft)}
 button:disabled{opacity:.45;cursor:not-allowed}
+.rng{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:12px}.rng>span:first-child{width:92px;color:var(--dim)}.rng input[type=range],.rng select{flex:1;min-width:0}.rng output{width:34px;text-align:right}.btn.ob{padding:2px 9px;font-size:11px}
