@@ -191,11 +191,11 @@ class Agent:
         return self.db.q("SELECT id,kind,name,x,z,color,source,radius FROM objects ORDER BY id")
 
     # ---- placement is the engine's job ---------------------------------
-    def place_near(self, cx, cz, r, skip=None):
-        """Find a free spot near (cx,cz) for a footprint of radius r; grows the buildable area if crowded."""
+    def place_near(self, cx, cz, r, skip=None, group=None):
+        """Find a free spot near (cx,cz) for a footprint of radius r (next to like things, on a grid, when `group` is given); grows the buildable area if crowded."""
         objs = skip if skip is not None else self.objects()
         before = world.half()
-        spot, fallback = layout.place(self.state, objs, cx, cz, r, log=self.log)
+        spot, fallback = layout.place(self.state, objs, cx, cz, r, log=self.log, group=group)
         if world.half() != before:
             self.db.control(f"buildable area grew to {2 * world.half():.0f}x{2 * world.half():.0f}")
         return spot, fallback

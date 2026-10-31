@@ -49,13 +49,14 @@ def _hit_obstacle(x, z, r, margin):
     return False
 
 
-def is_free(objects, x, z, r, margin=config.SPACING_MARGIN, skip_id=None, half=None):
+def is_free(objects, x, z, r, margin=config.SPACING_MARGIN, skip_id=None, half=None, skip_ids=None):
     half = half or world.half()
     if abs(x) > half - r - 0.8 or abs(z) > half - r - 0.8:
         return False
     if _hit_obstacle(x, z, r, margin):
         return False
-    return all(dist(x, z, o["x"], o["z"]) >= radius_of(o) + r + margin for o in objects if o["id"] != skip_id and o.get("kind") != "ground")
+    return all(dist(x, z, o["x"], o["z"]) >= radius_of(o) + r + margin for o in objects
+               if o["id"] != skip_id and o.get("kind") != "ground" and not (skip_ids and o["id"] in skip_ids))
 
 
 def find_spot(objects, cx, cz, r, rng=None, skip_id=None, max_tries=900, max_radius=None):
@@ -70,6 +71,26 @@ def find_spot(objects, cx, cz, r, rng=None, skip_id=None, max_tries=900, max_rad
         x, z = cx + rad * math.cos(ang) + (rng.uniform(-0.4, 0.4) if i == 0 else 0), cz + rad * math.sin(ang)
         if is_free(objects, x, z, r, skip_id=skip_id):
             return round(x, 2), round(z, 2)
+    return None
+
+
+def group_of(name):
+    """Things of the same kind belong together: 'Pine Tree' and 'Blossom Tree' -> 'tree'."""
+    w = [x for x in re.findall(r"[a-z]+", str(name).lower())]
+    return (w[-1][:-1] if w and len(w[-1]) > 3 and w[-1].endswith("s") else (w[-1] if w else "thing"))
+
+
+def lattice_spot(objects, ax, az, r, rng=None, skip_ids=None, max_radius=12.0):
+    """A tidy position: the nearest free point of a grid (step = footprint + margin) around (ax, az), so like things line up."""
+    step = round(2 * r + config.SPACING_MARGIN + 0.2, 1)
+    step = max(1.5, step)
+    pts = sorted(((i, j) for i in range(-7, 8) for j in range(-7, 8)), key=lambda p: (p[0] ** 2 + p[1] ** 2, abs(p[1])))
+    for i, j in pts:
+        x, z = round(ax + i * step, 2), round(az + j * step, 2)
+        if dist(x, z, ax, az) > max_radius:
+            break
+        if is_free(objects, x, z, r, skip_ids=skip_ids):
+            return x, z
     return None
 
 
@@ -98,9 +119,15 @@ def grow(state, log=None):
     return True
 
 
-def place(state, objects, cx, cz, r, rng=None, log=None, skip_id=None):
+def place(state, objects, cx, cz, r, rng=None, log=None, skip_id=None, group=None):
     """Find a spot near (cx,cz). Order: inside its own zone -> the closest other zones that still have room -> anywhere (growing the world if needed)."""
     maybe_grow(state, objects, log)
+    if group:                                                                 # neat: next to the same kind of thing, on a grid
+        like = [o for o in objects if group_of(o.get("name", "")) == group and o["id"] != skip_id and dist(o["x"], o["z"], cx, cz) <= 14]
+        ax, az = (sum(o["x"] for o in like) / len(like), sum(o["z"] for o in like) / len(like)) if like else (cx, cz)
+        spot = lattice_spot(objects, ax, az, r, skip_ids={skip_id} if skip_id else None, max_radius=9.0 if like else 6.0)
+        if spot:
+            return spot, False
     home = zone_at(cx, cz)
     order = ([home] if home else []) + sorted((k for k in ZONES if k != home), key=lambda k: dist(cx, cz, *ZONES[k]["c"]))
     for k in order:
@@ -202,3 +229,72 @@ def zone_report(objects):
         used = zone_used(objects, k)
         out.append(f"{z['label']} ({n}, {'roomy' if used < 0.2 else 'filling up' if used < 0.45 else 'crowded'})")
     return "; ".join(out)
+
+
+# ---- arranging existing objects ----------------------------------------------------------------------
+def _fits(others, x, z, r, taken):
+    return is_free(others, x, z, r) and all(dist(x, z, tx, tz) >= tr + r + config.SPACING_MARGIN for tx, tz, tr in taken)
+
+
+def arrange_positions(objects, sel, pattern, cx, cz):
+    """New positions for the selected objects (list of dicts) in a pattern, avoiding everything else. -> {id: (x, z)} or None if it cannot fit."""
+    ids = {o["id"] for o in sel}
+    others = [o for o in objects if o["id"] not in ids]
+    sel = sorted(sel, key=lambda o: (group_of(o["name"]), o["name"]))
+    n = len(sel)
+    rs = [radius_of(o) for o in sel]
+    gap = config.SPACING_MARGIN + 0.3
+
+    def try_layout(offsets_fn):
+        # slide the whole arrangement around the anchor until every member fits
+        for k in range(0, 40):
+            ang = k * 2.399963
+            rad = 0 if k == 0 else 1.6 * (k ** 0.5)
+            ox, oz = cx + rad * math.cos(ang), cz + rad * math.sin(ang)
+            pos, taken = {}, []
+            for o, r, (dx, dz) in zip(sel, rs, offsets_fn()):
+                x, z = round(ox + dx, 2), round(oz + dz, 2)
+                if not _fits(others, x, z, r, taken):
+                    break
+                pos[o["id"]] = (x, z); taken.append((x, z, r))
+            else:
+                return pos
+        return None
+    if pattern in ("row", "line"):
+        total = sum(2 * r + gap for r in rs) - gap
+        def off():
+            x, out = -total / 2, []
+            for r in rs:
+                out.append((x + r, 0)); x += 2 * r + gap
+            return out
+        return try_layout(off)
+    if pattern == "column":
+        total = sum(2 * r + gap for r in rs) - gap
+        def off():
+            z, out = -total / 2, []
+            for r in rs:
+                out.append((0, z + r)); z += 2 * r + gap
+            return out
+        return try_layout(off)
+    if pattern == "circle":
+        R = max(2.0, sum(2 * r + gap for r in rs) / (2 * math.pi))
+        return try_layout(lambda: [(R * math.cos(2 * math.pi * i / n), R * math.sin(2 * math.pi * i / n)) for i in range(n)])
+    if pattern == "grid":
+        cols = math.ceil(math.sqrt(n)); cell = 2 * max(rs) + gap
+        rows = math.ceil(n / cols)
+        return try_layout(lambda: [((i % cols - (cols - 1) / 2) * cell, (i // cols - (rows - 1) / 2) * cell) for i in range(n)])
+    # cluster / move: pack tightly around the anchor, largest first
+    order = sorted(range(n), key=lambda i: -rs[i])
+    pos, taken = {}, []
+    for i in order:
+        spot = None
+        for k in range(0, 300):
+            rad = 0 if k == 0 else 0.9 + 0.5 * math.sqrt(k) * (1 + rs[i] * 0.3)
+            ang = k * 2.399963
+            x, z = round(cx + rad * math.cos(ang), 2), round(cz + rad * math.sin(ang), 2)
+            if _fits(others, x, z, rs[i], taken):
+                spot = (x, z); break
+        if not spot:
+            return None
+        pos[sel[i]["id"]] = spot; taken.append((spot[0], spot[1], rs[i]))
+    return pos
