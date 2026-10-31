@@ -129,8 +129,8 @@ INTEREST_MIN = 0.35              # below this an interest has faded away
 MAX_INTERESTS = 12
 MIN_TICKS_BETWEEN_TUNES = 10
 TEND_COOLDOWN = 20               # per plant
-MAX_FINDS = 5                    # small found objects lying around at once
-FIND_SPAWN_CHANCE = 0.2          # per tick
+MAX_FINDS = 2                    # small found objects lying around at once
+FIND_SPAWN_CHANCE = 0.03         # per tick
 BUILD_REASON_MIN = 12            # characters
 
 # --- memory recall (local embeddings via Ollama; no cloud) ---
@@ -180,3 +180,8 @@ REPEAT_MOOD_DROP = 0.10                   # mood drop per extra repeat beyond th
 NOVELTY_ENERGY = 3.0                      # energy gained by doing a fresh kind of thing
 NOVELTY_MOOD = 0.12                       # mood lift for the same
 NEW_INTEREST_ENERGY = 2.0                 # energy gained when a brand-new interest appears
+
+# ---- collecting small finds is an occasional treat, not a habit
+COLLECT_MIN_TICKS = 100          # at least this many ticks between two pick-ups
+COLLECT_PER_DAY = 2              # and at most this many per world day (144 ticks)
+COLLECT_WEIGHT, COLLECT_FIND_BONUS = 0.12, 0.15   # how much he feels like collecting (was 0.6 and +0.8)

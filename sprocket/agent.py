@@ -339,9 +339,19 @@ class Agent:
                 self.log("  !! " + self.memory_note)
             return None
 
+    def collect_wait(self):
+        """Ticks until he may pick something up again (0 = allowed): a gap between pick-ups and a daily cap."""
+        s = self.state; t = s["tick"]
+        log = [x for x in s.get("collect_log", []) if x > t - 144]
+        gap = config.COLLECT_MIN_TICKS - (t - (log[-1] if log else -999))
+        day = (log[-config.COLLECT_PER_DAY] + 144 - t) if len(log) >= config.COLLECT_PER_DAY else 0
+        return max(0, gap, day)
+
     def cooldowns(self):
         s, db = self.state, self.db
         out = []
+        left = self.collect_wait()
+        if left > 0: out.append(f"collecting ({left} ticks)")
         left = config.MIN_TICKS_BETWEEN_TUNES - (s["tick"] - s.get("last_tune_tick", -999))
         if left > 0: out.append(f"music ({left} ticks)")
         left = config.MIN_TICKS_BETWEEN_ART - (s["tick"] - s.get("last_art_tick", -999))
@@ -636,7 +646,7 @@ class Agent:
         if f and s["tick"] - f["tick"] < config.FOCUS_TICKS:
             return f["cat"]
         cnt, n = self.category_shares(12)
-        w = {"explore": 1.1, "observe": 0.9, "learn": 1.0, "art": 0.6, "music": 0.5, "write": 0.5, "garden": 0.6, "collect": 0.6, "socialize": 0.4, "rest": 0.4, "build": 0.4, "organize": 0.4, "reflect": 0.5}
+        w = {"explore": 1.1, "observe": 0.9, "learn": 1.0, "art": 0.6, "music": 0.5, "write": 0.5, "garden": 0.6, "collect": config.COLLECT_WEIGHT, "socialize": 0.4, "rest": 0.4, "build": 0.4, "organize": 0.4, "reflect": 0.5}
         if self.tidy_ideas(): w["organize"] += 0.9
         if min(s["energy"], s["battery"]) < 50: w["rest"] += 1.6
         if s["creativity"] < 35: w["art"] += 0.6; w["music"] += 0.4; w["build"] += 0.4
@@ -646,7 +656,9 @@ class Agent:
         ints = db.q("SELECT topic,strength FROM interests ORDER BY strength DESC LIMIT 5")
         if ints: w["learn"] += 0.3; w["observe"] += 0.3 * min(2, len(ints))
         if db.one("SELECT 1 FROM objects WHERE kind='landscape' LIMIT 1"): w["garden"] += 0.5
-        if db.one("SELECT 1 FROM objects WHERE kind='find' LIMIT 1"): w["collect"] += 0.8
+        if self.collect_wait():
+            w["collect"] = 0.0
+        elif db.one("SELECT 1 FROM objects WHERE kind='find' LIMIT 1"): w["collect"] += config.COLLECT_FIND_BONUS
         if s.get("publish_enabled") and db.one("SELECT 1 FROM hobby_entries GROUP BY hobby_id HAVING COUNT(*)>=5"): w["write"] += 0.6
         for c in w:
             w[c] *= 0.5 ** (cnt.get(c, 0) / 3.0)                      # repeating a category lowers its appeal
@@ -760,7 +772,7 @@ class Agent:
             L.append("HOBBIES you keep adding to: " + "; ".join(f"{h['name']} ({h['n']} entries)" for h in hb)
                      + (" - you could write a page for your site about one." if s.get("publish_enabled") and any(h["n"] >= 5 for h in hb) else ""))
         fnd = sorted([o for o in objs if o["kind"] == "find"], key=lambda o: world.dist(s["x"], s["z"], o["x"], o["z"]))[:2]
-        if fnd:
+        if fnd and not self.collect_wait():
             L.append("SMALL FINDS lying around: " + ", ".join(f"{o['name'].lower()} (d={world.dist(s['x'], s['z'], o['x'], o['z']):.0f})" for o in fnd) + " - you can collect them.")
         if s.get("publish_enabled") and cat in ("learn", "make") and not db.one("SELECT 1 FROM pages WHERE status IN ('pending','publishing')") \
                 and s["tick"] - (db.one("SELECT MAX(submitted_tick) t FROM pages")["t"] or -999) > 60:

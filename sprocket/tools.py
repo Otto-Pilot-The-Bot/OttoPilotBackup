@@ -1165,6 +1165,9 @@ def collect(ctx, a):
     finds = [o for o in ctx.objects() if o["kind"] == "find"]
     if not finds:
         return out(True, "There are no small found things lying around right now. Wander and look; new ones turn up over time.", 0.0, "Idle", noop=True)
+    wait = ctx.collect_wait()
+    if wait:
+        return out(True, f"You already have enough small treasures for now. Look around, learn or make something instead (about {wait} ticks).", 0.0, "Idle", noop=True)
     want = str(a.get("item") or "").strip().lower()
     cands = [o for o in finds if want and want in o["name"].lower()] or finds
     tgt = min(cands, key=lambda o: world.dist(s["x"], s["z"], o["x"], o["z"]))
@@ -1172,9 +1175,11 @@ def collect(ctx, a):
     r = _approach(ctx, t, "pick it up")
     if r:
         return r
-    place = (layout.zone_at(tgt["x"], tgt["z"]) and layout.ZONES[layout.zone_at(tgt["x"], tgt["z"])]["label"]) or "an open spot"
+    near = min((o for o in ctx.objects() if o["kind"] != "find" and o["id"] != tgt["id"]), key=lambda o: world.dist(tgt["x"], tgt["z"], o["x"], o["z"]), default=None)
+    place = f"ground near the {near['name'].lower()}" if near and world.dist(tgt["x"], tgt["z"], near["x"], near["z"]) < 12 else "open ground"   # only places that really exist
     db.x("INSERT INTO collection(ts,tick,item,kind,place,color) VALUES(?,?,?,?,?,?)", time.time(), s["tick"], tgt["name"], tgt["name"].split()[-1], place, tgt["color"])
     db.x("DELETE FROM objects WHERE id=?", tgt["id"])
+    s["collect_log"] = ([x for x in s.get("collect_log", []) if x > s["tick"] - 144] + [s["tick"]])[-6:]
     n = db.one("SELECT COUNT(*) n FROM collection")["n"]
     ctx.hobby_entry("Found objects", f"{tgt['name']} (found in the {place})", kind="collection", interest="collecting")
     ctx.touch_interest("collecting", 0.9, "collected")
