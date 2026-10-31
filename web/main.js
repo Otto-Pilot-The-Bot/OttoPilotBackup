@@ -455,6 +455,7 @@ function connect() {
     if (m.type === 'snapshot') { const first = !last; last = m; applySnapshot(m, first); }
     else if (m.type === 'action') onAction(m);
     else if (m.type === 'status') UI.status(m.text);
+    else if (m.type === 'wish_result') UI.wishResult(m);
     else if (m.type === 'log') UI.setLog(m.rows);
     else if (m.type === 'art_content') art.receive(m);
   };
@@ -495,7 +496,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (!placing || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
   ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
   const hit = ray.intersectObject(ground)[0]; if (!hit) return;
-  send({ type: 'place_object', ...placing, x: hit.point.x, z: hit.point.z });
+  send({ type: placing.wish ? 'wish_fulfil' : 'place_object', ...placing, x: hit.point.x, z: hit.point.z });
   cancelPlace(); UI.placed();
 });
 

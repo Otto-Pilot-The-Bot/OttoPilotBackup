@@ -11,7 +11,7 @@ import time
 
 from aiohttp import web, WSMsgType
 
-from . import assets as assetlib, config, gifts as giftlib, layout, world
+from . import assets as assetlib, config, design, gifts as giftlib, layout, world
 
 WEB = config.ROOT / "web"
 
@@ -103,6 +103,8 @@ async def serve(agent, runner, interval=None):
             db.control(f"placed {kind} {name} #{oid}")
             agent.save()
             push(agent.snapshot())
+        elif t in ("wish_fulfil", "wish_decline", "wish_hide"):
+            wish_action(t, m)
         elif t == "delete_gift":
             if giftlib.delete(db, int(m.get("id", 0))):
                 db.control(f"deleted gift #{m.get('id')}")
@@ -130,6 +132,51 @@ async def serve(agent, runner, interval=None):
                        "LIVE: approved pages will be pushed to the website.", True)
         elif t == "check_site":
             asyncio.ensure_future(check_site())
+
+    def wish_result(text, ok):
+        push({"type": "wish_result", "text": text, "ok": ok, "ts": time.time()})
+        push(agent.snapshot())
+
+    def wish_action(t, m):
+        """Answering a wish. Fulfil places a model from the asset library (the engine picks the spot unless one was clicked); decline is gentle."""
+        db, s = agent.db, agent.state
+        w = db.one("SELECT * FROM wishes WHERE id=?", int(m.get("id", 0)))
+        if not w:
+            return
+        if t == "wish_hide":
+            db.x("UPDATE wishes SET hidden=1 WHERE id=?", w["id"])
+            return wish_result("Hidden from your list. Otto is not told.", True)
+        if w["status"] != "open":
+            return wish_result("That wish has already been answered.", False)
+        if t == "wish_decline":
+            db.x("UPDATE wishes SET status='declined', resolved_ts=?, notified=1 WHERE id=?", time.time(), w["id"])
+            agent.wish_event("declined", w); db.control(f"wish declined #{w['id']}"); agent.save()
+            return wish_result(f"Told Otto \"not now\" about \"{w['item']}\".", True)
+        aid = m.get("asset") or w["asset_id"]
+        row = db.one("SELECT id,name,tags FROM assets WHERE id=? AND usable=1", int(aid)) if str(aid or "").isdigit() else None
+        if not row:
+            return wish_result("Choose a model from the library first.", False)
+        try:
+            d = design.clean_design(db, asset=row["id"], scale=m.get("scale"))
+        except design.DesignError as e:
+            return wish_result(f"Could not place that model: {e}", False)
+        try:
+            x0, z0 = (world.clamp(float(m["x"])), world.clamp(float(m["z"]))) if m.get("x") is not None else (None, None)
+        except (TypeError, ValueError):
+            x0 = z0 = None
+        if x0 is None:
+            zk = m.get("zone") if m.get("zone") in layout.ZONES else layout.default_zone_for(set(json.loads(row["tags"])) | {layout.group_of(w["item"])})
+            x0, z0 = layout.ZONES[zk]["c"]
+        (x, z), _ = agent.place_near(x0, z0, d["radius"] + 0.3, group=layout.group_of(w["item"]))
+        name = re.sub(r"[^\w \-']", "", w["item"])[:30] or row["name"]
+        meta = {"stage": "finished", "description": f"Granted wish: {w['item']}", "design": d, "wish_id": w["id"]}
+        oid = db.x("INSERT INTO objects(ts,kind,name,x,z,color,source,meta,radius) VALUES(?,?,?,?,?,?,'user',?,?)", time.time(), "creation", name, x, z, "#9e9e9e", json.dumps(meta), d["radius"] + 0.3)
+        db.x("UPDATE wishes SET status='granted', resolved_ts=?, obj_id=?, asset_id=?, asset_name=? WHERE id=?", time.time(), oid, row["id"], row["name"], w["id"])
+        agent.attract(oid, name, "creation", 1.0)
+        agent.wish_event("granted", w, oid)
+        db.thought(s["tick"], "system", f"Your human granted a wish: {w['item']}.")
+        db.control(f"wish granted #{w['id']} ({row['name']})"); agent.save()
+        wish_result(f"Granted! \"{w['item']}\" is now in his world.", True)
 
     def notice(text, ok):
         agent.state["site_notice"] = {"text": text, "ok": ok, "ts": time.time()}

@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS hobbies(id INTEGER PRIMARY KEY, ts REAL, name TEXT UN
 CREATE TABLE IF NOT EXISTS hobby_entries(id INTEGER PRIMARY KEY, ts REAL, tick INT, hobby_id INT, text TEXT);
 CREATE TABLE IF NOT EXISTS gifts(id INTEGER PRIMARY KEY, ts REAL, tick INT, name TEXT, kind TEXT, note TEXT, size INT, file TEXT, mime TEXT, w INT, h INT, tris INT,
   sx REAL, sy REAL, sz REAL, fit REAL, status TEXT DEFAULT 'new', orig TEXT, giver TEXT, looked INT DEFAULT 0, reaction TEXT, obj_id INT);
+CREATE TABLE IF NOT EXISTS wishes(id INTEGER PRIMARY KEY, ts REAL, tick INT, item TEXT, reason TEXT, asset_id INT, asset_name TEXT, interest TEXT,
+  status TEXT DEFAULT 'open', hidden INT DEFAULT 0, resolved_ts REAL, obj_id INT, notified INT DEFAULT 0);
 CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY, ts REAL, what TEXT);
 """
 

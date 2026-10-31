@@ -41,7 +41,32 @@ def _fn(name, desc, props, required):
         "type": "object", "properties": {**props, **_COMMON}, "required": required + ["feeling"]}}}
 
 
+WORLD_MAKING = ("build", "landscape")
+ART_HELP_NB = ("Make a small artwork; it hangs in the gallery. kind=drawing: content is SVG markup (<svg viewBox='0 0 100 100'>...</svg>) or canvas JS using ctx (2D, 256x256), W, H, rand(). "
+               "kind=pixel: content is rows of letters (max 32x32) plus palette like 'R=red B=#2244ff' ('.'=empty).")
+
+
 def schemas(publish_enabled):
+    ts = _schemas(publish_enabled)
+    if config.BUILDING_ENABLED:
+        return ts
+    out_ = []
+    for t in ts:
+        f = t["function"]; n = f["name"]
+        if n in WORLD_MAKING:
+            continue
+        if n == "make_art":
+            f["description"] = ART_HELP_NB
+            f["parameters"]["properties"]["kind"]["enum"] = ["drawing", "pixel"]
+        elif n == "gift":
+            f["description"] = f["description"].replace(" To use a 3D model gift in a build, give build gift=<name>.", "")
+        elif n == "search_assets":
+            f["description"] = "Search the library of 3D models (trees, tents, doors, space things...). Use it to find something to suggest in a wish. Returns names, tags and sizes."
+        out_.append(t)
+    return out_
+
+
+def _schemas(publish_enabled):
     t = [
         _fn("move_to", "Walk toward a place (home, fuel_station, clothing_store, workshop, gallery), an object by name/id, or 'x,z'. "
                        "Say 'inside workshop' (or home / clothing_store / gallery) to go in, 'outside' to step back out.",
@@ -57,6 +82,9 @@ def schemas(publish_enabled):
                     "display (show it in the gallery), keep (keep it safe in your box). To use a 3D model gift in a build, give build gift=<name>.",
             {"action": {"type": "string", "enum": ["look", "place", "display", "keep"]}, "name": {"type": "string"}, "area": {"type": "string"},
              "style": {"type": "string", "enum": ["frame", "poster", "canvas"], "description": "for pictures"}}, ["action"]),
+        _fn("wish", "Ask your human for something you would like in your world (a tree, a tent, a bench...). Say why (tie it to a goal, an interest or a need). Optionally name a model "
+                    "from search_assets that matches. A few wishes per day; no repeats. They may say yes or not now.",
+            {"item": {"type": "string"}, "reason": {"type": "string"}, "asset": {"type": "string", "description": "optional: name of a model from search_assets"}}, ["item", "reason"]),
         _fn("ponder", "Pause for a quiet moment: think, daydream, or just look around. Cheap and calming; good between projects.", {"thought": {"type": "string", "description": "what you are thinking about"}}, []),
         _fn("observe", "Stand still and watch the world: the sky, the weather, birds, cats, plants, or something specific nearby. You may spot things; they go in your spotting log.",
             {"target": {"type": "string", "description": "optional: sky, weather, birds, a place or an object name"}}, []),
@@ -629,13 +657,13 @@ _NEED_WORDS = {"home", "house", "shelter", "sleep", "rest", "live", "light", "la
                "music", "stage", "pond", "water", "tower", "view", "watch", "observe", "market", "cafe", "bakery", "decorate", "gift", "thank", "welcome"}
 
 
-def _reason_ok(ctx, reason):
+def _reason_ok(ctx, reason, what="build this"):
     """A new build must be tied to one of his goals, interests or needs (judged by the engine, not left to the model)."""
     db = ctx.db
     goals = [g["text"] for g in db.q("SELECT text FROM goals WHERE status='active'")]
     interests = [r["topic"] for r in db.q("SELECT topic FROM interests ORDER BY strength DESC LIMIT 8")]
     if len(reason) < config.BUILD_REASON_MIN:
-        return False, ("Say WHY you want to build this: tie it to a goal, an interest or a need. "
+        return False, (f"Say WHY you want to {what}: tie it to a goal, an interest or a need. "
                        f"Your goals: {'; '.join(goals[:3]) or 'none'}. Your interests: {', '.join(interests[:5]) or 'none yet'}. Needs: shelter, light, a place to rest, show art, watch things.")
     words = set(re.findall(r"[a-z]{3,}", reason.lower()))
     stem = lambda w: w[:-1] if w.endswith("s") and len(w) > 3 else w
@@ -830,6 +858,47 @@ async def gift(ctx, a):
     db.x("UPDATE gifts SET status=?, obj_id=? WHERE id=?", "displayed" if action == "display" else "placed", oid, g["id"])
     v = _maker_valence(ctx, "gift", 0.7)
     return out(True, f"You set \"{g['name']}\" out in the {where}. {_feel_text(v)}", v, "ThumbsUp", subject="gift", cat="socialize", changed_objects=True, caption=f"Setting out the gift: {g['name']}")
+
+
+# ------------------------------------------------------------------ wishlist
+def wish(ctx, a):
+    s, db = ctx.state, ctx.db
+    item = re.sub(r"\s+", " ", re.sub(r"[^\w \-',.&]", "", str(a.get("item") or ""))).strip()[:60]
+    reason = re.sub(r"\s+", " ", str(a.get("reason") or "")).strip()[:240]
+    if len(item) < 3:
+        return out(False, "Say what you wish for (a few words).", -0.05, noop=True)
+    if db.one("SELECT COUNT(*) n FROM wishes WHERE tick>?", s["tick"] - 144)["n"] >= config.WISHES_PER_DAY:
+        return out(True, "You have already made your wishes for today. Be patient; your human will get to them.", 0.0, "Idle", noop=True)
+    if db.one("SELECT COUNT(*) n FROM wishes WHERE status='open'")["n"] >= config.WISH_MAX_OPEN:
+        return out(True, "You already have plenty of open wishes. Wait for some to be answered before asking for more.", 0.0, "Idle", noop=True)
+    for r in db.q("SELECT item,status,tick FROM wishes ORDER BY id DESC LIMIT 60"):
+        if ctx.same_goal(item, r["item"]):
+            if r["status"] == "declined" and s["tick"] - r["tick"] > config.WISH_DECLINE_COOLDOWN:
+                continue
+            msg = {"open": "You already wished for something like that; it is still waiting.", "granted": "You already got something like that.",
+                   "declined": "Your human said 'not now' to something like that. Try wishing for something different, or wait a good while."}.get(r["status"], "You already asked for that.")
+            return out(True, msg, 0.0, "Idle", noop=True)
+    ok, why = _reason_ok(ctx, item + " " + reason, "wish for this")
+    if len(reason) < config.BUILD_REASON_MIN or not ok:
+        return out(False, why if not ok else "Say WHY you wish for it (a sentence), tied to a goal, an interest or a need.", -0.05, noop=True)
+    row = None
+    if str(a.get("asset") or "").strip():
+        row = assets.find(db, a["asset"])
+        if not row:
+            hits = ", ".join(h["name"] for h in assets.search(db, str(a["asset"]), 4)) or "none"
+            return out(False, f"No model called '{a['asset']}' in the library (close matches: {hits}). Leave asset empty, or use search_assets.", -0.05, noop=True)
+    else:
+        row, sc = assets.best_match(db, item)
+    interests = [r["topic"] for r in db.q("SELECT topic FROM interests ORDER BY strength DESC LIMIT 10")]
+    stem = lambda w: w[:-1] if w.endswith("s") and len(w) > 3 else w
+    words = {stem(w) for w in re.findall(r"[a-z]{3,}", (item + " " + reason).lower())}
+    interest = next((t for t in interests if {stem(w) for w in re.findall(r"[a-z]{3,}", t.lower())} & words), "")
+    db.x("INSERT INTO wishes(ts,tick,item,reason,asset_id,asset_name,interest) VALUES(?,?,?,?,?,?,?)", time.time(), s["tick"], item, reason, row["id"] if row else None, row["name"] if row else None, interest)
+    if interest:
+        ctx.touch_interest(interest, 0.4, "wish")
+    s["boredom"] = max(0, s["boredom"] - 6)
+    return out(True, f"You added \"{item}\" to your wishlist{' (suggesting the ' + row['name'] + ' model)' if row else ''}. Your human will decide; asking is enough for now.",
+               0.3, "Idle", subject="wishing", cat="socialize", caption=f"Making a wish: {item}")
 
 
 # ------------------------------------------------------------------ organizing
@@ -1122,11 +1191,15 @@ def make_art(ctx, a):
         return out(False, "Give your artwork a title.")
     if s["tick"] - s.get("last_art_tick", -999) < config.MIN_TICKS_BETWEEN_ART:
         return out(True, "You just made a piece and want to let it breathe. Look around, learn something, or take a walk before the next one.", 0.0, "Idle", noop=True)
+    if str(a.get("kind")).lower() == "sculpture" and not config.BUILDING_ENABLED:
+        return out(False, "You make drawings and pixel pictures now. Sculptures are not something you do anymore.", -0.05, noop=True)
     try:
         mode, content, colors = artcheck.check_art(a.get("kind"), a.get("content"))
     except artcheck.ArtError as e:
         return out(False, f"The piece could not be made: {e}. Try again, simpler.", -0.1)
     kind = str(a.get("kind")).lower()
+    if kind == "sculpture" and not config.BUILDING_ENABLED:
+        return out(False, "You make drawings and pixel pictures now. Sculptures are not something you do anymore.", -0.05, noop=True)
     if db.one("SELECT COUNT(*) n FROM art")["n"] >= 300:
         return out(False, "The gallery is full.")
     statement = str(a.get("statement", "")).strip()[:240]
@@ -1178,7 +1251,7 @@ def publish_page(ctx, a):
                0.3, "Idle", subject="writing", pages=True)
 
 
-REGISTRY = {"ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
+REGISTRY = {"wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
             "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')
