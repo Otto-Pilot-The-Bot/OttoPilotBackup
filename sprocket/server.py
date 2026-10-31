@@ -338,6 +338,8 @@ async def serve(agent, runner, interval=None):
     CSP_PAGE = ("default-src 'none'; script-src 'self' 'sha256-%s'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
                 "connect-src 'self' blob: ws://%s ws://localhost:%d; frame-src 'self'; worker-src 'self' blob:; "
                 "base-uri 'none'; form-action 'none'; object-src 'none'" % (imap_hash, origin, config.PORT))
+    CSP_CITY = ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                "connect-src 'self' ws://%s ws://localhost:%d; base-uri 'none'; form-action 'none'; object-src 'none'" % (origin, config.PORT))
     # The art sandbox: no network at all, may run blob workers (where drawing code lives), may post a PNG back to its parent.
     CSP_SANDBOX = "default-src 'none'; script-src 'self' blob:; worker-src blob:; img-src data: blob:; base-uri 'none'; form-action 'none'"
 
@@ -349,6 +351,8 @@ async def serve(agent, runner, interval=None):
         if request.path in ("/", "/index.html"):
             resp.headers["Content-Security-Policy"] = CSP_PAGE
             resp.headers["Cache-Control"] = "no-store"
+        elif request.path.startswith("/city/") and request.path.endswith(".html"):
+            resp.headers["Content-Security-Policy"] = CSP_CITY
         elif request.path == "/art-sandbox.html":
             resp.headers["Content-Security-Policy"] = CSP_SANDBOX
         elif request.path.endswith((".js", ".html", ".css")):
@@ -426,6 +430,7 @@ async def serve(agent, runner, interval=None):
     app = web.Application(middlewares=[security_headers])
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
+    app.router.add_get("/city", lambda r: web.HTTPFound("/city/city.html"))
     app.router.add_get("/asset/{id}", asset_file)
     app.router.add_get("/gift/{id}/file", gift_file)
     app.router.add_post("/gift", gift_upload)

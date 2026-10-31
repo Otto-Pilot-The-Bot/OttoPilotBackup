@@ -79,3 +79,8 @@ Copy the whole folder (incl. `data/sprocket.db`), install Ollama, `ollama pull g
 
 ## Asset library panel (yours only)
 The **Assets** panel (right menu) is for you, not Otto: browse every indexed model with thumbnails, search/filter by pack, or pick an adjustable kit building/prop (house, tower, tree, lamp, pond, car...), tweak its options, then set name, scale, rotation, tint, zone or exact spot, optional grid snap, and place it ("Place it", or "Click on the ground…"). Items you placed can be moved, rotated, resized or removed from **In his world**. His earlier builds were removed from the world (backup: `backup/before-removing-his-buildings.db`).
+
+## City view (isometric, beside the 3D view)
+- `http://127.0.0.1:8765/city` is an isometric page in the city kit's style with Otto drawn by `web/city/otto.js` (4 directions, idle/walk, wave, sit, sleep, ride, mood faces on the visor). The 3D page at `/` still works.
+- `web/city/vendor/` holds copies of the city project's `robot()`/`person()` helpers (source file and commit 302c013 noted in each header), so nothing depends on `reference/city`.
+- Previews: `/city/sheet.html?view=style|motion|mood|colors`. Choose his look with `?body=e1b04a&glow=6fe3ff` (default amber + cyan; change `DEFAULT_LOOK` in `otto.js` to make it permanent).
