@@ -14,7 +14,8 @@ class Runner:
         self._override = None
 
     def interval(self):
-        return float(self._override or self.agent.state.get("interval") or config.TICK_SECONDS)
+        base = float(self._override or self.agent.state.get("interval") or config.TICK_SECONDS)
+        return base if self._override else max(3.0, base * self.agent.decision_factor())      # excited = quicker, lethargic = slower
 
     def set_interval(self, seconds):
         self._override = None

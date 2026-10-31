@@ -405,6 +405,8 @@ export function closePanel() { openId = null; $('#panel').hidden = true; documen
 export function toast(msg, ms = 3500) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(t._t); t._t = setTimeout(() => { t.hidden = true; }, ms); }
 
 function postDoing(body, s) {
+  if (s.arousal_label && body.querySelector('.pbody, div') && !body.querySelector('#arousalNote')) body.querySelector('.pbody, div').insertAdjacentHTML('afterbegin', `<div id="arousalNote" class="small dim" style="margin-bottom:6px">⚡ ${esc(s.arousal_label)} · deciding every ~${Math.round(s.effective_interval || s.interval)}s</div>`);
+  else if (s.arousal_label) { const n = body.querySelector('#arousalNote'); if (n) n.innerHTML = `⚡ ${esc(s.arousal_label)} · deciding every ~${Math.round(s.effective_interval || s.interval)}s`; }
   if (!s.building_enabled) body.querySelectorAll('h3').forEach((h) => { if (h.textContent === 'Project in progress') { h.nextElementSibling && h.nextElementSibling.remove(); h.remove(); } });
   const wo = (s.wishes || []).filter((w) => w.status === 'open');
   if (wo.length) body.querySelector('.pbody, div').insertAdjacentHTML('beforeend', `<h3>Wishes he has made</h3>${wo.map((w) => `<div class="card"><div class="t">💫 ${esc(w.item)}</div><div class="meta">${esc(w.reason)}${w.interest ? ` · ${esc(w.interest)}` : ''}</div></div>`).join('')}`);

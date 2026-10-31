@@ -170,3 +170,13 @@ FIXED_BUILDINGS = os.environ.get("SPROCKET_FIXED_BUILDINGS", "0").lower() in ("1
 
 # Starting points of interest (bench, noticeboard, snack machine, train line...). Off: none are created or arrive.
 POIS_ENABLED = os.environ.get("SPROCKET_POIS", "0").lower() in ("1", "true", "yes")
+
+# ---- energy + mood -> how fast he decides; repeating hurts his mood, trying new things lifts his energy (set AROUSAL_ENABLED False to switch off)
+AROUSAL_ENABLED = os.environ.get("SPROCKET_AROUSAL", "1").lower() in ("1", "true", "yes")
+AROUSAL_FAST, AROUSAL_SLOW = 0.7, 1.4     # tick interval multiplier when excited / when lethargic (times the pace you chose)
+AROUSAL_ENERGY_WEIGHT = 0.55              # arousal = this * energy + (1 - this) * mood, both 0..1
+REPEAT_MOOD_AFTER = 3                     # same category this many times in his last 6 actions starts to feel dull
+REPEAT_MOOD_DROP = 0.10                   # mood drop per extra repeat beyond that
+NOVELTY_ENERGY = 3.0                      # energy gained by doing a fresh kind of thing
+NOVELTY_MOOD = 0.12                       # mood lift for the same
+NEW_INTEREST_ENERGY = 2.0                 # energy gained when a brand-new interest appears

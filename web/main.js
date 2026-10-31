@@ -490,7 +490,7 @@ function applySnapshot(m, teleport) {
   setMood(s.mood);
   { const dd = Math.hypot(s.x - robotPos.x, s.z - robotPos.z); walkSpeed = Math.max(1.3, Math.min(6, dd / Math.max(2, m.interval * 0.75))); }
   targetPos.set(s.x, 0, s.z);
-  snapHour = m.world.hour; snapAt = performance.now(); intervalMs = m.interval * 1000; paused = s.paused;
+  snapHour = m.world.hour; snapAt = performance.now(); intervalMs = (m.effective_interval || m.interval) * 1000; paused = s.paused;
   if (teleport && robot) { robotPos.copy(targetPos); robot.position.copy(robotPos); }
   updateGallery();
 }

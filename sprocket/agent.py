@@ -475,6 +475,22 @@ class Agent:
                 f"Near: {', '.join(o['name'] for o in near)}. Just did: {(last['tool'] + ' ' + last['result'][:140]) if last else 'nothing'}")
 
     # ---- interests, hobbies, categories ---------------------------------
+    def arousal(self):
+        """0..1 from energy and mood: excited/energetic is high, lethargic/low mood is low."""
+        s = self.state
+        e = max(0.0, min(1.0, s["energy"] / 100.0)); m = max(0.0, min(1.0, (s.get("mood_valence", 0.0) + 1) / 2))
+        return config.AROUSAL_ENERGY_WEIGHT * e + (1 - config.AROUSAL_ENERGY_WEIGHT) * m
+
+    def decision_factor(self):
+        """Multiplier on the tick interval: quicker when excited, slower when lethargic."""
+        if not config.AROUSAL_ENABLED:
+            return 1.0
+        return config.AROUSAL_FAST + (1 - self.arousal()) * (config.AROUSAL_SLOW - config.AROUSAL_FAST)
+
+    def arousal_label(self):
+        a = self.arousal()
+        return "feeling quick" if a > 0.72 else "steady" if a > 0.5 else "a little slow" if a > 0.36 else "feeling sluggish"
+
     def touch_interest(self, topic, amount=0.6, source=""):
         """Reading, seeing and enjoying things grows an interest; untouched ones fade (see decay_interests)."""
         topic = re.sub(r"\s+", " ", str(topic or "")).strip().lower()[:40]
@@ -486,6 +502,8 @@ class Agent:
             db.x("UPDATE interests SET strength=MIN(10, strength+?), ts=?, last_tick=? WHERE topic=?", amount, time.time(), t, topic)
         else:
             db.x("INSERT INTO interests(topic,ts,source,strength,last_tick) VALUES(?,?,?,?,?)", topic, time.time(), source[:300], max(1.0, amount), t)
+            if config.AROUSAL_ENABLED:                                              # a brand-new interest is exciting
+                self.state["energy"] = min(100.0, self.state["energy"] + config.NEW_INTEREST_ENERGY)
             extra = db.q("SELECT topic FROM interests ORDER BY strength ASC LIMIT -1 OFFSET ?", config.MAX_INTERESTS)
             for r in extra:
                 db.x("DELETE FROM interests WHERE topic=?", r["topic"])
@@ -971,6 +989,7 @@ class Agent:
         if res.get("noop"):                                   # "not ready / nothing to do" must not count as activity or earn novelty
             s["boredom"] = min(100, s["boredom"] + 2.5)
             res["valence"] = min(res["valence"], -0.1)
+        mood_adj = 0.0
         cat = self.category_of(name, res) if (res["ok"] and not res.get("moved") or name == "move_to") and not res.get("noop") else None
         if cat:                                           # variety pressure: repeating a category pays less, a fresh one pays more
             hist, _ = self.recent_cats(6)
@@ -981,8 +1000,12 @@ class Agent:
             if since is None or since > config.NOVELTY_AFTER:
                 res["valence"] = round(res["valence"] + 0.35, 3)
                 s["boredom"] = max(0, s["boredom"] - 8)
+                if config.AROUSAL_ENABLED:                                          # trying something new feels good and gives energy
+                    s["energy"] = min(100.0, s["energy"] + config.NOVELTY_ENERGY); mood_adj += config.NOVELTY_MOOD
             elif rep >= 3:
                 s["boredom"] = min(100, s["boredom"] + 2 * (rep - 2))
+            if config.AROUSAL_ENABLED and rep >= config.REPEAT_MOOD_AFTER:           # repeating himself dulls his mood (he is never told why)
+                mood_adj -= config.REPEAT_MOOD_DROP * (rep - config.REPEAT_MOOD_AFTER + 1)
         tid = res.get("target_id")
         if tid and any(x["id"] == tid for x in s.get("attract", [])):
             res["valence"] = round(res["valence"] + 0.3, 3)                          # going to what drew him feels good
@@ -996,6 +1019,7 @@ class Agent:
         v = float(res["valence"])
         self.learn(res.get("subject"), v)
         s["mood_valence"] = round(0.75 * s["mood_valence"] + 0.25 * max(-1, min(1, v / 1.5 + FEELINGS[feeling] * 0.3)), 3)
+        s["mood_valence"] = round(max(-1, min(1, s["mood_valence"] + mood_adj)), 3)
         s["mood"] = feeling if res["ok"] else ("angry" if s["mood"] == "angry" else "surprised")
         if v <= -1.0 and res["ok"]:
             s["mood"] = random.choice(["sad", "angry"])
@@ -1149,7 +1173,7 @@ class Agent:
                 "state": {k: s[k] for k in ("tick", "x", "z", "energy", "battery", "boredom", "creativity", "mood", "paused",
                                             "publish_enabled", "last_anim", "last_say", "pace")},
                 "think": str(config.THINK_MAIN), "pace_presets": config.PACE_PRESETS,
-                "world": world.world_time(s["tick"]), "robot_height": config.ROBOT_HEIGHT, "server_time": time.time(),
+                "arousal": round(self.arousal(), 2), "arousal_label": self.arousal_label(), "effective_interval": round(iv * self.decision_factor(), 1), "world": world.world_time(s["tick"]), "robot_height": config.ROBOT_HEIGHT, "server_time": time.time(),
                 "objects": objs, "places": world.PLACES, "outfit": {o["slot"]: o["color"] for o in db.q("SELECT * FROM outfit")},
                 "goals": db.q("SELECT id,text FROM goals WHERE status='active'"),
                 "prefs": db.q("SELECT subject,round(score,1) score,n FROM prefs ORDER BY ABS(score) DESC LIMIT 40"),
