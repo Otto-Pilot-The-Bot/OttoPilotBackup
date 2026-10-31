@@ -24,3 +24,5 @@ assests/
 
 # read-only reference clone of another project
 reference/
+tools/whisper/*.bin
+inbox/
