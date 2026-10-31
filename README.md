@@ -84,3 +84,6 @@ The **Assets** panel (right menu) is for you, not Otto: browse every indexed mod
 - `http://127.0.0.1:8765/city` is an isometric page in the city kit's style with Otto drawn by `web/city/otto.js` (4 directions, idle/walk, wave, sit, sleep, ride, mood faces on the visor). The 3D page at `/` still works.
 - `web/city/vendor/` holds copies of the city project's `robot()`/`person()` helpers (source file and commit 302c013 noted in each header), so nothing depends on `reference/city`.
 - Previews: `/city/sheet.html?view=style|motion|mood|colors`. Choose his look with `?body=e1b04a&glow=6fe3ff` (default amber + cyan; change `DEFAULT_LOOK` in `otto.js` to make it permanent).
+
+## Realism pass (3D view)
+`web/realism.js`: filmic tone mapping, sharper soft shadows, a sky with horizon glow, sun and stars, drifting clouds, textured grass ground with swaying grass tufts, a horizon that fades into the fog, and sky-based ambient light. All generated in code. `/?plain=1` turns it off (old look); `/?hour=12` previews a time of day.

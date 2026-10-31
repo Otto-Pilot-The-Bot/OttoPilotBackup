@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as UI from './ui.js';
 import { ArtStore } from './art.js';
+import { createRealism } from './realism.js';
 import { buildDesign, animateDesign, mixers, glowMats, kitGlow } from './models.js';
 
 const HALF = 24;
@@ -26,6 +27,7 @@ const sun = new THREE.DirectionalLight(0xfff2d6, 2.2);
 sun.castShadow = true;
 Object.assign(sun.shadow.camera, { left: -38, right: 38, top: 38, bottom: -38 }); sun.shadow.mapSize.set(2048, 2048);
 scene.add(sun);
+const REAL = createRealism({ renderer, scene, camera, sun, hemi });          // realism pass (web/realism.js); ?plain=1 turns it off
 let ground, groundParts = [], curHalf = 0;
 function buildGround(half) {
   for (const o of groundParts) { scene.remove(o); o.geometry?.dispose?.(); }
@@ -34,7 +36,9 @@ function buildGround(half) {
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
   const grid = new THREE.GridHelper(half * 2, half, 0x6a9a4a, 0x7aab58); grid.position.y = 0.01;
   const border = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(half * 2, 0.2, half * 2)), new THREE.LineBasicMaterial({ color: 0x4a6a3a }));
-  groundParts = [ground, grid, border]; for (const o of groundParts) scene.add(o);
+  groundParts = REAL.on ? [ground] : [ground, grid, border];
+  if (REAL.on) { REAL.buildGround(half, ground); border.geometry.dispose(); grid.geometry.dispose(); }
+  for (const o of groundParts) scene.add(o);
   Object.assign(sun.shadow.camera, { left: -half - 14, right: half + 14, top: half + 14, bottom: -half - 14 }); sun.shadow.camera.updateProjectionMatrix();
   controls.maxDistance = 70 + (half - 24) * 1.6; scene.fog.far = 120 + (half - 24) * 2.2;
 }
@@ -524,8 +528,8 @@ function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.1), now = performance.now();
   // world clock: glides between ticks (10 world minutes per tick)
-  const hour = (snapHour + (paused ? 0 : Math.min(1, (now - snapAt) / intervalMs)) * (10 / 60)) % 24;
-  applyTime(hour);
+  const hour = new URLSearchParams(location.search).get('hour') ? +new URLSearchParams(location.search).get('hour') : (snapHour + (paused ? 0 : Math.min(1, (now - snapAt) / intervalMs)) * (10 / 60)) % 24;
+  applyTime(hour); REAL.update(hour, nightness, dt, now / 1000);
   const hh = Math.floor(hour), mm = Math.floor((hour % 1) * 60), lbl = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   if (lbl !== lastClock && last) { lastClock = lbl; UI.setClock({ label: lbl, day: last.world.day, phase: hour >= 5 && hour < 7.5 ? 'dawn' : hour >= 7.5 && hour < 18 ? 'day' : hour >= 18 && hour < 20 ? 'dusk' : 'night' }); }
   if (robot) {
