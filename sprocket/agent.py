@@ -155,7 +155,8 @@ class Agent:
                 "mood_valence": 0.3, "paused": False, "publish_enabled": config.PUBLISH_ENABLED_DEFAULT,
                 "last_search": None, "last_reflect": 0, "last_anim": "Idle", "last_say": "", "created": time.time(),
                 "creativity": 85.0, "interval": None, "inspiration": None, "inside": None, "world_half": config.WORLD_HALF,
-                "focus": None, "neg_streak": 0, "last_project_tick": -999, "last_art_tick": -999, "last_style_tick": 0, "new_gift": None}
+                "focus": None, "neg_streak": 0, "last_project_tick": -999, "last_art_tick": -999, "last_style_tick": 0, "new_gift": None,
+                "publish_mode": config.PUBLISH_MODE_DEFAULT, "site_notice": None}
 
     def save(self):
         self.db.put("state", self.state)
@@ -384,6 +385,10 @@ class Agent:
         top = max(cnt, key=cnt.get)
         if n >= 8 and cnt[top] >= 6:
             L.append(f"VARIETY: most of your recent time went to '{top}'. Something different might feel fresh.")
+        if s.get("publish_enabled") and cat in ("learn", "make") and not db.one("SELECT 1 FROM pages WHERE status IN ('pending','publishing')") \
+                and s["tick"] - (db.one("SELECT MAX(submitted_tick) t FROM pages")["t"] or -999) > 60:
+            L.append("YOUR WEBSITE: you may write one short page (publish_page) about something you learned, made or feel. "
+                     "No personal or computer details. Your human approves every page before it goes online.")
         ls = s.get("last_search")
         if ls and ls.get("urls") and s["tick"] - ls["tick"] <= 3:
             L.append("YOU JUST SEARCHED. To really learn from a result, call read_page with one of these urls: " + " | ".join(ls["urls"][:3]))
@@ -645,7 +650,7 @@ class Agent:
                 "objects": objs, "places": world.PLACES, "outfit": {o["slot"]: o["color"] for o in db.q("SELECT * FROM outfit")},
                 "goals": db.q("SELECT id,text FROM goals WHERE status='active'"),
                 "prefs": db.q("SELECT subject,round(score,1) score,n FROM prefs ORDER BY ABS(score) DESC LIMIT 40"),
-                "pages": db.q("SELECT id,title,body,status FROM pages WHERE status='pending'"),
+                "pages": db.q("SELECT id,title,excerpt AS body,status FROM pages WHERE status='pending'"),
                 "journal": db.q("SELECT id,ts,tick,kind,text,mood FROM journal ORDER BY id DESC LIMIT 40"),
                 "projects": db.q("SELECT id,name,description,stage,status,color,tick,finished_tick FROM projects ORDER BY id DESC LIMIT 8"),
                 "interests": db.q("SELECT topic,strength FROM interests ORDER BY strength DESC, ts DESC LIMIT 12"),
@@ -687,8 +692,23 @@ class Agent:
                 "estimates_minutes": {"energy, idle only": mins(c.ENERGY_BASE_DRAIN), "energy, typical mix": mins(typ(0)),
                                       "battery, idle only": mins(c.BATTERY_BASE_DRAIN), "battery, typical mix": mins(typ(1))}}
 
+    def site_info(self):
+        db, s, now = self.db, self.state, time.time()
+        pend = db.q("SELECT id,ts,title,slug,tags,excerpt,html,last_error,attempts,next_try,mode,status FROM pages WHERE status IN ('pending','publishing') ORDER BY id")
+        for p in pend:
+            p["tags"] = [t for t in (p["tags"] or "").split(",") if t]
+            p["retry_in"] = max(0, int((p["next_try"] or 0) - now))
+        return {"url": config.SITE_URL, "repo": f"{config.SITE_OWNER}/{config.SITE_REPO}", "enabled": bool(s["publish_enabled"]),
+                "mode": s.get("publish_mode", config.PUBLISH_MODE_DEFAULT), "per_day": config.PUBLISH_MAX_PER_DAY,
+                "used_today": db.one("SELECT COUNT(*) n FROM publish_log WHERE mode='live' AND ok=1 AND ts>?", now - 86400)["n"],
+                "pending": pend, "history": db.q("SELECT id,ts,title,mode,ok,url,commit_url,error FROM publish_log ORDER BY id DESC LIMIT 20"),
+                "status": getattr(self, "site_status", None), "notice": s.get("site_notice"),
+                "author": f"{config.GIT_AUTHOR_NAME}", "dryrun_folder": "site_dryrun/"}
+
     def snapshot(self):
         d = self._snapshot_base()
+        d["site"] = self.site_info()
+        d["state"]["publish_mode"] = self.state.get("publish_mode", config.PUBLISH_MODE_DEFAULT)
         db, s = self.db, self.state
         iv = d["interval"]
         d["state"]["inside"] = s.get("inside")

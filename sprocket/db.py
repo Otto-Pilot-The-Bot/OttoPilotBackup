@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS assets(id INTEGER PRIMARY KEY, pack TEXT, name TEXT, 
 CREATE TABLE IF NOT EXISTS asset_packs(pack TEXT PRIMARY KEY, path TEXT, n INT, usable INT, license TEXT, credit TEXT, source TEXT,
   attribution_required INT, notes TEXT);
 CREATE TABLE IF NOT EXISTS blocked_sites(host TEXT PRIMARY KEY, ts REAL, until REAL, reason TEXT, hits INT);
+CREATE TABLE IF NOT EXISTS publish_log(id INTEGER PRIMARY KEY, ts REAL, page_id INT, title TEXT, slug TEXT, mode TEXT, ok INT,
+  commit_sha TEXT, url TEXT, commit_url TEXT, error TEXT);
 CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY, ts REAL, what TEXT);
 """
 
@@ -49,7 +51,11 @@ class DB:
         if "stage" not in cols:                      # migration for databases made before projects existed
             self.c.execute("ALTER TABLE builds ADD COLUMN stage TEXT")
         for table, col, typ in (("objects", "radius", "REAL"), ("projects", "design", "TEXT"), ("projects", "area", "TEXT"),
-                                ("builds", "design", "TEXT"), ("journal", "obj_id", "INT")):
+                                ("builds", "design", "TEXT"), ("journal", "obj_id", "INT"),
+                                ("pages", "slug", "TEXT"), ("pages", "html", "TEXT"), ("pages", "tags", "TEXT"), ("pages", "excerpt", "TEXT"),
+                                ("pages", "last_error", "TEXT"), ("pages", "attempts", "INT"), ("pages", "next_try", "REAL"),
+                                ("pages", "approved_ts", "REAL"), ("pages", "published_ts", "REAL"), ("pages", "commit_sha", "TEXT"),
+                                ("pages", "url", "TEXT"), ("pages", "mode", "TEXT"), ("pages", "submitted_tick", "INT")):
             if col not in [r["name"] for r in self.c.execute(f"PRAGMA table_info({table})")]:
                 self.c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
         self.c.commit()

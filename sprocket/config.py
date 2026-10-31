@@ -87,3 +87,23 @@ BLOCKED_SITE_HOURS = 6                   # how long he remembers a site that ref
 MAX_GOALS = 5                    # active goals kept at once (near-duplicates are merged)
 BUILD_WINDOW = (30, 3)           # at most 3 build actions (any stage) in any 30 ticks: builds are an occasional thing
 MAKER_PREF_CAP = 1.5             # building/creating/art tastes can never snowball above this
+
+# =====================================================================================================
+# PUBLISHING (GitHub Pages). The model only ever queues pages; publisher/publish.py is the ONLY code that reads the token.
+# =====================================================================================================
+SITE_OWNER = "Otto-Pilot-The-Bot"
+SITE_REPO = "Otto-Pilot-The-Bot.github.io"
+SITE_BRANCH = "main"
+SITE_URL = "https://otto-pilot-the-bot.github.io"
+GIT_AUTHOR_NAME = "Otto-Pilot-The-Bot"
+GIT_AUTHOR_EMAIL = "350582770+Otto-Pilot-The-Bot@users.noreply.github.com"      # GitHub noreply address of the robot's own account
+PUBLISH_MODE_DEFAULT = "dry_run"        # "dry_run": write to ./site_dryrun and show what would be pushed; "live": really push
+PUBLISH_MAX_PER_DAY = 3                 # pages that may go out per rolling 24 h
+PUBLISH_MAX_PENDING = 5                 # pages waiting for approval at once
+PUBLISH_MAX_SUBMISSIONS_PER_DAY = 6     # pages the robot may submit per rolling 24 h
+PUBLISH_RETRY_COOLDOWN = 90             # seconds before a failed page may be tried again (never an automatic retry)
+PUBLISH_TIMEOUT = 120                   # seconds for the whole publish script
+PAGE_MIN_CHARS, PAGE_MAX_CHARS, TITLE_MAX = 40, 8000, 90
+DRYRUN_DIR = ROOT / "site_dryrun"
+SITE_CLONE_DIR = ROOT / "site"
+PRIVATE_TERMS_FILE = ROOT / "data" / "private_terms.txt"   # optional: one word/phrase per line that must never appear on his site (e.g. your real name)

@@ -30,8 +30,19 @@ move_to, eat, rest, search_web, **read_page**, write_journal, interact_with, sho
 - **Art** (`sprocket/artcheck.py` + browser): SVG is rebuilt from an allow-list (no scripts, images, links, handlers). Pixel/sculpture are parsed into plain data. Canvas JS is first rejected if it names network/DOM/eval APIs (defence in depth only), then runs in a Web Worker inside a sandboxed, opaque-origin iframe served with CSP `default-src 'none'` (no network, no eval), with dangerous globals shadowed and a 3 s kill timer; only a PNG comes back. Tested with hostile pieces (eval escape, infinite loop, parent access, nested workers).
 - The page itself is served with a strict CSP; WebSocket checks the `Origin`; server binds to localhost only.
 - Kill switch: UI button, Ctrl-C, or `touch KILL`. An unfinished tick is discarded so he resumes from the last completed one. Pause/resume and tick speed persist.
-- Publishing: off by default (tool not even offered). Approval saves a local HTML file; nothing is uploaded.
+- Publishing: off by default (tool not even offered) and in **dry-run** mode by default; see "Publishing to GitHub Pages" below.
 - This is application-level containment, not an OS sandbox.
+
+## Publishing to GitHub Pages (his own site)
+Site: https://otto-pilot-the-bot.github.io (repo `Otto-Pilot-The-Bot/Otto-Pilot-The-Bot.github.io`, set in `sprocket/config.py`).
+- **The model only has `publish_page(title, body, tags)`**, which validates the page and puts it in a local queue. It cannot run git, reach the network, or see any credential.
+- **You approve each page** in the *My site* panel (also listed under *You*). Approving launches `publisher/publish.py` as a separate process. That script is the only code that reads `GITHUB_TOKEN` from `.env`; the server and the model never do.
+- **Token handling:** it travels only in the environment of the git child process (a one-off http header for github.com). It is never in the remote URL, argv, shell history, a git config file, a credential helper, the DB, or any log; all output is redacted first. git runs with your global/system config disabled and the robot's identity forced (`Otto-Pilot-The-Bot` + its GitHub noreply address); the push is refused if the author or the `origin` URL is anything else.
+- **Content rules** (`sprocket/sanitize.py`, applied when queued and again at publish time): static HTML/CSS only; no scripts, images, forms, iframes, trackers or remote assets; only https links; pages get a strict CSP meta tag. Pages containing emails, phone numbers, street addresses, file paths, IPs, keys/tokens, references to `.env`/this machine, or your username/hostname are rejected without echoing the match. To block more words (your real name!), list them one per line in `data/private_terms.txt`.
+- **Limits:** 3 pages published per 24 h, 5 waiting at once, 6 submitted per day, 90 s cool-down after a failure. A failed page stays queued with a short plain message; nothing retries by itself.
+- **Modes:** *Dry run* (default) writes the site to `site_dryrun/` and shows what would be pushed. *Live* really commits and pushes; switching to it needs a confirmation click.
+- **Log:** every attempt (page, time, mode, commit link) is in the `publish_log` table and shown under *My site*. The index page (`index.html`) is regenerated from all published pages each time.
+- `publisher/publish.py` and `sprocket/sanitize.py` are read-only files (`chmod u+w` to edit them).
 
 ## Data
 Everything is in `data/sprocket.db` (tables: thoughts, actions, searches, reads, journal, memories, goals, prefs, interests, projects, builds, art, sketches, objects, outfit, pages, controls). `backup/sprocket-before-upgrade.db` is a copy from before the creativity/art/web upgrade.

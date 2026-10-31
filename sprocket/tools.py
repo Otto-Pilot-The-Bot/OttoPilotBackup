@@ -7,7 +7,7 @@ import re
 import time
 from urllib.parse import urlsplit
 
-from . import artcheck, assets, config, design, layout, web, world
+from . import artcheck, assets, config, design, layout, sanitize, web, world
 from .world import dist
 
 FEELING_ENUM = list(world.FEELINGS)
@@ -63,8 +63,11 @@ def schemas(publish_enabled):
              "statement": {"type": "string", "description": "one sentence about what it means to you"}}, ["title", "kind", "content"]),
     ]
     if publish_enabled:
-        t.append(_fn("publish_page", "Draft a short web page. It is NOT published until your human approves it.",
-                     {"title": {"type": "string"}, "body": {"type": "string"}}, ["title", "body"]))
+        t.append(_fn("publish_page", "Write a page for your personal website. body is simple markdown or basic HTML (headings, paragraphs, lists, bold/italic, "
+                                     "https links). NO scripts, images, forms, iframes or remote files, and nothing personal or about this computer. "
+                                     "It only goes into a queue: your human must approve it before it can go online.",
+                     {"title": {"type": "string"}, "body": {"type": "string"}, "tags": {"type": "string", "description": "optional, comma separated, up to 5"}},
+                     ["title", "body"]))
     return t
 
 
@@ -626,13 +629,26 @@ def make_art(ctx, a):
 
 
 def publish_page(ctx, a):
-    if not ctx.state.get("publish_enabled"):
-        return out(False, "Publishing is switched off.")
-    title, body = str(a.get("title", ""))[:120].strip(), str(a.get("body", ""))[:4000].strip()
-    if not title or not body:
-        return out(False, "Need a title and a body.")
-    pid = ctx.db.x("INSERT INTO pages(ts,title,body,status) VALUES(?,?,?,'pending')", time.time(), title, body)
-    return out(True, f"Draft #{pid} saved. It stays on this Mac until your human approves it; do not expect it to go out.", 0.2, "Idle", subject="writing", pages=True)
+    """Queues a page for human approval. The model never touches git, the network, or any credential."""
+    s, db = ctx.state, ctx.db
+    if not s.get("publish_enabled"):
+        return out(False, "Publishing is switched off.", noop=True)
+    now = time.time()
+    if db.one("SELECT COUNT(*) n FROM pages WHERE status IN ('pending','publishing')")["n"] >= config.PUBLISH_MAX_PENDING:
+        return out(True, "Your human already has several pages waiting for approval. Wait for them to be reviewed before writing more.", 0.0, "Idle", noop=True)
+    if db.one("SELECT COUNT(*) n FROM pages WHERE ts>?", now - 86400)["n"] >= config.PUBLISH_MAX_SUBMISSIONS_PER_DAY:
+        return out(True, "You have written plenty of pages for today. Rest your pen and do something else.", 0.0, "Idle", noop=True)
+    try:
+        p = sanitize.process_page(a.get("title"), a.get("body"), a.get("tags"))
+    except sanitize.PageError as e:
+        return out(False, f"The page was not accepted: {e}. Fix that and try again.", -0.05)
+    base, slug, n = p["slug"], p["slug"], 2
+    while db.one("SELECT 1 FROM pages WHERE slug=? AND status IN ('pending','publishing','published')", slug):
+        slug, n = f"{base}-{n}", n + 1
+    pid = db.x("INSERT INTO pages(ts,title,body,status,slug,html,tags,excerpt,submitted_tick,attempts) VALUES(?,?,?,'pending',?,?,?,?,?,0)", now, p["title"],
+               str(a.get("body"))[:config.PAGE_MAX_CHARS], slug, p["html"], ",".join(p["tags"]), p["text"][:200], s["tick"])
+    return out(True, f"Your page \"{p['title']}\" is queued (#{pid}). Nothing is online: your human decides whether it goes on your site.",
+               0.3, "Idle", subject="writing", pages=True)
 
 
 REGISTRY = {"move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,

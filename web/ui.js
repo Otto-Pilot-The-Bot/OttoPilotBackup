@@ -12,6 +12,8 @@ const STAGES = ['blueprint', 'gather', 'build', 'finished'];
 const SWATCH = ['#e53935', '#fb8c00', '#fdd835', '#43a047', '#00897b', '#1e88e5', '#8e24aa', '#ec407a', '#f5f5f5', '#6d4c41'];
 
 let api, snap = null, skew = 0, openId = null, art = null, lastCaption = '';
+const openPrev = new Set();
+let confirmLive = false;
 let thingsTab = 'gallery', browseFilter = 'all', draggingSpeed = false, killArmed = false, logRows = null, showLog = false;
 const gift = { kind: 'tree', color: '#43a047' };
 
@@ -88,6 +90,49 @@ const PANELS = [
     el.querySelector('.tb').innerHTML = items.length ? items.map((i) => i.html).join('') : '<div class="empty">He has not browsed yet.</div>';
   } },
 
+  { id: 'site', icon: '🌍', label: 'My site', title: 'My site', build(el) {
+    el.innerHTML = `<div id="siteNotice"></div><div id="siteStatus"></div><div id="siteQueue"></div><div id="siteHistory"></div>`;
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-site]'); if (!b) return;
+      const a = b.dataset.site;
+      if (a === 'approve' || a === 'reject') api.send({ type: a + '_page', id: +b.dataset.id });
+      else if (a === 'mode-dry') { confirmLive = false; api.send({ type: 'set_publish_mode', mode: 'dry_run' }); }
+      else if (a === 'mode-live') { confirmLive = true; refresh(); }
+      else if (a === 'mode-live-yes') { confirmLive = false; api.send({ type: 'set_publish_mode', mode: 'live' }); }
+      else if (a === 'mode-live-no') { confirmLive = false; refresh(); }
+      else if (a === 'check') api.send({ type: 'check_site' });
+    });
+    el.addEventListener('change', (e) => { if (e.target.id === 'sitePub') api.send({ type: 'toggle_publish', on: e.target.checked }); });
+    el.addEventListener('toggle', (e) => { const d = e.target; if (d.dataset && d.dataset.prev) { d.open ? openPrev.add(d.dataset.prev) : openPrev.delete(d.dataset.prev); } }, true);
+  }, update(el, s) {
+    const S = s.site, live = S.mode === 'live', st = S.status || {};
+    const n = S.notice;
+    $('#siteNotice', el).innerHTML = n && Date.now() / 1000 + skew - n.ts < 600 ? `<div class="card" style="background:${n.ok ? '#e4f1dc' : '#f6d7cf'};border-color:${n.ok ? '#b6d6a4' : '#e3a89b'}">${n.ok ? '✅' : '⚠️'} ${esc(n.text)} <span class="small dim">${ago(n.ts)}</span></div>` : '';
+    const chip = !S.enabled ? '<span class="chip" style="background:#e8dfcc">Publishing is OFF</span>'
+      : live ? '<span class="chip" style="background:#cfe8c4">ON · LIVE (uploads to GitHub)</span>' : '<span class="chip" style="background:#fbe0c4">ON · dry run (nothing is uploaded)</span>';
+    $('#siteStatus', el).innerHTML = `<div class="card"><div>${chip}</div>
+      <div style="margin-top:8px">🌐 <a href="${esc(S.url)}" target="_blank" rel="noopener noreferrer">${esc(S.url.replace('https://', ''))}</a></div>
+      <div class="meta">repo ${esc(S.repo)} · commits as ${esc(S.author)}</div></div>
+      <label class="switch" style="margin:10px 2px"><input type="checkbox" id="sitePub" ${S.enabled ? 'checked' : ''}><span>Let him write pages for his site.<br><span class="small dim">Off by default. Nothing ever goes out without you pressing Approve.</span></span></label>
+      <h3>How approved pages are sent</h3>
+      <div class="tabs" style="margin-bottom:6px"><button data-site="mode-dry" class="${!live ? 'on' : ''}">🧪 Dry run (safe)</button><button data-site="mode-live" class="${live ? 'on' : ''}">🚀 Live</button></div>
+      ${confirmLive ? `<div class="card" style="background:#f6d7cf;border-color:#e3a89b"><b>Go live?</b> Pages you approve will be pushed to the public website above.<div class="field"><button class="btn danger" data-site="mode-live-yes">Yes, switch to live</button><button class="btn" data-site="mode-live-no">Cancel</button></div></div>` : ''}
+      <div class="small dim">${live ? 'Live: approving a page commits and pushes it to GitHub Pages.' : 'Dry run: approving writes the files to <b>site_dryrun/</b> on this Mac and shows what would be pushed. Nothing is uploaded.'}</div>
+      <div class="small" style="margin-top:6px">${st.token_present === undefined ? 'Checking setup…' : st.token_present ? '🔑 GitHub token found in .env (value never shown)' : '⚠️ No GitHub token found in .env'} <button class="btn" style="padding:1px 8px;font-size:11px" data-site="check">Re-check</button></div>
+      <div class="small dim">Limit: ${S.used_today} of ${S.per_day} pages published in the last 24 h.</div>`;
+    $('#siteQueue', el).innerHTML = `<h3>Waiting for your approval</h3>` + (S.pending.length ? S.pending.map((p) => {
+      const busy = p.status === 'publishing', wait = p.retry_in > 0;
+      return `<div class="card"><div class="t">${esc(p.title)}</div><div class="chips" style="margin:4px 0">${p.tags.map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>
+        <div class="small">${esc(p.excerpt)}…</div>
+        <details data-prev="${p.id}" ${openPrev.has(String(p.id)) ? 'open' : ''}><summary class="small">Preview</summary><iframe sandbox referrerpolicy="no-referrer" style="width:100%;height:180px;border:1px solid var(--line);border-radius:8px;background:#fffdf6" srcdoc="${esc('<style>body{font:14px/1.5 system-ui;color:#4b3b29;margin:10px}a{color:#c46a1f}h1{font-size:20px}h2,h3{font-size:16px}</style>' + p.html)}"></iframe></details>
+        ${p.last_error ? `<div class="small" style="color:#a0521c;margin-top:4px">⚠️ Last try failed: ${esc(p.last_error)}${wait ? ` (you can retry in ${p.retry_in}s)` : ''}</div>` : ''}
+        ${p.mode === 'dry_run' && !p.last_error ? '<div class="small dim" style="margin-top:4px">🧪 A dry run of this page was made. It is still waiting.</div>' : ''}
+        <div class="field"><button class="btn primary" data-site="approve" data-id="${p.id}" ${busy || !S.enabled ? 'disabled' : ''}>${busy ? 'Publishing…' : live ? 'Approve & publish live' : (p.last_error ? 'Retry (dry run)' : 'Approve (dry run)')}</button><button class="btn" data-site="reject" data-id="${p.id}" ${busy ? 'disabled' : ''}>Reject</button></div></div>`;
+    }).join('') : '<div class="empty">No pages waiting.</div>') + (S.enabled ? '' : '<div class="small dim">Publishing is off, so approvals are paused.</div>');
+    $('#siteHistory', el).innerHTML = `<h3>Published history</h3>` + (S.history.length ? S.history.map((h) => `<div class="act"><span class="ico">${!h.ok ? '⚠️' : h.mode === 'live' ? '✅' : '🧪'}</span><span class="x2"><b>${h.ok && h.mode === 'live' && safeUrl(h.url) ? `<a href="${esc(h.url)}" target="_blank" rel="noopener noreferrer">${esc(h.title)}</a>` : esc(h.title)}</b>
+      <span class="dim">${h.ok ? (h.mode === 'live' ? 'published' : 'dry run') : esc(h.error || 'failed')}</span> ${h.commit_url && safeUrl(h.commit_url) ? `<a href="${esc(h.commit_url)}" target="_blank" rel="noopener noreferrer">commit</a>` : ''}</span><span class="small dim">${ago(h.ts)}</span></div>`).join('') : '<div class="empty">Nothing published yet.</div>');
+  } },
+
   { id: 'gift', icon: '🎁', label: 'Leave him something', title: 'Leave him something', build(el, s) {
     el.innerHTML = `<p class="dim small" style="margin-top:0">Place something in his world. He will notice it and decide what to do about it.</p>
       <h3>What is it?</h3><div class="kinds"></div>
@@ -106,7 +151,7 @@ const PANELS = [
   { id: 'you', icon: '🕹️', label: 'You', title: 'You', build(el) {
     el.innerHTML = `<button class="btn primary wide" id="pauseBtn"></button>
       <h3>How fast he thinks</h3><input type="range" id="speed" min="3" max="60" step="1"><div class="small dim" id="speedLbl"></div>
-      <h3>Web pages</h3><label class="switch"><input type="checkbox" id="pubChk"><span>Let him draft web pages.<br><span class="small dim">Drafts wait here for your approval. Approving only saves a file in the <b>published</b> folder. Nothing is uploaded.</span></span></label>
+      <h3>Web pages</h3><label class="switch"><input type="checkbox" id="pubChk"><span>Let him draft web pages.<br><span class="small dim">Pages he writes wait for your approval (see <b>My site</b>). Nothing goes online unless you approve it.</span></span></label>
       <div id="pending"></div>
       <h3>Emergency</h3><button class="btn danger wide" id="killBtn">Kill switch — stop Sprocket</button>
       <p class="small dim">You can also press Ctrl-C in the terminal or create a file named KILL in the project folder. His state is saved.</p>`;
@@ -125,7 +170,7 @@ const PANELS = [
     $('#pauseBtn', el).textContent = p ? '▶ Resume Sprocket' : '⏸ Pause Sprocket';
     if (!draggingSpeed) { $('#speed', el).value = Math.round(s.interval); $('#speedLbl', el).textContent = `Thinks every ${Math.round(s.interval)}s`; }
     $('#pubChk', el).checked = s.state.publish_enabled;
-    $('#pending', el).innerHTML = s.pages.length ? '<h3>Drafts awaiting approval</h3>' + s.pages.map((pg) => `<div class="card"><div class="t">${esc(pg.title)}</div><div class="small" style="white-space:pre-wrap">${esc(pg.body.slice(0, 400))}</div><div class="field"><button class="btn primary" data-a="approve_page" data-id="${pg.id}">Approve (save locally)</button><button class="btn" data-a="reject_page" data-id="${pg.id}">Reject</button></div></div>`).join('') : '';
+    $('#pending', el).innerHTML = s.pages.length ? '<h3>Drafts awaiting approval</h3>' + s.pages.map((pg) => `<div class="card"><div class="t">${esc(pg.title)}</div><div class="small">${esc(pg.body)}…</div><div class="field"><button class="btn primary" data-a="approve_page" data-id="${pg.id}">${s.site.mode === 'live' ? 'Approve & publish' : 'Approve (dry run)'}</button><button class="btn" data-a="reject_page" data-id="${pg.id}">Reject</button></div></div>`).join('') : '';
   } },
 
   { id: 'more', icon: '⋯', label: 'More', title: 'Settings & raw log', build(el) {

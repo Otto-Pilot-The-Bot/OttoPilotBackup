@@ -1,6 +1,8 @@
 """aiohttp server: static 3D page + WebSocket. Bound to localhost only."""
 import asyncio
+import os
 import base64
+import sys
 import hashlib
 import html
 import json
@@ -99,20 +101,88 @@ async def serve(agent, runner, interval=None):
             agent.asset_summary = assetlib.scan(db, agent.log)
             db.control(f"rescanned assets: {agent.asset_summary['total']} files")
             push(agent.snapshot())
-        elif t in ("approve_page", "reject_page"):
-            p = db.one("SELECT * FROM pages WHERE id=? AND status='pending'", int(m.get("id", 0)))
+        elif t == "approve_page":
+            asyncio.ensure_future(approve(int(m.get("id", 0))))
+        elif t == "reject_page":
+            p = db.one("SELECT id,title FROM pages WHERE id=? AND status='pending'", int(m.get("id", 0)))
+            if p:
+                db.x("UPDATE pages SET status='rejected' WHERE id=?", p["id"])
+                db.control(f"rejected page #{p['id']}")
+                notice("Page rejected. It will not be published.", True)
+        elif t == "set_publish_mode":
+            mode = m.get("mode")
+            if mode == "live" and not (agent.site_status or {}).get("token_present"):
+                notice("Cannot go live: no GitHub token was found in the .env file.", False)
+            elif mode in ("dry_run", "live"):
+                s["publish_mode"] = mode
+                db.control(f"publish mode = {mode}")
+                notice("Dry run: nothing will be uploaded; files are written to site_dryrun/." if mode == "dry_run" else
+                       "LIVE: approved pages will be pushed to the website.", True)
+        elif t == "check_site":
+            asyncio.ensure_future(check_site())
+
+    def notice(text, ok):
+        agent.state["site_notice"] = {"text": text, "ok": ok, "ts": time.time()}
+        agent.save()
+        push(agent.snapshot())
+
+    async def check_site():
+        """Asks the publisher whether a token exists. The answer is yes/no only; the token never reaches this process."""
+        try:
+            proc = await asyncio.create_subprocess_exec(sys.executable, str(config.ROOT / "publisher" / "publish.py"), "--status",
+                                                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, cwd=str(config.ROOT))
+            out, _ = await asyncio.wait_for(proc.communicate(), 20)
+            agent.site_status = json.loads(out.decode().strip().splitlines()[-1])
+        except Exception:
+            agent.site_status = {"token_present": False, "error": "could not run the publisher"}
+        push(agent.snapshot())
+
+    publish_lock = asyncio.Lock()
+
+    async def approve(pid):
+        db, s = agent.db, agent.state
+        now = time.time()
+        if not s["publish_enabled"]:
+            return notice("Publishing is switched off. Turn it on first; nothing was sent.", False)
+        if publish_lock.locked():
+            return notice("Another page is being published right now. Try again in a moment.", False)
+        async with publish_lock:
+            p = db.one("SELECT * FROM pages WHERE id=? AND status='pending'", pid)
             if not p:
                 return
-            if t == "approve_page":
-                # "Approved" = exported as a static file inside ./published. Nothing is uploaded anywhere.
-                config.PUBLISH_DIR.mkdir(exist_ok=True)
-                slug = re.sub(r"[^a-z0-9]+", "-", p["title"].lower()).strip("-")[:40] or "page"
-                (config.PUBLISH_DIR / f"{p['id']}-{slug}.html").write_text(
-                    f"<!doctype html><meta charset=utf-8><title>{html.escape(p['title'])}</title>"
-                    f"<h1>{html.escape(p['title'])}</h1><p>{html.escape(p['body']).replace(chr(10), '<br>')}</p>")
-            db.x("UPDATE pages SET status=? WHERE id=?", "approved" if t == "approve_page" else "rejected", p["id"])
-            db.control(f"{t} #{p['id']}")
+            if (p["next_try"] or 0) > now:
+                return notice(f"That page failed a moment ago. Please wait {int(p['next_try'] - now)}s before trying again.", False)
+            mode = s.get("publish_mode", config.PUBLISH_MODE_DEFAULT)
+            db.x("UPDATE pages SET status='publishing', approved_ts=? WHERE id=?", now, pid)       # the human's approval, recorded
+            db.control(f"approved page #{pid} ({mode})")
             push(agent.snapshot())
+            env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")}
+            res = None
+            try:
+                proc = await asyncio.create_subprocess_exec(sys.executable, str(config.ROOT / "publisher" / "publish.py"), "--db", str(config.DB_PATH),
+                                                            "--page", str(pid), "--mode", mode, stdout=asyncio.subprocess.PIPE,
+                                                            stderr=asyncio.subprocess.DEVNULL, cwd=str(config.ROOT), env=env)
+                out, _ = await asyncio.wait_for(proc.communicate(), config.PUBLISH_TIMEOUT)
+                res = json.loads(out.decode().strip().splitlines()[-1])
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                res = {"ok": False, "error": "Publishing took too long. The page stays in the queue; try again later."}
+            except Exception:
+                res = {"ok": False, "error": "Publishing could not run. The page stays in the queue."}
+            if not res.get("ok") and db.one("SELECT status FROM pages WHERE id=?", pid)["status"] == "publishing":    # script died before recording
+                db.x("UPDATE pages SET status='pending', last_error=?, attempts=COALESCE(attempts,0)+1, next_try=? WHERE id=?",
+                     str(res.get("error"))[:200], time.time() + config.PUBLISH_RETRY_COOLDOWN, pid)
+            title = (db.one("SELECT title FROM pages WHERE id=?", pid) or {}).get("title", "")
+            if res.get("ok") and res.get("mode") == "live":
+                notice(f"Published \u201c{title}\u201d: {res.get('url')}", True)
+            elif res.get("ok"):
+                notice("Dry run complete: the files were written to site_dryrun/ and nothing was uploaded.", True)
+            else:
+                notice("Not published: " + str(res.get("error", "unknown problem"))[:200], False)
+            db.control(f"publish #{pid} {mode} ok={bool(res.get('ok'))}")
 
     index_html = (WEB / "index.html").read_text()
     m_ = re.search(r'<script type="importmap">(.*?)</script>', index_html, re.S)
@@ -163,6 +233,8 @@ async def serve(agent, runner, interval=None):
     ar = web.AppRunner(app)
     await ar.setup()
     await web.TCPSite(ar, config.HOST, config.PORT).start()
+    agent.site_status = None
+    asyncio.ensure_future(check_site())
     agent.log(f"[{config.NAME}] world at http://{config.HOST}:{config.PORT}")
     try:
         await runner.run(interval=interval)
