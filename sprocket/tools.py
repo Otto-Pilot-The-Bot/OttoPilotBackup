@@ -7,7 +7,7 @@ import re
 import time
 from urllib.parse import urlsplit
 
-from . import artcheck, assets, config, design, kit, layout, sanitize, scriptlang, web, world
+from . import artcheck, assets, config, design, kit, layout, pois, sanitize, scriptlang, web, world
 from .world import dist
 
 FEELING_ENUM = list(world.FEELINGS)
@@ -185,6 +185,7 @@ def move_to(ctx, a):
         return out(True, f"You are already at the {tgt['label']}.", 0.0, "Idle")
     nx, nz, arrived = world.step_toward(s["x"], s["z"], tgt["x"], tgt["z"])
     s["x"], s["z"] = nx, nz
+    cap = _walk_caption(ctx, tgt)
     if arrived and enter:
         _enter(ctx, tgt["key"])
         msg = f"You arrived and went inside the {tgt['label']}."
@@ -192,18 +193,41 @@ def move_to(ctx, a):
         msg = f"You arrived at the {tgt['label']}."
     else:
         msg = f"You walked toward the {tgt['label']}; {dist(nx, nz, tgt['x'], tgt['z']):.0f} units left."
-    return out(True, msg, 0.1, "Running" if d0 > 15 else "Walking", moved=True, subject=tgt["label"])
+    return out(True, msg, 0.1, "Running" if d0 > 15 else "Walking", moved=True, subject=tgt["label"], caption=cap)
+
+
+PLACE_WHY = {"home": "to rest and recharge", "fuel_station": "to refuel", "clothing_store": "to look at hats and clothes", "gallery": "to look at the art", "workshop": "to make something"}
+
+
+def _walk_caption(ctx, tgt):
+    """A plain caption that says where he is going and why, from facts the engine knows (not from the model's wording)."""
+    label = tgt["label"].lower()
+    if tgt.get("key") in PLACE_WHY:
+        return f"Walking to the {label} {PLACE_WHY[tgt['key']]}"
+    if tgt.get("kind") == "poi":
+        row = ctx.db.one("SELECT meta FROM objects WHERE id=?", tgt["id"])
+        offers = (json.loads(row["meta"] or "{}").get("offers") or []) if row else []
+        why = {"rest": "to sit and rest", "eat": "to buy a snack", "read": "to read the notices", "watch": "to watch for a while", "pet": "to say hello", "browse": "to browse the wares"}.get(offers[0] if offers else "", "to see what is there")
+        return f"Walking to the {label} {why}"
+    if tgt.get("kind") == "find":
+        return f"Walking over to pick up the {label}"
+    return f"Walking to the {label}"
 
 
 def eat(ctx, a):
     s = ctx.state
     if s["battery"] >= config.FULL_THRESHOLD:
         return out(True, f"Your battery is already full ({s['battery']:.0f}%). Nothing to refuel right now.", 0.0, "Idle", noop=True)
-    r = _approach(ctx, _place("fuel_station"), "eat")
+    src, restore = _place("fuel_station"), config.EAT_RESTORE
+    for o in ctx.objects():                                      # a snack machine may be closer than the fuel station
+        if o["kind"] == "poi" and "snack" in o["name"].lower() and dist(s["x"], s["z"], o["x"], o["z"]) + 2 < dist(s["x"], s["z"], src["x"], src["z"]):
+            src, restore = {"label": o["name"].lower(), "kind": "poi", "x": o["x"], "z": o["z"], "key": None, "id": o["id"]}, config.SNACK_RESTORE
+    r = _approach(ctx, src, "eat")
     if r:
+        r["caption"] = f"Walking to the {src['label']} to refuel"
         return r
     was = s["battery"]
-    s["battery"] = min(100.0, was + config.EAT_RESTORE)
+    s["battery"] = min(100.0, was + restore)
     v = _outcome_valence(ctx, "fuel", 0.5 + (0.5 if was < config.LOW_HINT else 0))
     return out(True, f"You refueled: battery {was:.0f} -> {s['battery']:.0f}. {_feel_text(v)}", v, "ThumbsUp", subject="fuel station")
 
@@ -224,10 +248,11 @@ def rest(ctx, a):
         v = 1.0 if was < config.LOW_HINT else 0.5
         return out(True, f"You curled up in the cabin and recharged: energy {was:.0f} -> {s['energy']:.0f}, battery {bat:.0f} -> {s['battery']:.0f}.",
                    v, "Sitting", subject="resting")
-    s["energy"] = min(100.0, was + config.REST_RESTORE_AWAY)
+    bench = next((o for o in ctx.objects() if o["kind"] == "poi" and "bench" in o["name"].lower() and dist(s["x"], s["z"], o["x"], o["z"]) <= config.REACH + 1.5), None)
+    s["energy"] = min(100.0, was + config.REST_RESTORE_AWAY + (config.BENCH_RESTORE if bench else 0))
     s["boredom"] = min(100.0, s["boredom"] + 4)
-    return out(True, f"You rested where you stood: energy {was:.0f} -> {s['energy']:.0f}. (Resting at the home pad recharges you fully.)",
-               0.4 if was < config.LOW_HINT else -0.1, "Sitting", subject="resting")
+    return out(True, f"You rested {'on the bench' if bench else 'where you stood'}: energy {was:.0f} -> {s['energy']:.0f}. (Resting at the home pad recharges you fully.)",
+               0.5 if was < config.LOW_HINT else (0.1 if bench else -0.1), "Sitting", subject="resting")
 
 
 def _ddg(query):
@@ -344,6 +369,54 @@ def _view_gallery(ctx):
                v, "ThumbsUp" if v > 0.3 else "Idle", subject="gallery", face=(0.0, world.PLACES["gallery"]["z"] - 4))
 
 
+def _use_poi(ctx, tgt):
+    """What each point of interest actually does when he uses it."""
+    s, db = ctx.state, ctx.db
+    row = db.one("SELECT name,meta FROM objects WHERE id=?", tgt["id"]); m = json.loads(row["meta"] or "{}"); k, v = m.get("poi"), m.get("variant", {})
+    wt = world.world_time(s["tick"])
+    base = lambda key, b=0.5: _maker_valence(ctx, key, b)
+    face = (tgt["x"], tgt["z"])
+    if k == "bench":
+        was = s["energy"]; s["energy"] = min(100.0, was + config.BENCH_RESTORE)
+        v_ = base("bench", 0.3)
+        return out(True, f"You sat on the bench for a while and watched the world go by (energy {was:.0f} -> {s['energy']:.0f}). {_feel_text(v_)}", v_, "Sitting", subject="resting", cat="rest", caption="Sitting on the bench for a rest", face=face)
+    if k == "snack_machine":
+        if s["battery"] >= config.FULL_THRESHOLD:
+            return out(True, f"Your battery is already full ({s['battery']:.0f}%); you only admire the snack machine's glowing panel.", 0.0, "Idle", noop=True, cat="rest")
+        was = s["battery"]; s["battery"] = min(100.0, was + config.SNACK_RESTORE); v_ = base("snack", 0.4)
+        return out(True, f"You bought a snack: battery {was:.0f} -> {s['battery']:.0f}. {_feel_text(v_)}", v_, "ThumbsUp", subject="fuel station", cat="rest", caption="Buying a snack to refuel", face=face)
+    if k == "noticeboard":
+        (t1, t2) = pois.news_for(wt["day"]); item = random.choice([t1, t2])
+        ctx.touch_interest(item[1], 0.9, "noticeboard")
+        v_ = base("notices", 0.4)
+        return out(True, f"You read the noticeboard: \"{item[2]}\" {_feel_text(v_)}", v_, "Yes", subject="learning", cat="learn", caption=f"Reading the noticeboard: {item[0]}", face=face)
+    if k == "cat_spot":
+        ctx.touch_interest("cats", 0.8, "cat"); ctx.hobby_entry("Spotting log", f"[{wt['label']}] {v.get('name', 'The cat')}, the {v.get('color', 'little')} cat, let me stroke her behind the ears.", kind="spotting_log", interest="cats")
+        v_ = base("cat", 0.9)
+        return out(True, f"You crouched by {v.get('name', 'the cat')}'s spot. The {v.get('color', '')} cat blinked slowly, then pushed her head into your hand and purred. {_feel_text(v_)}", v_, "Wave", subject="creature", cat="socialize", social=True, caption=f"Saying hello to {v.get('name', 'the cat')}", face=face)
+    if k == "bird_feeder":
+        txt = random.choice(["Two sparrows and a finch take turns at the seeds.", "A chickadee grabs a seed and darts away.", "A plump pigeon waddles underneath, collecting what falls."])
+        ctx.touch_interest("birds", 0.8, "feeder"); ctx.hobby_entry("Spotting log", f"[{wt['label']}] {txt}", kind="spotting_log", interest="birds")
+        v_ = base("birds", 0.7)
+        return out(True, f"You stood quietly by the bird feeder. {txt} {_feel_text(v_)}", v_, "Idle", subject="observing", cat="observe", spot="birds", caption="Watching the birds at the feeder", face=face)
+    if k == "train_line":
+        if random.random() < 0.65:
+            tr = v.get("train") or random.choice(pois.TRAINS)
+            ctx.touch_interest("trains", 1.0, "train line"); ctx.hobby_entry("Spotting log", f"[{wt['label']}] Spotted {tr}.", kind="spotting_log", interest="trains")
+            v_ = base("train", 1.0)
+            return out(True, f"You waited by the rails. After a while: {tr} goes past, shaking the ground. {_feel_text(v_)}", v_, "Jump", subject="observing", cat="observe", spot="trains", caption="Spotting a train", face=face)
+        v_ = base("train-wait", 0.1)
+        return out(True, "You waited by the rails, but no train came this time. The rails ticked quietly in the sun.", v_, "Idle", subject="observing", cat="observe", caption="Waiting at the train line", face=face)
+    if k == "market_stall":
+        w = v.get("wares", "goods"); ctx.touch_interest(w, 0.6, "market")
+        extra = ""
+        if w in ("hats", "flowers", "kites"):
+            ctx.learn(f"{random.choice(['rose', 'teal', 'gold', 'plum'])} color", 0.5); extra = " Some of the colours catch your eye."
+        v_ = base("market", 0.6)
+        return out(True, f"You browsed the {w} stall: {pois.WARES.get(w, 'all sorts of things')}.{extra} {_feel_text(v_)}", v_, "ThumbsUp", subject="shopping", cat="explore", caption=f"Browsing the {w} stall", face=face)
+    return out(True, f"You looked at the {row['name'].lower()}.", 0.2, "Idle")
+
+
 def interact_with(ctx, a):
     s = ctx.state
     tgt = world.resolve_target(a.get("object", ""), s["x"], s["z"], ctx.objects())
@@ -356,6 +429,8 @@ def interact_with(ctx, a):
     r = _approach(ctx, tgt, "interact")
     if r:
         return r
+    if tgt["kind"] == "poi":
+        return _use_poi(ctx, tgt)
     seen = ctx.db.one("SELECT COUNT(*) n FROM actions WHERE tool='interact_with' AND args LIKE ?", f'%"{tgt["label"]}"%')["n"]
     novelty = 0.6 if seen == 0 else (-0.2 * min(seen, 4))
     own = tgt["kind"] in ("creation", "sculpture", "project")

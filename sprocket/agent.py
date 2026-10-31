@@ -1,4 +1,5 @@
 """The agent: load state -> prompt model with tools -> execute one action -> persist."""
+import array
 import asyncio
 import inspect
 import json
@@ -10,7 +11,7 @@ import ollama
 
 import difflib
 
-from . import assets, config, design, kit, layout, tools, world
+from . import assets, config, design, kit, layout, pois, tools, world
 from .world import FEELINGS
 
 NAME = config.NAME
@@ -51,6 +52,7 @@ class Agent:
         self._cool_builds()
         self._remember_name()
         self._backfill_categories()
+        pois.ensure(self)
 
     def _migrate(self):
         """One-time: give him maker tastes and undo earlier building aversion (existing databases keep their history)."""
@@ -263,6 +265,104 @@ class Agent:
 
     _learn = learn
 
+    # ---- memory recall: local embeddings, only the few most relevant memories per tick ----
+    async def check_embed(self):
+        """Is the embedding model installed? If not we fall back to 'most important recent memories' and say so."""
+        self._embed_fail = 0
+        try:
+            names = [m.model for m in (await self.client.list()).models]
+            ok = any(n == config.EMBED_MODEL or n.startswith(config.EMBED_MODEL + ":") for n in names)
+        except Exception as e:
+            ok, names = False, []
+            self.log(f"  memory: could not ask Ollama for models ({type(e).__name__})")
+        self.memory_mode = "embeddings" if ok else "fallback"
+        self.memory_note = ("Recalling the most relevant memories with local embeddings (" + config.EMBED_MODEL + ")." if ok else
+                            f"Embedding model '{config.EMBED_MODEL}' is not available, so he recalls his most important recent memories instead. Fix: ollama pull {config.EMBED_MODEL}")
+        if not ok:
+            self.log("  !! " + self.memory_note)
+        return ok
+
+    async def _embed(self, texts):
+        r = await self.client.embed(model=config.EMBED_MODEL, input=texts)
+        out = []
+        for v in r.embeddings:
+            n = sum(x * x for x in v) ** 0.5 or 1.0
+            out.append(array.array("f", [x / n for x in v]))
+        return out
+
+    async def embed_pending(self):
+        rows = self.db.q("SELECT id,text FROM memories WHERE embedding IS NULL ORDER BY id DESC LIMIT ?", config.EMBED_BATCH)
+        if not rows:
+            return
+        for r, v in zip(rows, await self._embed([r["text"][:500] for r in rows])):
+            self.db.x("UPDATE memories SET embedding=? WHERE id=?", v.tobytes(), r["id"])
+
+    async def recall(self, query):
+        """Top memories for this moment: cosine similarity (+ a little for importance). Returns a list of texts, or None to use the fallback."""
+        if getattr(self, "memory_mode", "fallback") != "embeddings":
+            return None
+        try:
+            await self.embed_pending()
+            q = (await self._embed([query[:700]]))[0]
+            rows = self.db.q("SELECT id,text,importance,embedding FROM memories WHERE embedding IS NOT NULL AND (importance>=4 OR id>(SELECT COALESCE(MAX(id),0)-? FROM memories))", config.RECALL_POOL)
+            scored = []
+            for r in rows:
+                v = array.array("f"); v.frombytes(r["embedding"])
+                if len(v) != len(q):
+                    continue
+                scored.append((sum(a * b for a, b in zip(q, v)) + 0.03 * (r["importance"] or 1), r["text"], v))
+            scored.sort(key=lambda x: -x[0])
+            chosen = []
+            for sc, text, v in scored:
+                if any(sum(a * b for a, b in zip(v, c[2])) > 0.96 for c in chosen):      # skip near-duplicate memories
+                    continue
+                chosen.append((sc, text, v))
+                if len(chosen) >= config.RECALL_K:
+                    break
+            self._embed_fail = 0
+            return [c[1] for c in chosen]
+        except Exception as e:
+            self._embed_fail = getattr(self, "_embed_fail", 0) + 1
+            if self._embed_fail == 3:
+                self.memory_mode = "fallback"
+                self.memory_note = f"The embedding model stopped answering ({type(e).__name__}); using his most important recent memories instead."
+                self.log("  !! " + self.memory_note)
+            return None
+
+    def poi_rows(self):
+        out = []
+        for o in self.db.q("SELECT id,name,x,z,meta,radius FROM objects WHERE kind='poi'"):
+            try:
+                o["m"] = json.loads(o["meta"] or "{}")
+            except Exception:
+                o["m"] = {}
+            out.append(o)
+        return out
+
+    def poi_sightings(self):
+        """Things he can spot because of where he is standing: the cat at its spot, the trains, the feeder birds."""
+        s, res = self.state, []
+        for o in self.poi_rows():
+            if world.dist(s["x"], s["z"], o["x"], o["z"]) > 7:
+                continue
+            k, v = o["m"].get("poi"), o["m"].get("variant", {})
+            if k == "cat_spot": res.append(("cats", f"{v.get('name', 'A cat')}, a {v.get('color', '')} cat, washes a paw on her cushion, then watches you with half-closed eyes."))
+            elif k == "bird_feeder": res.append(("birds", "A small flock lands on the bird feeder, scattering seed."))
+            elif k == "train_line" and random.random() < 0.6: res.append(("trains", f"{(v.get('train') or 'A train')[0].upper() + (v.get('train') or 'A train')[1:]} passes along the line."))
+            elif k == "market_stall": res.append(("market", f"The {v.get('wares', 'market')} stall owner arranges the display and nods hello."))
+        return res
+
+    def situation_text(self):
+        s, db = self.state, self.db
+        g = db.one("SELECT text FROM goals WHERE status='active' ORDER BY id LIMIT 1")
+        last = db.one("SELECT tool,result FROM actions WHERE tool!='system' ORDER BY id DESC LIMIT 1")
+        near = sorted([o for o in self.objects() if o["kind"] not in ("ground",)], key=lambda o: world.dist(s["x"], s["z"], o["x"], o["z"]))[:3]
+        ints = [r["topic"] for r in db.q("SELECT topic FROM interests ORDER BY strength DESC LIMIT 3")]
+        f = (s.get("focus") or {}).get("cat")
+        return (f"{s['mood']}. {'inside the ' + world.PLACES[s['inside']]['label'] if s.get('inside') else 'outdoors'}. "
+                f"Feeling like {self.FOCUS_TEXT.get(f, '')}. Goal: {g['text'] if g else 'none'}. Interests: {', '.join(ints)}. "
+                f"Near: {', '.join(o['name'] for o in near)}. Just did: {(last['tool'] + ' ' + last['result'][:140]) if last else 'nothing'}")
+
     # ---- interests, hobbies, categories ---------------------------------
     def touch_interest(self, topic, amount=0.6, source=""):
         """Reading, seeing and enjoying things grows an interest; untouched ones fade (see decay_interests)."""
@@ -297,6 +397,8 @@ class Agent:
                 "build": "build", "rest": "rest", "eat": "rest"}
 
     def category_of(self, tool, res=None):
+        if res and res.get("cat"):
+            return res["cat"]
         if tool == "interact_with" and res:
             if res.get("social"): return "socialize"
             if res.get("subject") == "gallery": return "art"
@@ -426,7 +528,7 @@ class Agent:
     def build_prompt(self):
         s, db = self.state, self.db
         objs = self.objects()
-        near = sorted([o for o in objs if o["kind"] != "ground"], key=lambda o: world.dist(s["x"], s["z"], o["x"], o["z"]))[:8]
+        near = sorted([o for o in objs if o["kind"] not in ("ground", "find")], key=lambda o: world.dist(s["x"], s["z"], o["x"], o["z"]))[:8]
         places = "; ".join(f"{p['label']} ({p['x']:.0f},{p['z']:.0f}) d={world.dist(s['x'], s['z'], p['x'], p['z']):.0f}{' [can go inside]' if p.get('enter') else ''}"
                            for p in world.PLACES.values())
         goals = db.q("SELECT id,text FROM goals WHERE status='active' ORDER BY id")
@@ -465,6 +567,13 @@ class Agent:
                                                                       f"d={world.dist(s['x'], s['z'], o['x'], o['z']):.0f}" for o in near) or "none"),
              f"WEARING: {outfit}",
              "GOALS: " + ("; ".join(f"#{g['id']} {g['text']}" for g in goals) or "none yet - consider setting one")]
+        prow = self.poi_rows()
+        here = sorted([p for p in prow if world.dist(s["x"], s["z"], p["x"], p["z"]) <= pois.TRIGGER], key=lambda p: world.dist(s["x"], s["z"], p["x"], p["z"]))
+        if here:
+            L.append("HERE YOU CAN: " + " | ".join(f"{p['name']}: {p['m'].get('description', '').replace('Here you can: ', '')}" for p in here[:3]) + " (use it with interact_with)")
+        elif prow:
+            far = sorted(prow, key=lambda p: world.dist(s["x"], s["z"], p["x"], p["z"]))[:4]
+            L.append("PLACES OF INTEREST: " + "; ".join(f"{p['name']} d={world.dist(s['x'], s['z'], p['x'], p['z']):.0f} ({(p['m'].get('offers') or [''])[0]})" for p in far))
         gift = s.get("new_gift")
         if gift and s["tick"] - gift["tick"] <= 10:
             L.append(f"YOUR HUMAN JUST LEFT SOMETHING: a {gift['kind']} called '{gift['name']}' near ({gift['x']},{gift['z']}). You may want to look at it.")
@@ -512,7 +621,10 @@ class Agent:
         ins = s.get("inspiration")
         if ins and s["tick"] - ins["tick"] <= 6:
             L.append(f"JUST LEARNED from {ins['what']}: {ins['note']} (use it in a build or in make_art)")
-        if mems:
+        rec = getattr(self, "_recalled", None)
+        if rec:
+            L.append("MEMORIES THAT COME TO MIND: " + " | ".join(t[:160] for t in rec))
+        elif mems:
             L.append("MEMORIES: " + " | ".join(m["text"][:140] for m in mems))
         if last_j:
             L.append("LAST JOURNAL: " + last_j["text"][:200])
@@ -558,7 +670,11 @@ class Agent:
         db.x("UPDATE projects SET status='shelved' WHERE status='active' AND last_tick < ?", s["tick"] - 80)
         self.decay_interests()
         self.spawn_finds()
+        pois.ensure(self)
         tl = tools.schemas(s["publish_enabled"])
+        if not hasattr(self, "memory_mode"):
+            await self.check_embed()
+        self._recalled = await self.recall(self.situation_text())
         msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": self.build_prompt()}]
         resp = await self._chat(msgs, tl)
         msg = resp.message
@@ -659,7 +775,7 @@ class Agent:
              json.dumps(args_log), res["result"][:1500], int(res["ok"]), s["mood"], v, cat)
         self._emit("action", {"tool": name, "args": {k: (str(v2)[:80] if isinstance(v2, str) else v2) for k, v2 in args.items()},
                               "result": res["result"][:300], "ok": res["ok"], "anim": s["last_anim"],
-                              "say": thought, "mood": s["mood"], "face": res.get("face")})
+                              "say": thought, "mood": s["mood"], "face": res.get("face"), "caption": res.get("caption")})
         self.log(f"  [{s['tick']}] {thought}\n       -> {name}({_short_args(json.dumps(args_log))}) = {res['result'][:200]}")
 
     def _survival(self):
@@ -860,6 +976,8 @@ class Agent:
         d["built"] = db.q("SELECT b.name,b.description,b.ts,b.tick,o.color,o.id AS obj_id,p.reason,p.review FROM builds b LEFT JOIN objects o ON o.id=b.object_id "
                           "LEFT JOIN projects p ON p.object_id=b.object_id WHERE b.stage IS NULL OR b.stage='finished' ORDER BY b.id DESC LIMIT 30")
         d["journal"] = db.q("SELECT id,ts,tick,kind,text,mood,obj_id FROM journal ORDER BY id DESC LIMIT 40")
+        d["memory"] = {"mode": getattr(self, "memory_mode", "unknown"), "note": getattr(self, "memory_note", ""), "model": config.EMBED_MODEL,
+                       "total": db.one("SELECT COUNT(*) n FROM memories")["n"], "embedded": db.one("SELECT COUNT(*) n FROM memories WHERE embedding IS NOT NULL")["n"]}
         d["interests"] = db.q("SELECT topic,round(strength,1) AS strength FROM interests ORDER BY strength DESC LIMIT 12")
         d["hobbies"] = []
         for h in db.q("SELECT h.id,h.name,h.kind,h.interest,COUNT(e.id) n FROM hobbies h LEFT JOIN hobby_entries e ON e.hobby_id=h.id GROUP BY h.id ORDER BY h.last_tick DESC LIMIT 8"):

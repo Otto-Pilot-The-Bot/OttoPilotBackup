@@ -204,7 +204,8 @@ const PANELS = [
       <details><summary class="small">Recharging</summary><table class="kv">${kv(B.restore)}</table></details>
       <details><summary class="small">Thresholds</summary><table class="kv">${kv(B.thresholds)}</table></details>
       <details><summary class="small">Pacing (so he doesn't only build)</summary><table class="kv">${kv(B.pacing)}</table></details>`;
-    $('#world', el).innerHTML = `<h3>World</h3><div class="card">Buildable area: <b>${Math.round(s.world_half * 2)} × ${Math.round(s.world_half * 2)}</b> · ${s.objects.length} objects<div class="meta">The engine places every new object, avoids overlaps, and grows the area when it gets crowded.</div></div>`
+    const mm = s.memory || {};
+    $('#world', el).innerHTML = `<h3>Memory</h3><div class="card"><div class="t">${mm.mode === 'embeddings' ? '🧠 Recall by meaning' : '⚠️ Simple recall'}</div><div class="meta">${esc(mm.note || '')}<br>${mm.embedded}/${mm.total} memories indexed</div></div><h3>World</h3><div class="card">Buildable area: <b>${Math.round(s.world_half * 2)} × ${Math.round(s.world_half * 2)}</b> · ${s.objects.length} objects<div class="meta">The engine places every new object, avoids overlaps, and grows the area when it gets crowded.</div></div>`
       + (s.blocked_sites.length ? `<h3>Sites that blocked him</h3>${s.blocked_sites.map((b) => `<div class="small">🚫 ${esc(b.host)} <span class="dim">${esc(b.reason)}</span></div>`).join('')}` : '');
     const need = s.packs.some((p) => p.attribution_required);
     $('#packs', el).innerHTML = `<h3>Asset library &amp; credits</h3><div class="card">${s.assets_total.u} usable of ${s.assets_total.n} models <button class="btn" id="rescan" style="float:right;padding:3px 10px">Rescan</button>
@@ -284,8 +285,8 @@ function setCaption(icon, text, force) {
 }
 export function onAction(a) {
   if (!a.tool && !a.say) return;
-  const text = a.say || a.result || '';
-  setCaption(TOOL_ICON[a.tool] || '💭', text);
+  const text = a.caption || a.say || a.result || '';
+  setCaption(a.caption ? '📍' : (TOOL_ICON[a.tool] || '💭'), text);
 }
 export function setClock(c) { $('#clockIcon').textContent = ({ dawn: '🌅', day: '☀️', dusk: '🌇', night: '🌙' })[c.phase]; $('#clockText').textContent = `${c.label} · Day ${c.day}`; }
 export function setConn(ok, msg) { const c = $('#conn'); c.hidden = ok; if (!ok) c.textContent = msg; }

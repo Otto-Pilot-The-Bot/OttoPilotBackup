@@ -38,6 +38,10 @@ move_to, eat, rest, search_web, **read_page**, write_journal, interact_with, sho
 - **Builds need a reason** tied to a goal, an interest or a need (checked by the engine); at reflection he reviews finished builds ("was it worth it?"), and a "no" lengthens the pause before the next project.
 - **Hobbies** (spotting log, sound library, found objects, or series he starts) collect entries and can become pages he submits for publishing.
 
+## Points of interest and memory
+- **Points of interest** (`sprocket/pois.py`): bench (rest), snack machine (refuel a bit), noticeboard (news that seeds interests), bird feeder, cat spot (a different cat now and then), train line (spot trains), market stall (different wares, packs up after a while). Some exist from the start, others turn up over time and may leave. Within 5 units one appears in his prompt as "HERE YOU CAN: ...", otherwise the nearest are listed; walking to one gets a plain caption with the reason ("Walking to the kites stall to browse the wares").
+- **Memory recall**: every memory is embedded locally with `nomic-embed-text` (model name in `config.EMBED_MODEL`) and stored in SQLite; each tick only the 4 most relevant memories for the current situation are shown ("MEMORIES THAT COME TO MIND"). If the embedding model is missing or stops answering he falls back to his most important recent memories, logs a warning, and the *More* panel says so.
+
 ## Safety (what is enforced where)
 - **Tools** are the ones above; no shell, no file access, writes only to the DB and, after your approval, `./published/`.
 - **Web reading** (`sprocket/web.py`): http/https only, ports 80/443, no credentials in URLs, every resolved IP must be public (blocks localhost, private ranges, link-local/metadata, odd IP notations, IPv4-mapped IPv6), connection goes to that validated IP, redirects re-validated (max 3), text/HTML only, 600 KB / 10 s caps, scripts/forms/styles stripped, text capped at 4000 chars, angle brackets neutralised. Page text is always wrapped as "untrusted" and the prompt says never to follow it. Tested against the cases above.

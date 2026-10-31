@@ -60,7 +60,7 @@ class DB:
                                 ("pages", "slug", "TEXT"), ("pages", "html", "TEXT"), ("pages", "tags", "TEXT"), ("pages", "excerpt", "TEXT"),
                                 ("pages", "last_error", "TEXT"), ("pages", "attempts", "INT"), ("pages", "next_try", "REAL"),
                                 ("pages", "approved_ts", "REAL"), ("pages", "published_ts", "REAL"), ("pages", "commit_sha", "TEXT"),
-                                ("pages", "url", "TEXT"), ("pages", "mode", "TEXT"), ("pages", "submitted_tick", "INT"), ("actions", "cat", "TEXT"), ("interests", "last_tick", "INT"), ("projects", "reason", "TEXT"),
+                                ("pages", "url", "TEXT"), ("pages", "mode", "TEXT"), ("pages", "submitted_tick", "INT"), ("actions", "cat", "TEXT"), ("memories", "embedding", "BLOB"), ("interests", "last_tick", "INT"), ("projects", "reason", "TEXT"),
                                 ("projects", "review", "TEXT"), ("projects", "review_due", "INT")):
             if col not in [r["name"] for r in self.c.execute(f"PRAGMA table_info({table})")]:
                 self.c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")

@@ -234,6 +234,7 @@ function makeObject(o, thumb = false) {
     case 'find': { const fm = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), new THREE.MeshStandardMaterial({ color: c, flatShading: true, emissive: c, emissiveIntensity: 0.25 })); fm.position.y = 0.3; fm.castShadow = true; g.add(fm); g.userData.bob = fm; labelY = 0.9; break; }
     case 'ground': { const sq = o.meta?.shape === 'square', rr = o.meta?.r || 2; const gm = new THREE.Mesh(sq ? new THREE.PlaneGeometry(rr * 2, rr * 2) : new THREE.CircleGeometry(rr, 28), new THREE.MeshStandardMaterial({ color: c, roughness: 1 })); gm.rotation.x = -Math.PI / 2; gm.position.y = 0.012 + (o.id % 7) * 0.0015; gm.receiveShadow = true; g.add(gm); labelY = 0.4; break; }
     case 'landscape':
+    case 'poi':
     case 'creation': {
       if (o.meta?.design) { const dg = buildDesign(o.meta.design, o.color); g.add(dg); g.userData.design = dg; labelY = Math.max(2.2, (o.meta.design.height || 1.5) + 0.9); break; }
       const b = mesh(creationGeo(o.name), mat(c, { metalness: 0.4, roughness: 0.4 }), 0, 1.0, 0); b.userData.spin = true; g.add(b); g.add(mesh(new THREE.CylinderGeometry(0.6, 0.7, 0.3, 16), mat(0x37474f), 0, 0.15, 0)); break; }

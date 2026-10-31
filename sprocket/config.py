@@ -125,3 +125,11 @@ TEND_COOLDOWN = 20               # per plant
 MAX_FINDS = 5                    # small found objects lying around at once
 FIND_SPAWN_CHANCE = 0.2          # per tick
 BUILD_REASON_MIN = 12            # characters
+
+# --- memory recall (local embeddings via Ollama; no cloud) ---
+EMBED_MODEL = os.environ.get("SPROCKET_EMBED_MODEL", "nomic-embed-text")
+RECALL_K = 4                    # memories shown in the prompt each tick
+RECALL_POOL = 800               # most recent memories considered (plus all important ones)
+EMBED_BATCH = 16
+SNACK_RESTORE = 45.0              # a snack machine refuels less than the fuel station
+BENCH_RESTORE = 15.0
