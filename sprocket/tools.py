@@ -7,7 +7,7 @@ import re
 import time
 from urllib.parse import urlsplit
 
-from . import artcheck, assets, config, design, kit, layout, pois, sanitize, scriptlang, web, world
+from . import artcheck, assets, config, design, gifts, kit, layout, pois, sanitize, scriptlang, web, world
 from .world import dist
 
 FEELING_ENUM = list(world.FEELINGS)
@@ -53,6 +53,10 @@ def schemas(publish_enabled):
             {"url": {"type": "string"}}, ["url"]),
         _fn("write_journal", "Write a private journal entry. Also lets you manage goals, jot sketchbook ideas, and add to a hobby (hobby=<name of a log or series you keep, e.g. 'Field diary'>).",
             {"entry": {"type": "string"}, "hobby": {"type": "string"}, **_GOALS}, ["entry"]),
+        _fn("gift", "Deal with a gift your human left you (a picture or a 3D model). action: look (see it and react; for pictures you really look at it), place (put it in the world, area optional), "
+                    "display (show it in the gallery), keep (keep it safe in your box). To use a 3D model gift in a build, give build gift=<name>.",
+            {"action": {"type": "string", "enum": ["look", "place", "display", "keep"]}, "name": {"type": "string"}, "area": {"type": "string"},
+             "style": {"type": "string", "enum": ["frame", "poster", "canvas"], "description": "for pictures"}}, ["action"]),
         _fn("ponder", "Pause for a quiet moment: think, daydream, or just look around. Cheap and calming; good between projects.", {"thought": {"type": "string", "description": "what you are thinking about"}}, []),
         _fn("observe", "Stand still and watch the world: the sky, the weather, birds, cats, plants, or something specific nearby. You may spot things; they go in your spotting log.",
             {"target": {"type": "string", "description": "optional: sky, weather, birds, a place or an object name"}}, []),
@@ -70,7 +74,7 @@ def schemas(publish_enabled):
             {"query": {"type": "string", "description": "e.g. 'tree', 'door', 'space', or empty to browse"}}, []),
         _fn("build", BUILD_HELP,
             {"name": {"type": "string"}, "reason": {"type": "string", "description": "WHY: tie it to one of your goals, interests or needs"}, "description": {"type": "string"}, "gen": {"type": "string"}, "params": {"type": "string"},
-             "asset": {"type": "string"}, "parts": {"type": "string"}, "script": {"type": "string"}, "saved": {"type": "string"},
+             "asset": {"type": "string"}, "gift": {"type": "string"}, "parts": {"type": "string"}, "script": {"type": "string"}, "saved": {"type": "string"},
              "scale": {"type": "number"}, "rotation": {"type": "number"}, "color": {"type": "string"}, "anim": {"type": "string"},
              "area": {"type": "string"}, "quick": {"type": "boolean"}, "next_goal": {"type": "string"}}, []),
         _fn("arrange", ARRANGE_HELP, {"what": {"type": "string"}, "pattern": {"type": "string", "enum": ["move", "row", "column", "circle", "grid", "cluster", "tidy"]},
@@ -580,8 +584,11 @@ def _make_design(ctx, a, name, description, strict):
                 return None, hint
             db.x("INSERT INTO designs(ts,tick,name,kind,script,design) VALUES(?,?,?,?,?,?)", time.time(), ctx.state["tick"], name or "design", "script", str(a["script"])[:scriptlang.MAX_SRC], json.dumps(d))
             return d, None
-        if any(a.get(k) not in (None, "", []) for k in ("asset", "parts", "gen")):
-            d = design.clean_design(db, a.get("parts"), a.get("asset"), a.get("scale"), a.get("rotation"), a.get("color"), a.get("anim"),
+        if any(a.get(k) not in (None, "", []) for k in ("asset", "parts", "gen", "gift")):
+            parts = _jsonish(a.get("parts")) or []
+            if a.get("gift"):
+                parts = [{"gift": a["gift"]}] + (parts if isinstance(parts, list) else [])
+            d = design.clean_design(db, parts, a.get("asset"), a.get("scale"), a.get("rotation"), a.get("color"), a.get("anim"),
                                     gen=a.get("gen"), gparams=_jsonish(a.get("params")))
             d["src"] = "kit" if a.get("gen") else "asset" if a.get("asset") else "parts"
             hint = design.too_plain(d)
@@ -708,7 +715,7 @@ def build(ctx, a):
     name = proj["name"]
     stage = NEXT_STAGE.get(proj["stage"], "finish")
     d = _design_of(proj)
-    if any(a.get(k) not in (None, "", []) for k in ("asset", "parts", "gen", "script", "saved")):   # he may refine the look at any stage
+    if any(a.get(k) not in (None, "", []) for k in ("asset", "parts", "gen", "script", "saved", "gift")):   # he may refine the look at any stage
         nd, err = _make_design(ctx, a, name, proj["description"], True)
         if err:
             return out(False, f"Design problem: {err}. Fix it and call build again.", -0.05)
@@ -771,6 +778,58 @@ def _finish(ctx, proj, ng, mishap, lesson, quick=False):
     return out(True, f"You finished '{name}' and it now stands outside the workshop area.{look} "
                      f"{'A small trinket, but yours.' if quick else 'You feel proud!'}{extra} {_feel_text(v)}",
                v, "Dance" if not quick else "ThumbsUp", subject="building", changed_objects=True, mood=None if quick else "proud")
+
+
+# ------------------------------------------------------------------ gifts from the human
+async def gift(ctx, a):
+    s, db = ctx.state, ctx.db
+    action = str(a.get("action") or "look").lower()
+    rows = db.q("SELECT * FROM gifts ORDER BY id DESC")
+    nm = str(a.get("name") or "").strip().lower().lstrip("#")
+    sel = [g for g in rows if nm and (nm == g["name"].lower() or nm in g["name"].lower() or nm == str(g["id"]))] if nm else [g for g in rows if g["status"] == "new"]
+    if not sel:
+        return out(False, "You have no such gift. " + ("Your gifts: " + ", ".join(g["name"] for g in rows[:8]) if rows else "Nobody has left you anything yet."), -0.05, noop=True)
+    g = sel[0]
+    if action == "look":
+        info = await ctx.gift_reaction(g)
+        feeling = info["feeling"] if info.get("feeling") in world.FEELINGS else "happy"
+        db.x("UPDATE gifts SET looked=1, reaction=? WHERE id=?", info["reaction"][:400], g["id"])
+        db.x("INSERT INTO journal(ts,tick,kind,text,mood) VALUES(?,?,?,?,?)", time.time(), s["tick"], "gift", f"A gift from my human, \"{g['name']}\": {info['description']} {info['reaction']}"[:900], feeling)
+        db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"My human gave me \"{g['name']}\". {info['reaction']}"[:240], 4)
+        for t in info.get("topics", [])[:2]:
+            ctx.touch_interest(t, 0.8, "gift")
+        v = max(0.3, min(2.0, 0.7 + world.FEELINGS.get(feeling, 0.5) * 0.8 + abs(world.affinity(ctx.seed, "gift:" + g["name"])) * 0.4))
+        ctx.learn(f"gifts from my human", 0.6)
+        return out(True, f"You looked at \"{g['name']}\". {info['description']} Your reaction: {info['reaction']}", v, "ThumbsUp", subject="gift", cat="socialize", mood=feeling, caption=f"Looking at the gift: {g['name']}")
+    if action == "keep":
+        db.x("UPDATE gifts SET status='kept' WHERE id=?", g["id"])
+        return out(True, f"You decided to keep \"{g['name']}\" safe in your box for now.", 0.4, "ThumbsUp", subject="gift", cat="socialize", caption=f"Keeping the gift: {g['name']}")
+    if action not in ("place", "display"):
+        return out(False, "action must be look, place, display or keep.")
+    if g["obj_id"] and db.one("SELECT 1 FROM objects WHERE id=?", g["obj_id"]):
+        return out(True, f"\"{g['name']}\" is already out in the world.", 0.0, "Idle", noop=True)
+    objs = ctx.objects()
+    default = "gallery_front" if action == "display" else ("open_field" if g["kind"] == "picture" else "village")
+    area = a.get("area") or ("gallery" if action == "display" else None)
+    cx, cz, where = layout.resolve_area(area, s, objs, default)
+    if g["kind"] == "picture":
+        style = a.get("style") if a.get("style") in ("frame", "poster", "canvas") else ("canvas" if action == "display" else "frame")
+        meta = {"stage": "finished", "gift_id": g["id"], "w": g["w"], "h": g["h"], "style": style, "description": f"A {style} from your human: {g['name']}"}
+        kind, rad = "gift_picture", 1.4
+    else:
+        try:
+            d = design.clean_design(db, parts=[{"gift": g["id"]}], scale=a.get("scale"), color=a.get("color"))
+        except design.DesignError as e:
+            return out(False, f"That gift could not be set out: {e}")
+        meta = {"stage": "finished", "description": f"A 3D model from your human: {g['name']}", "design": d}
+        kind, rad = "gift_model", d["radius"] + 0.3
+    if s.get("inside"):
+        _exit(ctx)
+    (x, z), _ = ctx.place_near(cx, cz, rad, group="gift")
+    oid = db.x("INSERT INTO objects(ts,kind,name,x,z,color,source,meta,radius) VALUES(?,?,?,?,?,?,?,?,?)", time.time(), kind, g["name"], x, z, "#c9a97c", "gift", json.dumps(meta), rad)
+    db.x("UPDATE gifts SET status=?, obj_id=? WHERE id=?", "displayed" if action == "display" else "placed", oid, g["id"])
+    v = _maker_valence(ctx, "gift", 0.7)
+    return out(True, f"You set \"{g['name']}\" out in the {where}. {_feel_text(v)}", v, "ThumbsUp", subject="gift", cat="socialize", changed_objects=True, caption=f"Setting out the gift: {g['name']}")
 
 
 # ------------------------------------------------------------------ organizing
@@ -1120,7 +1179,7 @@ def publish_page(ctx, a):
 
 
 REGISTRY = {"ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
-            "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
+            "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')
 

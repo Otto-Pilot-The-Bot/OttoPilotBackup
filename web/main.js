@@ -233,6 +233,14 @@ function makeObject(o, thumb = false) {
     case 'project': g.add(makeProject(o, stage || 'blueprint', c)); labelY = 3; break;
     case 'find': { const fm = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), new THREE.MeshStandardMaterial({ color: c, flatShading: true, emissive: c, emissiveIntensity: 0.25 })); fm.position.y = 0.3; fm.castShadow = true; g.add(fm); g.userData.bob = fm; labelY = 0.9; break; }
     case 'ground': { const sq = o.meta?.shape === 'square', rr = o.meta?.r || 2; const gm = new THREE.Mesh(sq ? new THREE.PlaneGeometry(rr * 2, rr * 2) : new THREE.CircleGeometry(rr, 28), new THREE.MeshStandardMaterial({ color: c, roughness: 1 })); gm.rotation.x = -Math.PI / 2; gm.position.y = 0.012 + (o.id % 7) * 0.0015; gm.receiveShadow = true; g.add(gm); labelY = 0.4; break; }
+    case 'gift_picture': {
+      const gm = o.meta || {}, asp = Math.max(0.4, Math.min(2.5, (gm.w || 1) / (gm.h || 1))), H = Math.min(2.1, 2.5 / Math.max(1, asp)), W = H * asp, st = gm.style || 'frame', base = 0.5;
+      const tex = new THREE.TextureLoader().load(`/gift/${gm.gift_id}/file`); tex.colorSpace = THREE.SRGBColorSpace;
+      if (st === 'poster') { g.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, base + H, 6), mat(0x6d4c41), 0, (base + H) / 2, -0.05)); g.add(mesh(new THREE.BoxGeometry(W + 0.1, H + 0.1, 0.04), mat(0xf5f0e0), 0, base + H / 2, 0)); }
+      else { for (const x of [-W * 0.4, W * 0.4]) g.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, base + H * 0.5, 6), mat(0x6d4c41), x, (base + H * 0.5) / 2, -0.12)); g.add(mesh(new THREE.BoxGeometry(W + 0.25, H + 0.25, st === 'canvas' ? 0.18 : 0.1), mat(st === 'canvas' ? 0xffffff : 0x8d6e63), 0, base + H / 2, 0)); }
+      const pic = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: tex })); pic.position.set(0, base + H / 2, st === 'poster' ? 0.03 : st === 'canvas' ? 0.1 : 0.07); g.add(pic);
+      labelY = base + H + 0.6; break; }
+    case 'gift_model':
     case 'landscape':
     case 'poi':
     case 'creation': {

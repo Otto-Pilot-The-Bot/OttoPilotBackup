@@ -21,12 +21,12 @@ export { kitGlow };
 function pump() {
   while (active < MAX_PARALLEL && waiting.length) {
     const job = waiting.shift(); active++;
-    loader.load(`/asset/${job.id}`, (g) => { active--; job.res(g); pump(); }, undefined, (e) => { active--; job.rej(e); pump(); });
+    loader.load(job.url || `/asset/${job.id}`, (g) => { active--; job.res(g); pump(); }, undefined, (e) => { active--; job.rej(e); pump(); });
   }
 }
-function template(id, fit) {
+function template(id, fit, url) {
   if (!templates.has(id)) {
-    templates.set(id, new Promise((res, rej) => { waiting.push({ id, res, rej }); pump(); }).then((g) => {
+    templates.set(id, new Promise((res, rej) => { waiting.push({ id, url, res, rej }); pump(); }).then((g) => {
       const scene = g.scene;
       const box = new THREE.Box3().setFromObject(scene), size = box.getSize(new THREE.Vector3());
       const nat = Math.max(size.x, size.y, size.z) || 1;
@@ -97,11 +97,11 @@ export function buildDesign(design, objectColor) {
     if (p.g) {                                                              // generator from the builder kit (already validated server-side)
       node.scale.setScalar(p.s || 1);
       node.add(buildGen(p.g, p.pp || {}));
-    } else if (p.a) {                                                       // model from the asset library
+    } else if (p.a || p.gf) {                                               // model from the asset library, or a 3D gift
       node.scale.setScalar(p.s || 1);
       const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xcfc6b0, transparent: true, opacity: 0.35 }));
       ph.position.y = 0.4; node.add(ph);                                    // placeholder until the model arrives
-      pend.push(template(p.a, p.f).then((t) => {
+      pend.push(template(p.a || 'g' + p.gf, p.f, p.gf ? `/gift/${p.gf}/file` : undefined).then((t) => {
         node.remove(ph);
         const inst = skClone(t.holder);
         const col = p.c || tint;

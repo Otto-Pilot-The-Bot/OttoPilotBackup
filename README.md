@@ -67,3 +67,7 @@ Everything is in `data/sprocket.db` (tables: thoughts, actions, searches, reads,
 
 ## Move to another Mac
 Copy the whole folder (incl. `data/sprocket.db`), install Ollama, `ollama pull gemma4:e4b`, run `./run.sh`.
+
+## Pace, deliberation and gifts
+- **Pace:** decisions use the model's thinking mode (`THINK_MAIN` in `sprocket/config.py`: off / low / medium / high; helper calls stay non-thinking). Default tick 20 s; presets *calm / normal / lively* in the You panel. Walking continues by itself over several ticks, building/art/reading/music take extra ticks (no model call while busy; the caption shows "still working on the lantern (2/3)"), and quiet beats (ponder, observe, a thoughtful journal reflection) follow meaningful events and bursts of activity.
+- **Gifts** (*Leave him something > Pictures & 3D models*): .png/.jpg/.webp (≤10 MB) and .glb (≤20 MB), uploaded only to this machine's server (origin + header checked), content-sniffed, pictures decoded and re-encoded from pixels (EXIF/GPS and all other metadata gone), models parsed strictly (self-contained only, triangle/texture/node caps). Stored in `data/gifts/` under random names; never executed. He looks at pictures with the model's vision (text in images is treated as untrusted), reacts in his journal, and places/displays/keeps them. Gift names are added to the never-publish terms (`data/gift_terms.txt`). Remove a gift in *His things > Gifts*.

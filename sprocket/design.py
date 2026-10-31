@@ -88,6 +88,17 @@ def clean_design(db, parts=None, asset=None, scale=None, rotation=None, color=No
             part = {"g": kp["g"], "pp": pp, "x": x, "y": y, "z": z, "s": round(sc, 3), "r": rv}
             hw, hh = max(pp["w_"], pp["d_"]) * sc / 2, pp["h_"] * sc
             names.append(kp["g"])
+        elif p.get("gift") is not None or p.get("gf") is not None:               # a 3D model gift from the human
+            gr = str(p.get("gift") if p.get("gift") is not None else p.get("gf")).strip().lstrip("#")
+            row = db.one("SELECT * FROM gifts WHERE kind='model' AND (CAST(id AS TEXT)=? OR lower(name)=lower(?))", gr, gr)
+            if not row:
+                raise DesignError(f"no 3D model gift called '{gr}'")
+            sc = _num(p.get("scale", p.get("s") if not isinstance(p.get("s"), str) else None), 1.0, 0.3, 3.0)
+            hw = max(row["sx"], row["sz"]) * row["fit"] * sc / 2
+            hh = row["sy"] * row["fit"] * sc
+            tris += row["tris"]
+            part = {"gf": row["id"], "n": row["name"], "f": round(row["fit"], 5), "x": x, "y": y, "z": z, "s": round(sc, 3), "r": rv, "c": col}
+            names.append(row["name"])
         elif a_ref:
             row = assets.find(db, a_ref)
             if not row:

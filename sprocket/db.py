@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS tunes(id INTEGER PRIMARY KEY, ts REAL, tick INT, titl
 CREATE TABLE IF NOT EXISTS collection(id INTEGER PRIMARY KEY, ts REAL, tick INT, item TEXT, kind TEXT, place TEXT, color TEXT);
 CREATE TABLE IF NOT EXISTS hobbies(id INTEGER PRIMARY KEY, ts REAL, name TEXT UNIQUE, kind TEXT, interest TEXT, last_tick INT);
 CREATE TABLE IF NOT EXISTS hobby_entries(id INTEGER PRIMARY KEY, ts REAL, tick INT, hobby_id INT, text TEXT);
+CREATE TABLE IF NOT EXISTS gifts(id INTEGER PRIMARY KEY, ts REAL, tick INT, name TEXT, kind TEXT, note TEXT, size INT, file TEXT, mime TEXT, w INT, h INT, tris INT,
+  sx REAL, sy REAL, sz REAL, fit REAL, status TEXT DEFAULT 'new', orig TEXT, giver TEXT, looked INT DEFAULT 0, reaction TEXT, obj_id INT);
 CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY, ts REAL, what TEXT);
 """
 

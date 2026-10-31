@@ -11,7 +11,7 @@ import time
 
 from aiohttp import web, WSMsgType
 
-from . import assets as assetlib, config, layout, world
+from . import assets as assetlib, config, gifts as giftlib, layout, world
 
 WEB = config.ROOT / "web"
 
@@ -103,6 +103,10 @@ async def serve(agent, runner, interval=None):
             db.control(f"placed {kind} {name} #{oid}")
             agent.save()
             push(agent.snapshot())
+        elif t == "delete_gift":
+            if giftlib.delete(db, int(m.get("id", 0))):
+                db.control(f"deleted gift #{m.get('id')}")
+                agent.save(); push(agent.snapshot())
         elif t == "rescan_assets":
             agent.asset_summary = assetlib.scan(db, agent.log)
             db.control(f"rescanned assets: {agent.asset_summary['total']} files")
@@ -228,6 +232,57 @@ async def serve(agent, runner, interval=None):
             return web.Response(status=404)
         return web.FileResponse(path, headers={"Content-Type": "model/gltf-binary", "Cache-Control": "max-age=3600"})
 
+    async def gift_file(request):
+        """Serves a stored (already cleaned) gift by id, with a fixed content type. Nothing else is ever served from data/gifts."""
+        try:
+            row = agent.db.one("SELECT file,mime FROM gifts WHERE id=?", int(request.match_info["id"]))
+        except ValueError:
+            row = None
+        if not row or row["mime"] not in ("image/png", "image/jpeg", "model/gltf-binary"):
+            return web.Response(status=404)
+        path = giftlib.GIFT_DIR / row["file"]
+        if not path.is_file() or path.parent.resolve() != giftlib.GIFT_DIR.resolve():
+            return web.Response(status=404)
+        return web.FileResponse(path, headers={"Content-Type": row["mime"], "Cache-Control": "no-cache"})
+
+    async def gift_upload(request):
+        """Local-only upload. The page must be on this machine (Origin check + a custom header a foreign page cannot send)."""
+        j = lambda ok, **k: web.json_response({"ok": ok, **k}, status=200 if ok else 400)
+        if not re.match(rf"^https?://(127\.0\.0\.1|localhost):{config.PORT}$", request.headers.get("Origin", "")) or request.headers.get("X-Gift-Upload") != "1":
+            return web.json_response({"ok": False, "error": "Uploads are only accepted from this page."}, status=403)
+        if request.content_length and request.content_length > giftlib.MAX_MODEL + 2_000_000:
+            return j(False, error="That file is too big.")
+        fields, data, filename = {}, None, ""
+        try:
+            reader = await request.multipart()
+            async for part in reader:
+                if part.name == "file":
+                    filename, buf = part.filename or "", bytearray()
+                    while True:
+                        chunk = await part.read_chunk(1 << 16)
+                        if not chunk:
+                            break
+                        buf += chunk
+                        if len(buf) > giftlib.MAX_MODEL + 1:
+                            return j(False, error=f"That file is too big (limit {giftlib.MAX_IMAGE // 1_000_000} MB for pictures, {giftlib.MAX_MODEL // 1_000_000} MB for 3D models).")
+                    data = bytes(buf)
+                elif part.name in ("name", "note"):
+                    fields[part.name] = (await part.text())[:400]
+        except Exception:
+            return j(False, error="The upload could not be read.")
+        if not data:
+            return j(False, error="No file was received.")
+        try:
+            prepared = await asyncio.get_running_loop().run_in_executor(None, giftlib.prepare, filename, data)
+            gid = giftlib.store(agent.db, prepared, fields.get("name"), fields.get("note"), filename, agent.state["tick"])
+        except giftlib.GiftError as e:
+            return j(False, error=str(e))
+        row = agent.db.one("SELECT name,kind FROM gifts WHERE id=?", gid)
+        agent.db.thought(agent.state["tick"], "system", f"Your human left a gift: {row['name']} ({'picture' if row['kind'] == 'picture' else '3D model'}).")
+        agent.db.control(f"gift received #{gid}")
+        push(agent.snapshot())
+        return j(True, id=gid, name=row["name"])
+
     async def index(_):
         return web.FileResponse(WEB / "index.html")
 
@@ -235,6 +290,8 @@ async def serve(agent, runner, interval=None):
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/asset/{id}", asset_file)
+    app.router.add_get("/gift/{id}/file", gift_file)
+    app.router.add_post("/gift", gift_upload)
     app.router.add_static("/", WEB, show_index=False)
     ar = web.AppRunner(app)
     await ar.setup()

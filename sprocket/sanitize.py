@@ -161,8 +161,10 @@ def _machine_terms():
     host = socket.gethostname().lower()
     terms |= {host, host.split(".")[0]}
     terms.add(str(config.ROOT).lower())
-    if config.PRIVATE_TERMS_FILE.is_file():
-        for line in config.PRIVATE_TERMS_FILE.read_text(errors="ignore").splitlines():
+    for f in (config.PRIVATE_TERMS_FILE, config.ROOT / "data" / "gift_terms.txt"):      # gifts are private: their names never go on the site
+        if not f.is_file():
+            continue
+        for line in f.read_text(errors="ignore").splitlines():
             line = line.strip().lower()
             if len(line) >= 3 and not line.startswith("#"):
                 terms.add(line)

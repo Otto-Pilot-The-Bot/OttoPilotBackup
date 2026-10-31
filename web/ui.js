@@ -13,6 +13,7 @@ const SWATCH = ['#e53935', '#fb8c00', '#fdd835', '#43a047', '#00897b', '#1e88e5'
 
 let short = 'Otto', api, snap = null, skew = 0, openId = null, art = null, lastCaption = '';
 const openPrev = new Set();
+let armedGift = 0;
 let confirmLive = false;
 let thingsTab = 'gallery', browseFilter = 'all', draggingSpeed = false, killArmed = false, logRows = null, showLog = false;
 const gift = { kind: 'tree', color: '#43a047' };
@@ -53,9 +54,9 @@ const PANELS = [
   { id: 'things', icon: '🧺', label: 'His things', title: 'His things', build(el) {
     el.innerHTML = `<div class="tabs"></div><div class="tb"></div>`;
     el.querySelector('.tabs').onclick = (e) => { const b = e.target.closest('button[data-t]'); if (b) { thingsTab = b.dataset.t; refresh(); } };
-    el.querySelector('.tb').onclick = (e) => { const b = e.target.closest('[data-art]'); if (b) openArt(+b.dataset.art); const t = e.target.closest('[data-tune]'); if (t) playTune(snap.tunes.find((x) => x.id === +t.dataset.tune)); };
+    el.querySelector('.tb').onclick = (e) => { const b = e.target.closest('[data-art]'); if (b) openArt(+b.dataset.art); const t = e.target.closest('[data-tune]'); if (t) playTune(snap.tunes.find((x) => x.id === +t.dataset.tune)); const d = e.target.closest('[data-gdel]'); if (d) { const id = +d.dataset.gdel; if (armedGift === id) { api.send({ type: 'delete_gift', id }); armedGift = 0; } else { armedGift = id; setTimeout(() => { armedGift = 0; refresh(); }, 4000); } refresh(); } };
   }, update(el, s) {
-    const tabs = [['gallery', '🖼️ Gallery'], ['built', '🔧 Built'], ['sounds', '🎵 Sounds'], ['collect', '🐚 Collection'], ['logs', '📒 Logs'], ['wear', '🎩 Wardrobe'], ['sketch', '✏️ Sketchbook']];
+    const tabs = [['gifts', '🎁 Gifts'], ['gallery', '🖼️ Gallery'], ['built', '🔧 Built'], ['sounds', '🎵 Sounds'], ['collect', '🐚 Collection'], ['logs', '📒 Logs'], ['wear', '🎩 Wardrobe'], ['sketch', '✏️ Sketchbook']];
     el.querySelector('.tabs').innerHTML = tabs.map(([k, l]) => `<button data-t="${k}" class="${k === thingsTab ? 'on' : ''}">${l}</button>`).join('');
     const tb = el.querySelector('.tb');
     if (thingsTab === 'gallery') {
@@ -68,6 +69,12 @@ const PANELS = [
       tb.innerHTML = s.built.length ? s.built.map((b) => { const th = b.obj_id ? api.thumb(b.obj_id) : null; return `<div class="card row">${th ? `<img class="thumb" alt="" src="${th}">` : `<span class="sw" style="background:${esc(b.color || '#ccc')}"></span>`}<div><div class="t">${esc(b.name)}</div><div class="meta">${esc(b.description || '')} · ${ago(b.ts)}</div>${b.reason ? `<div class="small">Why: ${esc(b.reason)}</div>` : ''}${b.review ? `<div class="small dim">Looking back: ${esc(b.review)}</div>` : ''}</div></div>`; }).join('')
         : '<div class="empty">He has not finished a build yet.</div>';
       if (s.designs && s.designs.length) tb.innerHTML += `<h3>Designs he scripted &amp; saved</h3>` + s.designs.map((d) => `<div class="card"><div class="t">📐 ${esc(d.name)} <span class="chip">reused ${d.uses}×</span></div><details><summary class="small">Show his script</summary><pre class="log" style="max-height:160px">${esc(d.script)}</pre></details><div class="meta">${ago(d.ts)}</div></div>`).join('');
+    } else if (thingsTab === 'gifts') {
+      tb.innerHTML = s.gifts && s.gifts.length ? s.gifts.map((g) => `<div class="card row">${g.kind === 'picture' ? `<img class="thumb" alt="" src="/gift/${g.id}/file">` : '<div class="thumb" style="display:grid;place-items:center;font-size:30px">🧊</div>'}<div style="flex:1;min-width:0"><div class="t">${esc(g.name)} <span class="chip">${esc(({ new: 'waiting for ' + short, placed: 'in the world', displayed: 'on display', kept: 'kept safe' })[g.status] || g.status)}</span></div>
+        <div class="meta">${g.kind === 'picture' ? `picture ${g.w}×${g.h}` : `3D model · ${Number(g.tris).toLocaleString()} triangles`} · from ${esc(g.giver)} · ${ago(g.ts)}</div>
+        ${g.note ? `<div class="small">“${esc(g.note)}”</div>` : ''}${g.reaction ? `<div class="small dim">${esc(short)}: ${esc(g.reaction)}</div>` : ''}
+        <button class="btn" style="padding:2px 10px;font-size:11px;margin-top:4px" data-gdel="${g.id}">${armedGift === g.id ? 'Really remove (deletes the file)?' : 'Remove'}</button></div></div>`).join('')
+        : '<div class="empty">No gifts yet. Use “Leave him something” to give him a picture or a 3D model.</div>';
     } else if (thingsTab === 'sounds') {
       tb.innerHTML = s.tunes && s.tunes.length ? s.tunes.map((t) => `<div class="card"><div class="t">🎵 ${esc(t.title)} <button class="btn" style="float:right;padding:2px 10px" data-tune="${t.id}">▶ Play</button></div><div class="meta">${t.tempo} bpm · ${esc(t.wave)} · ${ago(t.ts)}</div><div class="small dim" style="word-break:break-word">${esc(t.notes)}</div></div>`).join('')
         : '<div class="empty">No tunes yet.</div>';
@@ -149,12 +156,44 @@ const PANELS = [
       <h3>Name it (optional)</h3><div class="field"><input id="giftName" type="text" maxlength="24" placeholder="e.g. Old Oak"></div>
       <h3>Color</h3><div class="swatches"></div>
       <button class="btn primary wide" id="giftGo" style="margin-top:16px">Place in the world…</button>`;
+    const objHtml = el.innerHTML;
+    el.innerHTML = `<div class="tabs"><button data-gt="obj" class="on">🌳 Objects</button><button data-gt="up">🖼️ Pictures &amp; 3D models</button></div><div id="objTab">${objHtml}</div>
+      <div id="upTab" hidden><p class="dim small" style="margin-top:0">Give him your own picture or 3D model. He will notice it, look at it, and decide where it goes. Gifts stay private on this Mac and are never published.</p>
+      <div id="drop" class="drop" tabindex="0">Drop a file here<br><span class="small dim">or click to choose · .png .jpg .webp (≤10 MB) · .glb (≤20 MB)</span></div>
+      <input type="file" id="giftFile" accept=".png,.jpg,.jpeg,.webp,.glb" hidden><div id="picked" class="small" style="margin:6px 2px"></div>
+      <h3>Name (optional)</h3><div class="field"><input id="gName" type="text" maxlength="40" placeholder="e.g. Sports car"></div>
+      <h3>A note from you (optional)</h3><div class="field"><input id="gNote" type="text" maxlength="300" placeholder="I made this for you"></div>
+      <button class="btn primary wide" id="gGo" style="margin-top:12px" disabled>Give it to him</button><div id="gMsg" class="small" style="margin-top:8px"></div></div>`;
     el.querySelector('.kinds').innerHTML = (s?.kinds || Object.keys(KIND_ICON)).map((k) => `<button data-k="${k}" class="${k === gift.kind ? 'on' : ''}"><span>${KIND_ICON[k] || '✨'}</span>${k}</button>`).join('');
     el.querySelector('.swatches').innerHTML = SWATCH.map((c) => `<button data-c="${c}" style="background:${c}" class="${c === gift.color ? 'on' : ''}"></button>`).join('') + `<input type="color" id="giftColor" value="${gift.color}" title="Custom color">`;
     el.querySelector('.kinds').onclick = (e) => { const b = e.target.closest('button[data-k]'); if (!b) return; gift.kind = b.dataset.k; el.querySelectorAll('.kinds button').forEach((x) => x.classList.toggle('on', x === b)); };
     const setColor = (c) => { gift.color = c; el.querySelectorAll('.swatches button').forEach((x) => x.classList.toggle('on', x.dataset.c === c)); $('#giftColor', el).value = c; };
     el.querySelector('.swatches').onclick = (e) => { const b = e.target.closest('button[data-c]'); if (b) setColor(b.dataset.c); };
     $('#giftColor', el).oninput = (e) => { gift.color = e.target.value; el.querySelectorAll('.swatches button').forEach((x) => x.classList.remove('on')); };
+    let gf = null;
+    const tabs = el.querySelector('.tabs');
+    tabs.onclick = (e) => { const b = e.target.closest('button[data-gt]'); if (!b) return; tabs.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); $('#objTab', el).hidden = b.dataset.gt !== 'obj'; $('#upTab', el).hidden = b.dataset.gt !== 'up'; };
+    const pick = (f) => {
+      const msg = $('#gMsg', el); msg.textContent = ''; gf = null; $('#gGo', el).disabled = true;
+      if (!f) return;
+      if (!/\.(png|jpe?g|webp|glb)$/i.test(f.name)) { $('#picked', el).textContent = ''; msg.textContent = 'Only .png, .jpg/.jpeg, .webp pictures and .glb 3D models can be given.'; return; }
+      const cap = /\.glb$/i.test(f.name) ? 20e6 : 10e6;
+      if (f.size > cap) { msg.textContent = `That file is too big (${(f.size / 1e6).toFixed(1)} MB; limit ${cap / 1e6} MB).`; return; }
+      gf = f; $('#picked', el).textContent = `📎 ${f.name} (${(f.size / 1e6).toFixed(2)} MB)`; $('#gGo', el).disabled = false;
+    };
+    const dz = $('#drop', el), inp = $('#giftFile', el);
+    dz.onclick = () => inp.click(); inp.onchange = () => pick(inp.files[0]);
+    dz.ondragover = (e) => { e.preventDefault(); dz.classList.add('over'); }; dz.ondragleave = () => dz.classList.remove('over');
+    dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove('over'); pick(e.dataTransfer.files[0]); };
+    $('#gGo', el).onclick = async () => {
+      if (!gf) return; const msg = $('#gMsg', el); $('#gGo', el).disabled = true; msg.textContent = 'Sending…';
+      const fd = new FormData(); fd.append('name', $('#gName', el).value); fd.append('note', $('#gNote', el).value); fd.append('file', gf);
+      try {
+        const r = await fetch('/gift', { method: 'POST', headers: { 'X-Gift-Upload': '1' }, body: fd }), j = await r.json();
+        if (j.ok) { msg.textContent = `Given! ${short} will notice “${j.name}” soon.`; gf = null; $('#picked', el).textContent = ''; $('#gName', el).value = ''; $('#gNote', el).value = ''; inp.value = ''; }
+        else { msg.textContent = '⚠️ ' + (j.error || 'That did not work.'); $('#gGo', el).disabled = false; }
+      } catch (err) { msg.textContent = '⚠️ Could not reach the server.'; $('#gGo', el).disabled = false; }
+    };
     $('#giftGo', el).onclick = () => { api.startPlace({ kind: gift.kind, name: $('#giftName', el).value, color: gift.color }); $('#giftName', el).value = ''; closePanel(); toast('Click the ground to place it · Esc to cancel', 6000); };
   }, update() {} },
 
