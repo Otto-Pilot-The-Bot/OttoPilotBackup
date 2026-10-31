@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sprocket's World</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/vendor/addons/"}}</script>
+<link rel="stylesheet" href="/style.css">
+</head><body>
+<header id="top" class="paper">
+  <div class="who"><span id="moodEmoji" class="avatar">🤖</span><div><b id="name">…</b><span id="moodChip" class="chip">waking up</span></div></div>
+  <div id="meters"></div>
+  <div id="clock" class="chip clock" title="In-world time"><span id="clockIcon">☀️</span> <span id="clockText">--:--</span></div>
+</header>
+<nav id="menu"></nav>
+<section id="panel" class="paper" hidden>
+  <header><h2 id="panelTitle"></h2><button id="panelClose" class="x" aria-label="Close panel">✕</button></header>
+  <div id="panelBody"></div>
+</section>
+<div id="caption" class="paper"><span id="capIcon">💭</span><span id="capText">Waking up…</span></div>
+<div id="toast" class="paper" hidden></div>
+<div id="conn" class="paper" hidden></div>
+<div id="lightbox" hidden><div class="box paper"><button class="x" id="lbClose" aria-label="Close">✕</button><div id="lbBody"></div></div></div>
+<script type="module" src="/main.js"></script>
+</body></html>

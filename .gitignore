@@ -1,0 +1,23 @@
+# secrets: never commit
+.env
+.env.*
+*.env
+
+# environments / caches
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+
+# runtime files (his private state and logs)
+data/
+backup/
+KILL
+
+# publishing working copies (the robot's site clone and dry-run output)
+site/
+site_dryrun/
+
+# third-party model packs (license unknown; not mine to redistribute)
+assets/
+assests/

@@ -1,0 +1,89 @@
+"""Single place for every tunable. Edit here (or override with env vars)."""
+import os
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+NAME = os.environ.get("SPROCKET_NAME", "Sprocket")          # the robot's name
+
+MODEL = os.environ.get("SPROCKET_MODEL", "gemma4:e4b")      # the one model setting
+FALLBACK_MODEL = os.environ.get("SPROCKET_FALLBACK", "qwen3:8b")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+NUM_CTX = 8192
+THINK = False                 # thinking off for the tick loop (speed)
+TEMPERATURE = 0.9
+KEEP_ALIVE = "30m"
+
+TICK_SECONDS = float(os.environ.get("SPROCKET_TICK", 12))   # start-to-start interval
+REFLECT_EVERY = 10            # ticks between reflection calls
+REQUEST_TIMEOUT = 90          # seconds per model call
+
+DB_PATH = Path(os.environ.get("SPROCKET_DB", ROOT / "data" / "sprocket.db"))
+PUBLISH_DIR = ROOT / "published"   # approved pages are exported here, locally only
+KILL_FILE = ROOT / "KILL"          # `touch KILL` stops everything
+
+PUBLISH_ENABLED_DEFAULT = False    # publish_page tool hidden until you switch it on
+WORLD_HALF = 24                    # world spans -24..24 on x and z
+REACH = 3.0                        # distance needed to use something
+MAX_STEP = 10.0                    # max distance walked per tick
+MAX_OBJECTS = 60
+HOST, PORT = "127.0.0.1", 8765     # localhost only
+
+# --- web reading (read_page) ---
+FETCH_TIMEOUT = 10             # seconds, total
+FETCH_MAX_BYTES = 600_000      # never download more than this
+PAGE_CHARS = 4000              # cleaned text cap
+FETCH_PORTS = (80, 443)
+# --- making ---
+ART_MAX_CHARS = 6000
+MAX_PROJECTS = 2
+
+
+# =====================================================================================================
+# BALANCE: every rate and threshold lives here (and is shown in the page under "More").
+# All numbers are PER TICK, tuned for ~12 s per tick. Needs run 0..100.
+# =====================================================================================================
+ENERGY_BASE_DRAIN = 0.05        # just existing
+BATTERY_BASE_DRAIN = 0.06
+CREATIVITY_DECAY = 0.9          # creativity slowly fades; low creativity = itch to make something
+BOREDOM_RISE = 1.4              # boredom creeps up; novel things bring it down
+MOVE_COST_PER_UNIT = {"energy": 0.025, "battery": 0.020}      # walking a full 10-unit step costs ~0.25 / 0.20
+ACTION_COST = {                 # extra cost when an action is actually carried out: (energy, battery)
+    "build": (0.50, 0.35), "make_art": (0.40, 0.30), "interact_with": (0.10, 0.06), "shop": (0.10, 0.06),
+    "search_web": (0.03, 0.05), "read_page": (0.02, 0.04), "write_journal": (0.01, 0.02),
+    "move_to": (0.0, 0.0), "eat": (0.0, 0.0), "rest": (0.0, 0.0), "publish_page": (0.03, 0.03),
+}
+REST_RESTORE_HOME = 100.0       # resting at the home pad refills energy completely...
+REST_BATTERY_TRICKLE_HOME = 25.0   # ...and trickle-charges the battery
+REST_RESTORE_AWAY = 35.0        # resting elsewhere helps, but less
+EAT_RESTORE = 90.0              # refuelling at the fuel station refills almost everything
+FULL_THRESHOLD = 90.0           # above this, eating/resting does nothing ("already full")
+LOW_HINT = 30.0                 # below this the prompt gently suggests looking after the need
+VERY_LOW = 12.0                 # below this the hint becomes more direct
+COLLAPSE_RECOVER = 45.0         # if a need hits 0 he shuts down briefly and wakes at this level
+NEG_MOOD_MAX_TICKS = 4          # a bad mood with no new bad event fades after this many ticks
+# Typical mix of what he does in a tick (used only to ESTIMATE run time in the settings panel)
+ASSUMED_MIX = {"move_units": 2.4, "build": 0.10, "make_art": 0.05, "light": 0.45}   # avg units walked/tick, share of ticks
+
+# --- pacing: so he doesn't only build ---
+MIN_TICKS_BETWEEN_NEW_PROJECTS = 80
+MIN_TICKS_BETWEEN_ART = 14
+FOCUS_TICKS = 10                # how long a "what I feel like doing" inclination lasts
+
+# --- layout engine ---
+WORLD_HALF_MAX = 48
+WORLD_GROW_STEP = 6
+CROWD_LIMIT = 0.14              # fraction of ground covered before the buildable area grows
+SPACING_MARGIN = 0.8            # extra space kept between footprints
+
+# --- assets ---
+ASSET_DIRS = ("assets", "assests")      # (the second spelling is accepted because that is how the folder was created)
+ASSET_MAX_BYTES = 25_000_000
+ASSET_MAX_TRIS = 12_000
+ASSET_KEEP_RANGE = (0.4, 6.0)            # models whose longest side is in this range keep their native scale (kit pieces still fit together)
+ASSET_TARGET_BY_TAG = {"animal": 1.6, "celestial": 3.0}   # oversized models with these tags are scaled to this size instead
+ASSET_FIT_MIN, ASSET_FIT_MAX = 0.6, 5.0   # models outside that range are rescaled into this many world units
+BLOCKED_SITE_HOURS = 6                   # how long he remembers a site that refused him
+MAX_GOALS = 5                    # active goals kept at once (near-duplicates are merged)
+BUILD_WINDOW = (30, 3)           # at most 3 build actions (any stage) in any 30 ticks: builds are an occasional thing
+MAKER_PREF_CAP = 1.5             # building/creating/art tastes can never snowball above this
