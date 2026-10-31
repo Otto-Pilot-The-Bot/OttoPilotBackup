@@ -171,6 +171,10 @@ def parse_sculpture(src):
                       "c": world.to_hex(p.get("c") or p.get("color")) or "#b0bec5"})
     if not parts:
         raise ArtError("no valid shapes in the sculpture")
+    shapes = {p["s"] for p in parts}
+    if len(parts) < 6 or len(shapes) < 3:
+        raise ArtError("that sculpture is just a few plain shapes. Make something recognisable (a tree, a bird, a lighthouse, a robot, a boat) from at least 6 parts using at least 3 different shapes, "
+                       "with sensible sizes, positions and colours")
     return parts
 
 

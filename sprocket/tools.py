@@ -21,7 +21,7 @@ _GOALS = {
 ART_HELP = ("Make a small artwork; it hangs in the gallery. kind=drawing: content is SVG markup "
             "(<svg viewBox='0 0 100 100'>...</svg>) or canvas JS using ctx (2D, 256x256), W, H, rand(). "
             "kind=pixel: content is rows of letters (max 32x32) plus palette like 'R=red B=#2244ff' ('.'=empty). "
-            "kind=sculpture: content is a JSON list of up to 24 parts like "
+            "kind=sculpture: content is a JSON list of 6-24 parts using at least 3 different shapes that together form a recognisable thing (tree, bird, boat...), like "
             '[{"s":"sphere|box|cone|cylinder|torus","x":0,"y":0.5,"z":0,"size":1,"c":"teal"}] and it stands in the world.')
 BUILD_HELP = ("At the workshop, make something real (an occasional thing, not your main activity). A project goes blueprint -> gather -> build -> finish: "
               "call build with the same name each time to advance it (empty name continues your current project). A new build needs a reason: a goal, an interest or a need it serves. "
