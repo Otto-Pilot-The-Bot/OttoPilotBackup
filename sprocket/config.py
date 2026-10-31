@@ -4,7 +4,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-NAME = os.environ.get("SPROCKET_NAME", "Sprocket")          # the robot's name
+NAME = os.environ.get("SPROCKET_NAME", "Otto Pilot")       # the robot's full name (the ONE place to change it)
+SHORT_NAME = os.environ.get("SPROCKET_SHORT_NAME", "Otto")  # what the UI and captions call him day to day
 
 MODEL = os.environ.get("SPROCKET_MODEL", "gemma4:e4b")      # the one model setting
 FALLBACK_MODEL = os.environ.get("SPROCKET_FALLBACK", "qwen3:8b")

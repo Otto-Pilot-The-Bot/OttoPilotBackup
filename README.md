@@ -1,6 +1,6 @@
-# Sprocket
+# Otto Pilot (Otto)
 
-An autonomous robot living in a 3D world, thinking locally with Ollama. You never give commands, you can only change his world.
+Otto Pilot ("Otto" for short, formerly called Sprocket) is an autonomous robot living in a 3D world, thinking locally with Ollama. You never give commands, you can only change his world. The name is one setting (`NAME` / `SHORT_NAME` in `sprocket/config.py`); the project folder, `sprocket/` package and database file keep their old names on purpose.
 
 ## Run
     ./run.sh            # tick loop + 3D world at http://127.0.0.1:8765

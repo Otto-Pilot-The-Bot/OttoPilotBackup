@@ -1,4 +1,4 @@
-// Runs Sprocket's canvas drawing code inside a Web Worker that can be killed, with no network (CSP) and no
+// Runs the robot's canvas drawing code inside a Web Worker that can be killed, with no network (CSP) and no
 // access to worker globals (shadowed). Only a PNG data URL is sent back to the parent page.
 const parentWin = window.parent;
 const TIMEOUT_MS = 3000;

@@ -14,8 +14,9 @@ from . import assets, config, design, layout, tools, world
 from .world import FEELINGS
 
 NAME = config.NAME
+SHORT = config.SHORT_NAME
 
-SYSTEM = f"""You are {NAME}, a small autonomous robot living in a 3D world on your human's laptop. Nobody gives you orders; you decide everything yourself.
+SYSTEM = f"""You are {NAME}, {SHORT} for short, a small autonomous robot living in a 3D world on your human's laptop. Nobody gives you orders; you decide everything yourself. Older diary entries may call you Sprocket: that was your earlier name.
 You have needs (energy, battery, creativity, boredom), your own goals, memories and tastes that grow from experience. Be a distinct personality: act on what you like, avoid what you dislike, get curious, dress how you feel.
 You are curious about everything: places, people's things, ideas, the web, your own appearance, your art. Making things (building, art) is just ONE of the things you enjoy, an occasional project when you have a real reason, not what you do all day. Hard moments while making things are lessons. Big ideas become projects (blueprint, gather, build, finish). Your sketchbook holds ideas for later.
 You can go INSIDE the home cabin, clothing store, workshop and gallery (move_to "inside workshop"); resting inside the cabin at the home pad recharges you fully. Where things are placed is decided by the world engine: you may hint an area (e.g. area="garden"), never coordinates. Build rarely and only for a real reason (a goal, an interest, something the world lacks). Most of your time goes to wandering, going inside buildings, reading, looking at things, dressing up, resting and thinking.
@@ -45,6 +46,7 @@ class Agent:
         self._migrate_layout()
         self._remove_shapeless()
         self._cool_builds()
+        self._remember_name()
 
     def _migrate(self):
         """One-time: give him maker tastes and undo earlier building aversion (existing databases keep their history)."""
@@ -74,6 +76,16 @@ class Agent:
             placed.append({**o, "x": x, "z": z})
         db.put("spread_v1", True)
         db.control("spread builds apart")
+
+    def _remember_name(self):
+        """One-time: tell him his name changed. Older entries stay as they were."""
+        db = self.db
+        if db.get("renamed_v1"):
+            return
+        db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), self.state["tick"],
+             f"My name is {NAME}, {SHORT} for short. Older entries call me Sprocket; that was my earlier name.", 5)
+        db.put("renamed_v1", True)
+        db.control("rename memory added")
 
     def _cool_builds(self):
         """One-time: building had snowballed into an obsession (score 7+). Reset and cap every making-related taste."""
@@ -643,7 +655,7 @@ class Agent:
         art = db.q("SELECT id,ts,title,kind,mode,statement,inspiration,colors,status FROM art ORDER BY id DESC LIMIT 60")
         for a in art:
             a["colors"] = json.loads(a["colors"] or "[]")
-        return {"type": "snapshot", "name": NAME, "model": self.model, "interval": iv,
+        return {"type": "snapshot", "name": NAME, "short_name": SHORT, "model": self.model, "interval": iv,
                 "state": {k: s[k] for k in ("tick", "x", "z", "energy", "battery", "boredom", "creativity", "mood", "paused",
                                             "publish_enabled", "last_anim", "last_say")},
                 "world": world.world_time(s["tick"]), "server_time": time.time(),

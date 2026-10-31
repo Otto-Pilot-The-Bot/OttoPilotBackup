@@ -11,7 +11,7 @@ const KIND_ICON = { tree: '🌳', rock: '🪨', flower: '🌸', ball: '⚽', box
 const STAGES = ['blueprint', 'gather', 'build', 'finished'];
 const SWATCH = ['#e53935', '#fb8c00', '#fdd835', '#43a047', '#00897b', '#1e88e5', '#8e24aa', '#ec407a', '#f5f5f5', '#6d4c41'];
 
-let api, snap = null, skew = 0, openId = null, art = null, lastCaption = '';
+let short = 'Otto', api, snap = null, skew = 0, openId = null, art = null, lastCaption = '';
 const openPrev = new Set();
 let confirmLive = false;
 let thingsTab = 'gallery', browseFilter = 'all', draggingSpeed = false, killArmed = false, logRows = null, showLog = false;
@@ -153,7 +153,7 @@ const PANELS = [
       <h3>How fast he thinks</h3><input type="range" id="speed" min="3" max="60" step="1"><div class="small dim" id="speedLbl"></div>
       <h3>Web pages</h3><label class="switch"><input type="checkbox" id="pubChk"><span>Let him draft web pages.<br><span class="small dim">Pages he writes wait for your approval (see <b>My site</b>). Nothing goes online unless you approve it.</span></span></label>
       <div id="pending"></div>
-      <h3>Emergency</h3><button class="btn danger wide" id="killBtn">Kill switch — stop Sprocket</button>
+      <h3>Emergency</h3><button class="btn danger wide" id="killBtn">Kill switch — stop ${short}</button>
       <p class="small dim">You can also press Ctrl-C in the terminal or create a file named KILL in the project folder. His state is saved.</p>`;
     $('#pauseBtn', el).onclick = () => api.send({ type: snap.state.paused ? 'resume' : 'pause' });
     const sp = $('#speed', el);
@@ -161,13 +161,13 @@ const PANELS = [
     sp.onchange = () => { draggingSpeed = false; api.send({ type: 'set_interval', seconds: +sp.value }); };
     $('#pubChk', el).onchange = (e) => api.send({ type: 'toggle_publish', on: e.target.checked });
     $('#killBtn', el).onclick = (e) => {
-      if (!killArmed) { killArmed = true; e.target.textContent = 'Really stop him? Click again to confirm'; setTimeout(() => { killArmed = false; e.target.textContent = 'Kill switch — stop Sprocket'; }, 4000); return; }
+      if (!killArmed) { killArmed = true; e.target.textContent = 'Really stop him? Click again to confirm'; setTimeout(() => { killArmed = false; e.target.textContent = `Kill switch — stop ${short}`; }, 4000); return; }
       api.send({ type: 'kill' });
     };
     $('#pending', el).onclick = (e) => { const b = e.target.closest('button[data-a]'); if (b) api.send({ type: b.dataset.a, id: +b.dataset.id }); };
   }, update(el, s) {
     const p = s.state.paused;
-    $('#pauseBtn', el).textContent = p ? '▶ Resume Sprocket' : '⏸ Pause Sprocket';
+    $('#pauseBtn', el).textContent = p ? `▶ Resume ${short}` : `⏸ Pause ${short}`;
     if (!draggingSpeed) { $('#speed', el).value = Math.round(s.interval); $('#speedLbl', el).textContent = `Thinks every ${Math.round(s.interval)}s`; }
     $('#pubChk', el).checked = s.state.publish_enabled;
     $('#pending', el).innerHTML = s.pages.length ? '<h3>Drafts awaiting approval</h3>' + s.pages.map((pg) => `<div class="card"><div class="t">${esc(pg.title)}</div><div class="small">${esc(pg.body)}…</div><div class="field"><button class="btn primary" data-a="approve_page" data-id="${pg.id}">${s.site.mode === 'live' ? 'Approve & publish' : 'Approve (dry run)'}</button><button class="btn" data-a="reject_page" data-id="${pg.id}">Reject</button></div></div>`).join('') : '';
@@ -175,7 +175,7 @@ const PANELS = [
 
   { id: 'more', icon: '⋯', label: 'More', title: 'Settings & raw log', build(el) {
     el.innerHTML = `<div id="about"></div>
-      <h3>Camera & labels</h3><label class="switch"><input type="checkbox" id="followChk" checked><span>Follow Sprocket</span></label>
+      <h3>Camera & labels</h3><label class="switch"><input type="checkbox" id="followChk" checked><span>Follow ${short}</span></label>
       <div class="field"><span class="small dim">Labels</span><select id="labelMode"><option value="smart">nearby only (no overlaps)</option><option value="all">all</option><option value="off">off</option></select><button class="btn" id="camReset">Reset camera</button></div>
       <div id="balance"></div><div id="world"></div><div id="packs"></div>
       <h3>Raw log</h3><div class="field"><button class="btn" id="logBtn">Show full log</button><button class="btn" id="logRefresh" hidden>Refresh</button></div><div id="logBox" class="log" hidden></div>`;
@@ -252,7 +252,7 @@ export function init(a) {
 
 export function update(s) {
   const first = !snap; snap = s; skew = s.server_time - Date.now() / 1000;
-  $('#name').textContent = s.name;
+  $('#name').textContent = s.name; short = s.short_name || short; document.title = `${s.name}'s World`;
   const m = s.state.mood;
   $('#moodEmoji').textContent = MOOD[m] || '🤖'; $('#moodChip').textContent = m + (s.state.inside ? ` · inside the ${s.places[s.state.inside].label}` : '');
   document.querySelectorAll('.m').forEach((el) => {
@@ -260,7 +260,7 @@ export function update(s) {
     el.querySelector('b').style.width = Math.max(2, v) + '%'; el.title = `${el.title.split(' ')[0]} ${Math.round(v)}/100`;
     el.classList.toggle('low', good ? v < 25 : v > 80);
   });
-  if (s.state.paused) setCaption('⏸', 'Paused — Sprocket is resting until you resume.', true);
+  if (s.state.paused) setCaption('⏸', `Paused — ${short} is resting until you resume.`, true);
   else if (first && s.state.last_say) setCaption('💭', s.state.last_say);
   refresh();
 }

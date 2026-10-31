@@ -18,7 +18,7 @@ from urllib.parse import urljoin, urlsplit
 
 from . import config
 
-UA = "SprocketBot/1.0 (hobby robot; read-only; text only)"
+UA = "OttoPilotBot/1.0 (hobby robot; read-only; text only)"
 
 
 class Blocked(Exception):

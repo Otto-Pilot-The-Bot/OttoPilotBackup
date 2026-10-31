@@ -444,7 +444,7 @@ function connect() {
     else if (m.type === 'log') UI.setLog(m.rows);
     else if (m.type === 'art_content') art.receive(m);
   };
-  ws.onclose = () => { UI.setConn(false, wasConnected ? 'Sprocket has stopped or the connection dropped. Restart with ./run.sh — reconnecting…' : 'Connecting…'); setTimeout(connect, 2500); };
+  ws.onclose = () => { UI.setConn(false, wasConnected ? (last?.short_name || 'The robot') + ' has stopped or the connection dropped. Restart with ./run.sh — reconnecting…' : 'Connecting…'); setTimeout(connect, 2500); };
 }
 
 function applySnapshot(m, teleport) {
