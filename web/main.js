@@ -400,7 +400,7 @@ let expr = { Angry: 0, Surprised: 0, Sad: 0 }, exprTarget = { Angry: 0, Surprise
 
 new GLTFLoader().load('/models/RobotExpressive.glb', (gltf) => {
   robot = gltf.scene;
-  const box = new THREE.Box3().setFromObject(robot); robot.scale.setScalar(2.4 / (box.max.y - box.min.y));
+  const box = new THREE.Box3().setFromObject(robot); robot.scale.setScalar(1.7 / (box.max.y - box.min.y));      // keep in step with config.ROBOT_HEIGHT
   robot.traverse((o) => {
     if (o.isMesh) { o.castShadow = true; if (o.morphTargetDictionary) face = o; if (o.material && o.material.name === 'Main') { bodyMat = o.material; } }
     if (o.isBone && o.name === 'Head' && !headBone) headBone = o;

@@ -1149,7 +1149,7 @@ class Agent:
                 "state": {k: s[k] for k in ("tick", "x", "z", "energy", "battery", "boredom", "creativity", "mood", "paused",
                                             "publish_enabled", "last_anim", "last_say", "pace")},
                 "think": str(config.THINK_MAIN), "pace_presets": config.PACE_PRESETS,
-                "world": world.world_time(s["tick"]), "server_time": time.time(),
+                "world": world.world_time(s["tick"]), "robot_height": config.ROBOT_HEIGHT, "server_time": time.time(),
                 "objects": objs, "places": world.PLACES, "outfit": {o["slot"]: o["color"] for o in db.q("SELECT * FROM outfit")},
                 "goals": db.q("SELECT id,text FROM goals WHERE status='active'"),
                 "prefs": db.q("SELECT subject,round(score,1) score,n FROM prefs ORDER BY ABS(score) DESC LIMIT 40"),

@@ -213,6 +213,7 @@ def scan(db, log=print):
                 if fit != 1.0:                                   # only extreme sizes: animals and planets get a believable size
                     tgt = next((v for t, v in config.ASSET_TARGET_BY_TAG.items() if t in tags), None)
                     fit = tgt / nat if tgt and nat > 0 else fit
+                fit *= config.ASSET_PACK_SCALE.get(pack, 1.0)    # world scale: buildings should tower over the robot, not match it
                 sx, sy, sz = meta["size"]
                 radius = max(0.4, max(sx, sz) * fit / 2)
                 credit = (meta.get("copyright") or "")[:200] or (json.dumps(meta["extras"])[:200] if meta["extras"] else "")

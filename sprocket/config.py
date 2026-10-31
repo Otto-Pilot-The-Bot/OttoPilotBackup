@@ -85,6 +85,9 @@ ASSET_MAX_BYTES = 25_000_000
 ASSET_MAX_TRIS = 12_000
 ASSET_KEEP_RANGE = (0.4, 6.0)            # models whose longest side is in this range keep their native scale (kit pieces still fit together)
 ASSET_TARGET_BY_TAG = {"animal": 1.6, "celestial": 3.0}   # oversized models with these tags are scaled to this size instead
+ROBOT_HEIGHT = 1.7                       # Otto's height in world units (the 3D robot is scaled to this)
+# Packs whose models look tiny next to Otto get a uniform scale-up (pieces of one pack keep fitting together).
+ASSET_PACK_SCALE = {"Building Kit": 2.1, "Misc Builds": 2.1, "Space Habitat Kit": 1.5, "Sci-fi Pack": 1.3}
 ASSET_FIT_MIN, ASSET_FIT_MAX = 0.6, 5.0   # models outside that range are rescaled into this many world units
 BLOCKED_SITE_HOURS = 6                   # how long he remembers a site that refused him
 MAX_GOALS = 5                    # active goals kept at once (near-duplicates are merged)
