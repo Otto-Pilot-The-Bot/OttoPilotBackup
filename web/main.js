@@ -394,7 +394,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverId = null; tipEl.hidden = true; });
 
 // ------------------------------------------------------------------ robot
-let robot, mixer, actions = {}, current = null, face, bodyMat, bodyOrig, headBone;
+let robot, mixer, actions = {}, current = null, face, bodyMat, bodyOrig, headBone, handBone, heldKey = '', heldObj = null;
 const accessories = new THREE.Group(); scene.add(accessories);
 const accMeshes = {};
 const robotPos = new THREE.Vector3(), targetPos = new THREE.Vector3();
@@ -408,6 +408,7 @@ new GLTFLoader().load('/models/RobotExpressive.glb', (gltf) => {
   robot.traverse((o) => {
     if (o.isMesh) { o.castShadow = true; if (o.morphTargetDictionary) face = o; if (o.material && o.material.name === 'Main') { bodyMat = o.material; } }
     if (o.isBone && o.name === 'Head' && !headBone) headBone = o;
+    if (o.isBone && (o.name === 'Palm2R' || o.name === 'Palm2.R') && !handBone) handBone = o;
   });
   bodyOrig = bodyMat ? bodyMat.color.clone() : null;              // the model's own orange, kept so we can restore it
   scene.add(robot);
@@ -474,7 +475,7 @@ function applyLook(name) {
   REAL.setTufts?.(false);
   UI.mapLook?.(MV.look);
 }
-window.__setFollow = (v) => { follow = v; }; window.__traffic = TRAFFIC; window.__last = () => last; window.__startRide = (r) => startRide(r); window.__applyLook = applyLook; window.__MV = MV;
+window.__setFollow = (v) => { follow = v; }; window.__traffic = TRAFFIC; window.__syncHeld = (h) => syncHeld(h); window.__last = () => last; window.__startRide = (r) => startRide(r); window.__applyLook = applyLook; window.__MV = MV;
 art.onChange(updateGallery);
 const send = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
 
@@ -497,6 +498,19 @@ function connect() {
   ws.onclose = () => { UI.setConn(false, wasConnected ? (last?.short_name || 'The robot') + ' has stopped or the connection dropped. Restart with ./run.sh — reconnecting…' : 'Connecting…'); setTimeout(connect, 2500); };
 }
 
+function syncHeld(h) {                                  // the item in his right hand (his own copy; the one on the map stays)
+  const key = h ? h.aid + ':' + h.fit : '';
+  if (key === heldKey) return; heldKey = key;
+  if (heldObj) { scene.remove(heldObj); heldObj = null; }
+  if (!h) return;
+  const g = buildDesign({ parts: [{ a: h.aid, f: h.fit, x: 0, y: 0, z: 0, s: 1, r: [0, 0, 0] }], scale: 1, rot: 0 });
+  const holder = new THREE.Group(); holder.add(g); heldObj = holder; holder.visible = false; scene.add(holder);
+  g.userData.ready.then(() => {                          // size it to about hand size, whatever the model's native size
+    if (heldObj !== holder) return;
+    const box = new THREE.Box3().setFromObject(g), sz = box.getSize(new THREE.Vector3()), big = Math.max(sz.x, sz.y, sz.z) || 1;
+    g.scale.setScalar(0.34 / big); g.position.y = -0.12; holder.visible = true;
+  });
+}
 function updateInsideFade() {
   const m = last; if (!m) return; const s = m.state;
   let insideObj = (s.inside && m.places && m.places[s.inside] && m.places[s.inside].object) || null;             // walls and roof fade while he is inside (entered, or just standing within the building)
@@ -534,7 +548,7 @@ function applySnapshot(m, teleport) {
     let L = 0, p = robotPos; for (const q of pathQ) { L += Math.hypot(q.x - p.x, q.z - p.z); p = q; } if (pathQ.length) { L += Math.hypot(targetPos.x - p.x, targetPos.z - p.z); walkSpeed = Math.max(1.3, Math.min(8, L / Math.max(2, m.interval * 0.75))); } }
   if (s.ride && s.ride.tick !== lastRideTick) { lastRideTick = s.ride.tick; if (!teleport) startRide(s.ride); }
   if (s.honk && s.honk.tick !== lastHonk) { lastHonk = s.honk.tick; if (!teleport) honk(); }
-  updateInsideFade();
+  updateInsideFade(); syncHeld(s.holding);
   snapHour = m.world.hour; snapAt = performance.now(); intervalMs = (m.effective_interval || m.interval) * 1000; paused = s.paused;
   if (teleport && robot) { robotPos.copy(targetPos); robot.position.copy(robotPos); }
   updateGallery();
@@ -613,6 +627,10 @@ function frame() {
     robot.position.copy(robotPos);
     mixer.update(dt);
     if (face) for (const k of Object.keys(expr)) { expr[k] += (exprTarget[k] - expr[k]) * Math.min(1, dt * 4); face.morphTargetInfluences[face.morphTargetDictionary[k]] = expr[k]; }
+    if (heldObj && handBone) {                           // follows his right hand (a scene object, so the arm's bone scale cannot distort it)
+      handBone.getWorldPosition(tmp); heldObj.position.copy(tmp); heldObj.position.x += Math.sin(robot.rotation.y) * 0.18; heldObj.position.z += Math.cos(robot.rotation.y) * 0.18; heldObj.position.y += 0.12;
+      heldObj.rotation.y = robot.rotation.y;
+    }
     if (headBone) {
       headBone.getWorldPosition(tmp); accessories.position.copy(tmp); accessories.rotation.y = robot.rotation.y;
       for (const [slot, g] of Object.entries(accMeshes)) g.position.set(...OFF[slot]);

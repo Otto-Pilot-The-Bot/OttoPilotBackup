@@ -48,6 +48,10 @@ ACTIONS = [
          fx={"creativity": 4, "boredom": -4}, v=0.5, anim="Yes", verb="tended to the {name}", imp=1),
     dict(id="use_computer", label="use the computer", tags={"computer", "screen", "terminal"}, where="outside", why="to look things up or write something",
          fx={"boredom": -8, "creativity": 6}, v=0.5, anim="Yes", verb="used the {name}", imp=1),
+    dict(id="take", label="pick it up and carry it", tags={"holdable"}, where="outside", why="to carry it with you", fx={"boredom": -2}, v=0.4, anim="ThumbsUp",
+         verb="picked up the {name}", imp=1, special="take"),
+    dict(id="photo", label="take a photo of it", tags={"*"}, where="outside", why="to keep a picture of it", fx={"creativity": 6, "boredom": -6}, v=0.6, anim="Yes",
+         verb="took a photo of the {name}", imp=2, special="photo"),
     dict(id="pet", label="say hello and pet it", tags={"animal", "pet", "cat", "dog"}, where="outside", why="because it is friendly",
          fx={"boredom": -6}, v=0.8, anim="Wave", verb="said hello to the {name}", imp=2),
 ]
@@ -115,8 +119,14 @@ def tags_of(o):
 def applicable(state, o):
     """Actions that make sense for this object right now (tags decide; needs and location refine)."""
     t = tags_of(o); ins = inside_obj(state); out = []
+    held = (state.get("holding") or {}).get("tags") or []
     for a in ACTIONS:
-        if not (t & a["tags"]):
+        if "*" in a["tags"]:
+            if a["id"] == "photo" and "camera" not in held:
+                continue
+        elif not (t & a["tags"]):
+            continue
+        if a["id"] == "take" and state.get("holding"):
             continue
         if a.get("needs_door") and not o.get("door"):
             continue
@@ -153,12 +163,14 @@ def prompt_line(state):
     if not maps.ACTIVE["doc"]:
         return None
     rows = offers(state)
+    h = state.get("holding")
+    hold = f" YOU ARE HOLDING: {h['name']} (put it away with the put_away tool when you are done)." if h else ""
     if not rows:
-        return None
+        return ("YOU CAN DO HERE:" + hold) if hold else None
     parts = []
     for o, d, acts in rows:
         parts.append(f"#{o['id']} {label(o)} ({d:.0f} m): " + "; ".join(f"{a['id']} = {a['label']}, {a['why']}" for a in acts[:3]))
-    return "YOU CAN DO HERE (things your human placed; use the use tool with object and action): " + " | ".join(parts)
+    return "YOU CAN DO HERE (things your human placed; use the use tool with object and action): " + " | ".join(parts) + hold
 
 
 # ---------------------------------------------------------------- the tool
@@ -220,6 +232,14 @@ def use(ctx, args):
         s["x"], s["z"] = dest["x"], dest["z"]; s["inside"] = None
         args = dict(args, dest=dest["label"])
         extra = f" The ride took you to the {dest['label']}."
+    elif act.get("special") == "take":
+        row = ctx.db.one("SELECT id,fit FROM assets WHERE file=? AND usable=1", o.get("asset") or "")
+        if not row:
+            return out(False, "You can't pick that up.")
+        s["holding"] = {"name": label(o), "aid": row["id"], "fit": row["fit"], "scale": o.get("scale", 1.0), "tags": list(o.get("tags") or []), "from": o["id"]}
+        extra = " It stays on the shelf for others; you carry your own copy."
+    elif act.get("special") == "photo":
+        extra = " You will remember how it looked."
     elif act.get("special") == "honk":
         s["honk"] = {"obj": o["id"], "tick": s["tick"]}
     for k, d in act["fx"].items():

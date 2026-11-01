@@ -110,6 +110,7 @@ def _schemas(publish_enabled):
                    "Your prompt's 'YOU CAN DO HERE' line lists what is offered. You walk there first if needed.",
             {"object": {"type": "string", "description": "the object's #id or name"}, "action": {"type": "string", "description": "one of the offered action ids, e.g. sit, knock, enter, recharge, look_art, honk, ride"},
              "to": {"type": "string", "description": "only for ride: the place to ride to"}}, ["object", "action"]),
+        _fn("put_away", "Put away the item you are holding (it goes back where you found it, in your pocket).", {}, []),
         _fn("search_assets", "Search the library of 3D models you can build with (trees, tents, walls, doors, space things...). Returns names, tags and sizes.",
             {"query": {"type": "string", "description": "e.g. 'tree', 'door', 'space', or empty to browse"}}, []),
         _fn("build", BUILD_HELP,
@@ -485,6 +486,15 @@ def _use_poi(ctx, tgt):
         v_ = base("market", 0.6)
         return out(True, f"You browsed the {w} stall: {pois.WARES.get(w, 'all sorts of things')}.{extra} {_feel_text(v_)}", v_, "ThumbsUp", subject="shopping", cat="explore", caption=f"Browsing the {w} stall", face=face)
     return out(True, f"You looked at the {row['name'].lower()}.", 0.2, "Idle")
+
+
+def put_away(ctx, a):
+    h = ctx.state.get("holding")
+    if not h:
+        return out(True, "You are not holding anything.", 0.0, "Idle", noop=True)
+    ctx.state["holding"] = None
+    ctx.db.x("INSERT INTO journal(ts,tick,kind,text,mood) VALUES(?,?,?,?,?)", time.time(), ctx.state["tick"], "interaction", f"Put away the {h['name']}."[:200], ctx.state["mood"])
+    return out(True, f"You put the {h['name']} away.", 0.1, "Idle", subject=h["name"])
 
 
 def interact_with(ctx, a):
@@ -1297,7 +1307,7 @@ def publish_page(ctx, a):
 
 
 from . import affordances as _aff
-REGISTRY = {"use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
+REGISTRY = {"put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
             "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')

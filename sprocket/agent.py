@@ -1293,6 +1293,7 @@ class Agent:
         d["map"] = {"name": (self.db.get("active_map") or ""), "rev": getattr(self, "map_rev", 0)}
         d["state"]["path"] = self.state.get("path") or []
         d["state"]["ride"] = self.state.get("ride"); d["state"]["honk"] = self.state.get("honk")
+        h = self.state.get("holding"); d["state"]["holding"] = {"aid": h["aid"], "fit": h["fit"], "name": h["name"], "scale": h.get("scale", 1.0)} if h else None
         d["site"] = self.site_info()
         d["state"]["publish_mode"] = self.state.get("publish_mode", config.PUBLISH_MODE_DEFAULT)
         db, s = self.db, self.state

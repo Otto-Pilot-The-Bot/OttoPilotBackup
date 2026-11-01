@@ -24,6 +24,7 @@ VOCAB = {
     "engine": "machine scifi motor", "pod": "scifi vehicle capsule", "rover": "vehicle space machine", "probe": "space machine", "station": "space structure",
     "moon": "space celestial", "planet": "space celestial", "turtle": "animal creature", "hummingbird": "animal bird creature", "wren": "animal bird creature",
     "rake": "tool garden", "ladder": "tool climb", "lighting": "light lamp", "support": "structure", "desert": "terrain nature", "organ": "plant cactus",
+    "camera": "holdable tool", "cup": "holdable", "mug": "holdable", "book": "holdable", "brush": "holdable tool", "pen": "holdable tool", "ball": "holdable",
     "sci": "scifi", "scifi": "scifi", "space": "space", "habitat": "space", "detail": "detail", "modern": "modern", "wooden": "wood", "red": "red", "grey": "grey", "white": "white",
 }
 SYN = {"lamp": "light", "lantern": "light", "house": "building", "hut": "building", "cabin": "building", "shed": "building", "plant": "plant",
@@ -211,7 +212,7 @@ def _pack_name(folder_name):
     return n.strip()
 
 
-INDEX_VERSION = 8          # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
+INDEX_VERSION = 9          # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
 
 
 def scan(db, log=print):
