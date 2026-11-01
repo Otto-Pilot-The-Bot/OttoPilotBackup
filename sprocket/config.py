@@ -201,7 +201,7 @@ KIT_SCALE = {
     "Otto Props": 2.4,
     "Modular Space Kit": 1.0, "Modular Cave Kit": 1.0, "Modular Dungeon Kit": 1.0, "Coaster Kit": 1.0, "Toy Car Kit": 1.0, "Weapon Pack": 1.0, "Brick Kit": 1.0, "Marble Kit": 1.0,
 }
-NAME_SCALE = [("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
+NAME_SCALE = [("Meshy Buildings", r"^ottos house", 3.7), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
 
 
 def kit_scale(kit, name):

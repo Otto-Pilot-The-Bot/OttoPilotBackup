@@ -26,3 +26,4 @@ assets/_unused/
 reference/
 tools/whisper/*.bin
 inbox/
+assets/meshy/**/*.glb

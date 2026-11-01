@@ -59,3 +59,10 @@ Every kit is from Kenney (https://kenney.nl). License is checked against the Lic
 
 ## Not imported (no .glb in the source)
 - Animated Characters Bundle, Animated Characters Protagonists, Animated Characters Retro, Animated Characters Survivors (FBX/BLEND only)
+
+## Meshy (AI-generated, paid plan)
+Made by the project owner with Meshy (https://www.meshy.ai) on a paid plan, for a personal project that is not sold (possibly shown in videos). See `assets/meshy/<pack>/credits.json`.
+
+| Pack | Source | License | Models |
+|---|---|---|---|
+| Meshy Buildings | Meshy | paid plan, personal use | Ottos House |
