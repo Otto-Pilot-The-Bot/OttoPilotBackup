@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as UI from './ui.js';
 import { ArtStore } from './art.js';
 import { createRealism } from './realism.js';
+import { createCameraModes } from './camera.js';
 import { buildDesign, animateDesign, mixers, glowMats, kitGlow } from './models.js';
 
 const HALF = 24;
@@ -509,7 +510,7 @@ function cancelPlace() { placing = null; document.body.classList.remove('placing
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(); let downAt = null;
 renderer.domElement.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
 renderer.domElement.addEventListener('pointerup', (e) => {
-  if (!placing || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
+  if (CAM.mode === 'walk' || !placing || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
   ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
   const hit = ray.intersectObject(ground)[0]; if (!hit) return;
   const base = placing.design ? { type: 'place_design', ...placing.payload } : placing.move ? { type: 'object_move', id: placing.id, exact: placing.exact, snap: placing.snap }
@@ -518,6 +519,15 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   cancelPlace(); UI.placed();
 });
 
+const CAM = createCameraModes({
+  camera, controls, dom: renderer.domElement,
+  getRobot: () => ({ pos: robotPos, yaw: robot ? robot.rotation.y : 0 }),
+  getHalf: () => curHalf || HALF, getColliders: () => (window.__colliders || []),
+  onChange: (m) => { if (m === 'walk') cancelPlace(); },
+});
+window.__cam = CAM;
+{ const q = new URLSearchParams(location.search), cm = q.get('cam');
+  if (cm) setTimeout(() => { CAM.setMode(cm); const at = (q.get('at') || '').split(',').map(Number); if (at.length === 2 && cm === 'walk') CAM.pose(at[0], at[1], +q.get('yaw') || 0, +q.get('pitch') || 0); }, 2500); }
 UI.init({ send, art, startPlace, cancelPlace, setFollow: (v) => { follow = v; }, resetCamera, thumb: thumbOf, thumbArt: thumbOfArt, thumbDesign: thumbOfDesign, setLabelMode: (m) => { labelMode = m; } });
 
 // ------------------------------------------------------------------ frame loop
@@ -563,8 +573,8 @@ function frame() {
     const age = (now - g.userData.born) / 600; g.scale.setScalar(Math.min(1, 0.01 + age) * (age < 1 ? 1 + Math.sin(age * Math.PI) * 0.25 : 1));
     g.children.forEach((c) => { if (c.userData.spin) c.rotation.y += dt * 0.8; });
   }
-  if (follow && robot) controls.target.lerp(tmp.set(robotPos.x, 1, robotPos.z), Math.min(1, dt * 2));
-  controls.update();
+  if (CAM.mode === 'overhead') { if (follow && robot) controls.target.lerp(tmp.set(robotPos.x, 1, robotPos.z), Math.min(1, dt * 2)); controls.update(); }
+  CAM.update(dt);
   if ((frameN++ & 3) === 0) updateLabels();
   renderer.render(scene, camera);
 }
