@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as skClone } from 'three/addons/utils/SkeletonUtils.js';
 import { buildGen, prismGeo, pyramidGeo, kitGlow } from './kit/gens.js';
 
+const HEAVY_TRIS = 150000;            // above this many triangles a model does not draw itself into the shadow map
 const FIT_MIN = 0.6, FIT_MAX = 5.0, KEEP_LO = 0.4, KEEP_HI = 6.0;   // same rule as the server's footprint calculation
 const HEX = /^#[0-9a-f]{6}$/i;
 const loader = new GLTFLoader();
@@ -52,6 +53,13 @@ function template(id, fit, url) {
           if (m && m.isMeshStandardMaterial && !m.metalnessMap && m.metalness > 0.3) m.metalness = m.roughness >= 0.99 ? 0 : 0.3;   // metal with no reflections to show renders black; keep the base colours as authored
         }
       });
+      let tris = 0; scene.traverse((o) => { if (o.isMesh && o.geometry) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
+      if (tris > HEAVY_TRIS) {                                    // a very detailed model: drawing it into the shadow map as well doubles the cost, so a plain box casts its shadow instead
+        scene.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+        const hb = new THREE.Box3().setFromObject(holder), hs = hb.getSize(new THREE.Vector3()), hc = hb.getCenter(new THREE.Vector3());
+        const proxy = new THREE.Mesh(new THREE.BoxGeometry(hs.x * 0.96, hs.y, hs.z * 0.96), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
+        proxy.position.copy(hc); proxy.castShadow = true; proxy.userData.shadowProxy = true; holder.add(proxy);
+      }
       return { holder, clips: g.animations || [] };
     }));
   }

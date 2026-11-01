@@ -606,9 +606,17 @@ UI.init({ send, art, startPlace, cancelPlace, setFollow: (v) => { follow = v; },
 const clock = new THREE.Clock(), tmp = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
 let lastClock = '', frameN = 0, walkSpeed = 3;
 const shortest = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+let fpsEma = 60, fpsCheck = 0, prNow = Math.min(devicePixelRatio, 2);
+function adaptQuality(rawDt, now) {                          // a slow machine drops the render resolution a step at a time (never back up) until it runs smoothly
+  fpsEma = fpsEma * 0.95 + (1 / Math.max(rawDt, 0.001)) * 0.05;
+  if (now - fpsCheck < 2500 || now < 8000) return;
+  fpsCheck = now;
+  if (fpsEma < 28 && prNow > 1) { prNow = Math.max(1, prNow - 0.25); renderer.setPixelRatio(prNow); renderer.setSize(innerWidth, innerHeight); window.__pixelRatio = prNow; }
+}
 function frame() {
   requestAnimationFrame(frame);
-  const dt = Math.min(clock.getDelta(), 0.1), now = performance.now();
+  const rawDt = clock.getDelta(), dt = Math.min(rawDt, 0.1), now = performance.now();
+  adaptQuality(rawDt, now);
   // world clock: glides between ticks (10 world minutes per tick)
   const hour = new URLSearchParams(location.search).get('hour') ? +new URLSearchParams(location.search).get('hour') : forcedHour != null ? forcedHour : (snapHour + (paused ? 0 : Math.min(1, (now - snapAt) / intervalMs)) * (10 / 60)) % 24;
   applyTime(hour); REAL.update(hour, nightness, dt, now / 1000);
