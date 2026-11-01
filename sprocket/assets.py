@@ -222,6 +222,7 @@ def scan(db, log=print):
     seen_files, added, updated, skipped = set(), 0, 0, []
     used_names = {}
     for root in asset_dirs():
+        max_bytes, max_tris = config.ASSET_LIMITS.get(str(root.relative_to(config.ROOT)), (config.ASSET_MAX_BYTES, config.ASSET_MAX_TRIS))
         for folder in sorted(p for p in root.iterdir() if p.is_dir()):
             pack = _pack_name(folder.name)
             files = sorted(f for f in folder.rglob("*") if f.suffix.lower() == ".glb" and f.is_file() )
@@ -238,13 +239,13 @@ def scan(db, log=print):
                 name = clean_name(f.stem)
                 usable, reason, meta = 1, "", None
                 try:
-                    if st.st_size > config.ASSET_MAX_BYTES:
+                    if st.st_size > max_bytes:
                         raise ValueError(f"file too big ({st.st_size // 1_000_000} MB)")
                     meta = inspect(f)
                     nat = max(meta["size"]) or 1.0
                     if meta["bad_ext"]:
                         usable, reason = 0, f"needs unsupported compression {meta['bad_ext']}"
-                    elif meta["tris"] > config.ASSET_MAX_TRIS:
+                    elif meta["tris"] > max_tris:
                         usable, reason = 0, f"too heavy ({meta['tris']} triangles)"
                     elif nat > 300:
                         usable, reason = 0, "terrain-sized (too large to place as an object)"

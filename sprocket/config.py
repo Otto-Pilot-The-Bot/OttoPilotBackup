@@ -80,11 +80,12 @@ CROWD_LIMIT = 0.14              # fraction of ground covered before the buildabl
 SPACING_MARGIN = 0.8            # extra space kept between footprints
 
 # --- assets ---
-ASSET_DIRS = ("assets/kenney",)      # assets/_unused is never indexed
+ASSET_DIRS = ("assets/kenney", "assets/meshy")      # assets/_unused is never indexed. One sub-folder per pack in each.
 MAPS_ENABLED = True                      # data-driven maps (sprocket/maps.py) replace the fixed place table
 KIT_ENABLED = False                      # the old procedural building/prop generators (web/kit/gens.js): off, see STYLE.md
 ASSET_MAX_BYTES = 25_000_000
 ASSET_MAX_TRIS = 12_000
+ASSET_LIMITS = {"assets/meshy": (150_000_000, 600_000)}     # (max file bytes, max triangles) for folders that hold detailed AI-made models
 ROBOT_HEIGHT = 1.7                       # Otto's height in world units (the 3D robot is scaled to this)
 # Packs whose models look tiny next to Otto get a uniform scale-up (pieces of one pack keep fitting together).
 # Things with a known real-world size (longest side in world units; Otto is 1.7 tall). Matched on the lowercase file name; beats the pack scale.
