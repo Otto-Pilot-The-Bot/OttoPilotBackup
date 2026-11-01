@@ -193,9 +193,8 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     return h ? Math.max(0, Math.round(h.point.y * 4) / 4) : 0;
   }
   function dropY(o, ex, ez) {                                   // top of whatever is directly below (x, z), ignoring the object itself
-    const g = MV.meshes.get(o.id)?.g; if (g) g.visible = false;
     const r = new THREE.Raycaster(new THREE.Vector3(ex, 60, ez), new THREE.Vector3(0, -1, 0));
-    const h = r.intersectObjects(MV.objG.children, true)[0]; if (g) g.visible = true;
+    const h = r.intersectObjects(MV.objG.children.filter((c) => c.userData.mapId !== o.id), true)[0];       // (raycasts ignore .visible, so leave the object itself out of the list)
     return h ? Math.max(0, Math.round(h.point.y * 100) / 100) : 0;
   }
   function paintAt(p) {
@@ -217,7 +216,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
     const id = MV.pick(ray);
     if (id != null) {
-      sel = id; MV.select(id); const o = objOf(id); drag = { id, dx: o.x - p.x, dz: o.z - p.z, moved: false, snapshot: JSON.stringify(doc) }; controls.enabled = false; render(false);
+      sel = id; MV.select(id); const o = objOf(id); drag = { id, dx: o.x - p.x, dz: o.z - p.z, auto: !(o.y > 0), moved: false, snapshot: JSON.stringify(doc) }; controls.enabled = false; render(false);
     } else if (sel) { sel = null; MV.select(null); render(false); }
   }, true);
   window.addEventListener('pointermove', (e) => {
@@ -229,7 +228,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
       const o = objOf(drag.id); if (!o) return;
       const nx = snapV(p.x + drag.dx), nz = snapV(p.z + drag.dz);
       if (nx !== o.x || nz !== o.z) { o.x = Math.max(-half(), Math.min(half(), nx)); o.z = Math.max(-half(), Math.min(half(), nz)); drag.moved = true;
-        if (autoY && !o.panel) { const y = dropY(o, o.x, o.z); if (y > 0) o.y = y; else delete o.y; } MV.sync(); MV.select(o.id); MV.updateColliders(); }
+        if (autoY && drag.auto && !o.panel) { const y = dropY(o, o.x, o.z); if (y > 0) o.y = y; else delete o.y; } MV.sync(); MV.select(o.id); MV.updateColliders(); }
       return;
     }
     if (tool === 'place' && pick) {
