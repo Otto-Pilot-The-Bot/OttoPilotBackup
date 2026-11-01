@@ -39,7 +39,7 @@ Every kit is from Kenney (https://kenney.nl). License is checked against the Lic
 | Nature Kit | Kenney | CC0 | 329 |
 | Nature Kit (Classic) | Kenney | CC0 (License.txt checked) | 232 (converted from glTF+bin with tools/gltf_to_glb.py) |
 | Otto Props | Kenney (copies of Mini Arcade ticket-machine and Space Kit machine_generatorLarge, renamed Charger / Charging cabinet) | CC0 | 2 |
-| Otto Props: camera.glb | Poly Pizza, "Instant Camera" by Nick Slough (added by you) | unknown, please check (Poly Pizza models are often CC-BY and need credit) | 1 |
+| Otto Props: camera.glb | Poly Pizza, "Instant Camera" by Nick Slough (added by you) | free asset (you confirmed); source page not recorded, add the exact license here if it asks for credit | 1 |
 | Pirate Kit | Kenney | CC0 | 72 |
 | Platformer Kit | Kenney | CC0 | 153 |
 | Prototype Kit | Kenney | CC0 | 145 |
