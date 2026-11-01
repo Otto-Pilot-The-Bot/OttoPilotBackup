@@ -67,6 +67,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     const cats = [...new Set((byKit.get(kit) || []).map((r) => r.cat))].sort();
     el.innerHTML = `
       <div class="ph"><b>🗺️ Plan editor</b><span class="dim small">only you can edit; Otto can only wish</span><button data-a="close" title="Close (Esc)">✕</button></div>
+      ${(window.__mapMsg?.warnings || []).map((w) => `<div class="warnbox">⚠️ ${esc(w)}</div>`).join('')}
       <div class="sec"><label>Map <select id="pMap">${maps.map((m) => `<option ${m === doc.name ? 'selected' : ''}>${esc(m)}</option>`).join('')}${maps.includes(doc.name) ? '' : `<option selected>${esc(doc.name)} (unsaved)</option>`}</select></label>
         <div class="row"><button data-a="save" class="pri">💾 Save${dirty ? ' •' : ''}</button><button data-a="saveas">Save as…</button><button data-a="new">New</button><button data-a="load">Load</button></div>
         <div class="row"><button data-a="undo" ${undo.length ? '' : 'disabled'}>↶ Undo</button><button data-a="redo" ${redo.length ? '' : 'disabled'}>↷ Redo</button><span class="dim small">${doc.objects.length} objects · ${doc.n}×${doc.n} cells of ${doc.cell} m</span></div></div>

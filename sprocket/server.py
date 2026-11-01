@@ -65,7 +65,7 @@ async def serve(agent, runner, interval=None):
         nav = ["".join("1" if c else "0" for c in row) for row in maplib.ACTIVE["blocked"]]
         cars = [{"aid": r["id"], "fit": r["fit"], "name": r["name"]} for r in agent.db.q(
             "SELECT id,fit,name FROM assets WHERE usable=1 AND pack='Car Kit' AND name IN ('sedan','taxi','van','hatchback-sports','suv') ORDER BY name")]
-        return {"type": "map", "doc": d, "nav": nav, "traffic": cars, "maps": maplib.list_maps(), "active": agent.db.get("active_map"), "rev": getattr(agent, "map_rev", 0)}
+        return {"type": "map", "doc": d, "nav": nav, "traffic": cars, "warnings": maplib.ACTIVE.get("warnings", []), "maps": maplib.list_maps(), "active": agent.db.get("active_map"), "rev": getattr(agent, "map_rev", 0)}
 
     def map_handle(t, m, ws):
         """Map editing. HUMAN ONLY: these messages come from the page's Plan editor; no model tool can reach maplib's writers."""

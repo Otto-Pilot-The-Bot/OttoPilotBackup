@@ -188,9 +188,12 @@ def _approach(ctx, tgt, verb, enter=False):
     if key and s.get("inside") == key:
         return None
     if dist(s["x"], s["z"], tgt["x"], tgt["z"]) > config.REACH:
+        ox, oz = s["x"], s["z"]
         nx, nz, arrived = world.step_toward(s["x"], s["z"], tgt["x"], tgt["z"])
         s["x"], s["z"] = nx, nz
         s["path"] = [[round(a, 1), round(b, 1)] for a, b in world.LAST_PATH][:40]
+        if not arrived and (nx, nz) == (ox, oz):
+            return out(True, f"There is no way through to the {tgt['label']}: something walls it off. Do something else or go somewhere else for now.", -0.2, "No", noop=True)
         if not arrived:
             return out(True, f"You walked toward the {tgt['label']} but have not arrived yet ({dist(nx, nz, tgt['x'], tgt['z']):.0f} away). "
                              f"Keep going to {verb}.", 0.0, "Walking", moved=True)
@@ -233,9 +236,12 @@ def move_to(ctx, a):
             _enter(ctx, tgt["key"])
             return out(True, f"You went inside the {tgt['label']}.", 0.2, "Walking", moved=True, subject=tgt["label"])
         return out(True, f"You are already at the {tgt['label']}.", 0.0, "Idle")
+    ox, oz = s["x"], s["z"]
     nx, nz, arrived = world.step_toward(s["x"], s["z"], tgt["x"], tgt["z"])
     s["x"], s["z"] = nx, nz
     s["path"] = [[round(a, 1), round(b, 1)] for a, b in world.LAST_PATH][:40]
+    if not arrived and (nx, nz) == (ox, oz):
+        return out(True, f"There is no way through to the {tgt['label']}: something walls it off. Do something else or go somewhere else for now.", -0.2, "No", noop=True)
     cap = _walk_caption(ctx, tgt)
     if arrived and enter:
         _enter(ctx, tgt["key"])

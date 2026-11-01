@@ -140,3 +140,5 @@ body[data-cam=walk] .panel, body[data-cam=walk] #tip { pointer-events: none; }
 #plan .card span { font-size: 10.5px; line-height: 1.1; word-break: break-word; text-align: center; max-height: 2.4em; overflow: hidden; }
 #plan .tilebtn i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; border: 1px solid #0006; }
 body.planning #camBar { left: calc(50% + 160px); }
+
+#plan .warnbox { background: #5a2a22; border: 1px solid #b3443c; border-radius: 8px; padding: 6px 8px; margin: 6px 0; font-size: 12.5px; }

@@ -47,7 +47,23 @@ def asset_defaults(row):
     door = None
     if row["door_x"] is not None and row["door_z"] is not None and cat in ("building", "shop"):
         door = [float(row["door_x"]), float(row["door_z"])]
-    return {"fw": round(fw, 2), "fd": round(fd, 2), "tags": [t for t in tags if TAG_RX.match(t)][:10], "door": door, "walkable": bool(walk)}
+    out = {"fw": round(fw, 2), "fd": round(fd, 2), "tags": [t for t in tags if TAG_RX.match(t)][:10], "door": door, "walkable": bool(walk)}
+    sol = tunnel_solids(row["name"], fw, fd)
+    if sol:
+        out["solids"] = sol
+    return out
+
+
+def tunnel_solids(name, fw, fd):
+    """Space Kit / Modular Space corridors are tunnels you walk THROUGH: only their two side walls (and the back of an 'end' piece) are solid."""
+    n = name.lower()
+    if not re.match(r"^(corridor|gate)[ -]?(detailed|window|windowclosed|open|end|split|)$", n.strip()):
+        return None
+    t = 0.8
+    sol = [{"x": round(-fw / 2 + t / 2, 2), "z": 0, "w": t, "d": round(fd, 2)}, {"x": round(fw / 2 - t / 2, 2), "z": 0, "w": t, "d": round(fd, 2)}]
+    if n.strip().endswith("end"):
+        sol.append({"x": 0, "z": round(-fd / 2 + t / 2, 2), "w": round(fw, 2), "d": t})
+    return sol
 
 
 def clean(doc, db):
@@ -101,6 +117,10 @@ def clean(doc, db):
                                 "w": round(_num(r.get("w"), 0.1, 60, 1), 2), "d": round(_num(r.get("d"), 0.1, 60, 1), 2)})
             if sol:
                 out["solids"] = sol
+        elif row and "solids" not in o:
+            ts = tunnel_solids(row["name"], out["fw"], out["fd"])        # walk-through corridor pieces keep a way through by default
+            if ts:
+                out["solids"] = ts
         if not row:
             p = o["panel"]
             out["panel"] = {"w": round(_num(p.get("w"), 0.3, 6, 1.4), 2), "h": round(_num(p.get("h"), 0.3, 6, 1.0), 2), "art_id": int(_num(p.get("art_id"), 0, 10**9, 0)) or None, "gift_id": int(_num(p.get("gift_id"), 0, 10**9, 0)) or None,
@@ -237,7 +257,26 @@ def activate(doc, db=None):
         if key not in world.PLACES:
             spot = nearest_walkable(-3 + 2 * i, 3) or (0.0, 0.0)
             world.PLACES[key] = {"label": label, "x": round(spot[0], 2), "z": round(spot[1], 2), "aliases": al}
+    ACTIVE["warnings"] = reachability(doc)
     return doc
+
+
+def reachability(doc):
+    """Places Otto cannot walk to from the middle of the map (a closed room, a wall of buildings...): reported to the editor and the control log."""
+    W, blocked = ACTIVE["n"], ACTIVE["blocked"]
+    s = nearest_walkable(0.0, 0.0)
+    if not s:
+        return []
+    from collections import deque
+    seen = {_cell(*s)}; q = deque(seen)
+    while q:
+        i, j = q.popleft()
+        for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            n = (i + a, j + b)
+            if 0 <= n[0] < W and 0 <= n[1] < W and n not in seen and not blocked[n[1]][n[0]]:
+                seen.add(n); q.append(n)
+    from . import world
+    return [f"Otto cannot walk to the {p['label']} (blocked in or walled off)." for k, p in world.PLACES.items() if "spot" not in p["label"] and _cell(p["x"], p["z"]) not in seen]
 
 
 def _cell(x, z):
