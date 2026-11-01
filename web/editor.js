@@ -75,7 +75,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <div class="row"><label>Look <select id="pLook">${Object.entries(LOOKS).map(([k, v]) => `<option value="${k}" ${k === MV.look ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select></label></div>
         <div class="dim small">Ground and lighting are not decided yet: A/B/C are previews only.</div></div>
       ${tool === 'paint' ? `<div class="sec"><b>Ground</b><div class="row">${Object.entries(TILE_NAMES).map(([k, n]) => `<button data-a="tile" data-k="${k}" class="tilebtn ${tile === k ? 'on' : ''}"><i style="background:${tileSw[k]}"></i>${n}</button>`).join('')}</div><div class="dim small">Click or drag on the map. Water cannot be walked; roads and paths are preferred by Otto.</div></div>` : ''}
-      ${s ? `<div class="sec"><b>${esc(s.name)}</b> <span class="dim small">#${s.id} · ${esc(s.kit)}</span>
+      ${s ? `<div class="sec"><label><b>Name</b> <input data-p="name" type="text" value="${esc(s.name)}" maxlength="60"></label> <span class="dim small">#${s.id} · ${esc(s.kit)}</span>
         <div class="row"><button data-a="rot" data-d="-1">⟲</button><button data-a="rot" data-d="1">⟳</button><button data-a="dup">Duplicate</button><button data-a="del" class="warn">🗑 Delete</button></div>
         <div class="grid2"><label>x <input data-p="x" type="number" step="0.5" value="${s.x}"></label><label>z <input data-p="z" type="number" step="0.5" value="${s.z}"></label>
         <label>turn ° <input data-p="rot" type="number" step="15" value="${s.rot}"></label><label>scale <input data-p="scale" type="number" step="0.1" min="0.2" max="6" value="${s.scale}"></label>
@@ -145,6 +145,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     if (p === 'x' || p === 'z' || p === 'rot' || p === 'scale' || p === 'fw' || p === 'fd' || p === 'y') { if (Number.isFinite(n)) s[p] = p === 'scale' ? Math.max(0.2, Math.min(6, n)) : n; }
     else if (p === 'dx' || p === 'dz') { const cur = s.door || [0, 0]; if (t.value === '') s.door = null; else { cur[p === 'dx' ? 0 : 1] = n; s.door = cur; } }
     else if (p === 'walkable') s.walkable = t.checked;
+    else if (p === 'name') s.name = t.value.slice(0, 60) || s.name;
     else if (p === 'tags') s.tags = t.value.split(',').map((x) => x.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')).filter(Boolean).slice(0, 12);
     else if (p === 'pw' && s.panel) s.panel.w = Math.max(0.3, n); else if (p === 'ph' && s.panel) s.panel.h = Math.max(0.3, n);
     refresh();

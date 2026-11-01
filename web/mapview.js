@@ -97,7 +97,12 @@ export function createMapView({ scene, art, onReady }) {
   MV.byId = (id) => doc_obj(id);
   const doc_obj = (id) => MV.doc?.objects.find((o) => o.id === id);
   MV.updateColliders = () => {
-    MV.colliders = (MV.doc?.objects || []).filter((o) => !o.walkable && !o.panel).map((o) => ({ x: o.x, z: o.z, hw: (o.fw * o.scale) / 2, hd: (o.fd * o.scale) / 2, rot: (o.rot * Math.PI) / 180, id: o.id }));
+    MV.colliders = [];
+    for (const o of MV.doc?.objects || []) {
+      if (o.walkable || o.panel) continue;
+      const c = Math.cos((o.rot * Math.PI) / 180), sn = Math.sin((o.rot * Math.PI) / 180), sc = o.scale || 1;
+      for (const r of o.solids || [{ x: 0, z: 0, w: o.fw, d: o.fd }]) MV.colliders.push({ x: o.x + r.x * sc * c + r.z * sc * sn, z: o.z - r.x * sc * sn + r.z * sc * c, hw: (r.w * sc) / 2, hd: (r.d * sc) / 2, rot: (o.rot * Math.PI) / 180, id: o.id });
+    }
     window.__colliders = MV.colliders;
   };
   /** Which object is under this ray (null if none). */
@@ -117,9 +122,13 @@ export function createMapView({ scene, art, onReady }) {
     const doc = MV.doc; if (!doc) return;
     if (MV.overlays.foot) {
       for (const o of doc.objects) {
-        const hw = (o.fw * o.scale) / 2, hd = (o.fd * o.scale) / 2;
-        const l = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-hw, 0.08, -hd), new THREE.Vector3(hw, 0.08, -hd), new THREE.Vector3(hw, 0.08, hd), new THREE.Vector3(-hw, 0.08, hd)]), o.walkable ? okMat : lineMat);
-        l.position.set(o.x, 0, o.z); l.rotation.y = (o.rot * Math.PI) / 180; l.renderOrder = 20; overG.add(l);
+        const l = new THREE.Group(); l.position.set(o.x, 0, o.z); l.rotation.y = (o.rot * Math.PI) / 180; l.renderOrder = 20; overG.add(l);
+        const sc = o.scale || 1;
+        for (const r of (o.walkable ? null : o.solids) || [{ x: 0, z: 0, w: o.fw, d: o.fd }]) {
+          const hw = (r.w * sc) / 2, hd = (r.d * sc) / 2, cx = r.x * sc, cz = r.z * sc;
+          const ln = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(cx - hw, 0.08, cz - hd), new THREE.Vector3(cx + hw, 0.08, cz - hd), new THREE.Vector3(cx + hw, 0.08, cz + hd), new THREE.Vector3(cx - hw, 0.08, cz + hd)]), o.walkable ? okMat : lineMat);
+          ln.renderOrder = 20; l.add(ln);
+        }
         if (o.door) { const d = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.7, 8), doorMat); d.position.set(o.door[0], 0.5, o.door[1]); d.renderOrder = 21; l.add(d); }
       }
     }
@@ -140,6 +149,19 @@ export function createMapView({ scene, art, onReady }) {
     const l = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-hw, 0.1, -hd), new THREE.Vector3(hw, 0.1, -hd), new THREE.Vector3(hw, 0.1, hd), new THREE.Vector3(-hw, 0.1, hd)]), ringMat);
     l.position.set(o.x, 0, o.z); l.rotation.y = (o.rot * Math.PI) / 180; l.renderOrder = 30; selG.add(l);
   };
+  // ------------- fade a building's walls and roof while Otto is inside (materials are cloned per object so other copies are untouched)
+  const faded = new Map();
+  MV.fade = (id, on) => {
+    const m = meshes.get(id); if (!m) return;
+    if (on) {
+      if (faded.has(id)) return; const saved = [];
+      m.g.traverse((n) => { if (!n.isMesh) return; saved.push([n, n.material]);
+        const c = (Array.isArray(n.material) ? n.material : [n.material]).map((x) => { const y = x.clone(); y.transparent = true; y.opacity = 0.22; y.depthWrite = false; return y; });
+        n.material = Array.isArray(n.material) ? c : c[0]; });
+      faded.set(id, saved);
+    } else if (faded.has(id)) { for (const [n, mat] of faded.get(id)) { (Array.isArray(n.material) ? n.material : [n.material]).forEach((x) => x.dispose()); n.material = mat; } faded.delete(id); }
+  };
+  MV.fadedIds = () => [...faded.keys()];
   MV.dispose = () => { scene.remove(root); };
   return MV;
 }

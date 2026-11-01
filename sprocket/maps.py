@@ -93,6 +93,14 @@ def clean(doc, db):
         out["door"] = [round(_num(dr[0], -30, 30), 2), round(_num(dr[1], -30, 30), 2)] if isinstance(dr, list) and len(dr) == 2 else None
         if o.get("y") is not None:
             out["y"] = round(_num(o.get("y"), -5, 30), 2)
+        if isinstance(o.get("solids"), list):                          # optional: only these parts of the footprint are solid (walls of a room you can walk into)
+            sol = []
+            for r in o["solids"][:8]:
+                if isinstance(r, dict):
+                    sol.append({"x": round(_num(r.get("x"), -40, 40), 2), "z": round(_num(r.get("z"), -40, 40), 2),
+                                "w": round(_num(r.get("w"), 0.1, 60, 1), 2), "d": round(_num(r.get("d"), 0.1, 60, 1), 2)})
+            if sol:
+                out["solids"] = sol
         if not row:
             p = o["panel"]
             out["panel"] = {"w": round(_num(p.get("w"), 0.3, 6, 1.4), 2), "h": round(_num(p.get("h"), 0.3, 6, 1.0), 2), "art_id": int(_num(p.get("art_id"), 0, 10**9, 0)) or None,
@@ -149,6 +157,19 @@ def obj_corners(o, pad=0.0):
     return [(o["x"] + lx * c + lz * s, o["z"] - lx * s + lz * c) for lx, lz in ((-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd))]
 
 
+def rects_of(o):
+    """Solid rectangles of an object as (cx, cz, half_w, half_d) in the object's own axes, relative to its centre, plus the object's turn."""
+    sc = o["scale"]
+    if o.get("solids"):
+        return [(r["x"] * sc, r["z"] * sc, r["w"] * sc / 2, r["d"] * sc / 2) for r in o["solids"]]
+    return [(0.0, 0.0, o["fw"] * sc / 2, o["fd"] * sc / 2)]
+
+
+def world_rects(o):
+    c, s = math.cos(math.radians(o["rot"])), math.sin(math.radians(o["rot"]))
+    return [{"x": o["x"] + lx * c + lz * s, "z": o["z"] - lx * s + lz * c, "hw": hw, "hd": hd, "rot": math.radians(o["rot"]), "id": o["id"]} for lx, lz, hw, hd in rects_of(o)]
+
+
 def door_world(o, out=1.8):
     """The spot just OUTSIDE an object's door (where a visitor stands to knock)."""
     if not o.get("door"):
@@ -179,17 +200,17 @@ def activate(doc, db=None):
     for o in doc["objects"]:
         if o.get("walkable") or o.get("panel"):
             continue
-        colliders.append({"x": o["x"], "z": o["z"], "hw": o["fw"] * o["scale"] / 2, "hd": o["fd"] * o["scale"] / 2, "rot": math.radians(o["rot"]), "id": o["id"]})
-        pts = obj_corners(o, 0.3)
-        xs, zs = [p[0] for p in pts], [p[1] for p in pts]
-        c, s = math.cos(math.radians(o["rot"])), math.sin(math.radians(o["rot"]))
-        hw, hd = o["fw"] * o["scale"] / 2 + 0.3, o["fd"] * o["scale"] / 2 + 0.3
-        for j in range(max(0, int((min(zs) + half) // NAV)), min(W, int((max(zs) + half) // NAV) + 1)):
-            for i in range(max(0, int((min(xs) + half) // NAV)), min(W, int((max(xs) + half) // NAV) + 1)):
-                px, pz = -half + (i + 0.5) * NAV - o["x"], -half + (j + 0.5) * NAV - o["z"]
-                lx, lz = px * c - pz * s, px * s + pz * c
-                if abs(lx) <= hw and abs(lz) <= hd:
-                    blocked[j][i] = True
+        for r in world_rects(o):
+            colliders.append(r)
+            ca, sa = math.cos(r["rot"]), math.sin(r["rot"])
+            hw, hd = r["hw"] + 0.3, r["hd"] + 0.3
+            ext = math.hypot(hw, hd)
+            for j in range(max(0, int((r["z"] - ext + half) // NAV)), min(W, int((r["z"] + ext + half) // NAV) + 1)):
+                for i in range(max(0, int((r["x"] - ext + half) // NAV)), min(W, int((r["x"] + ext + half) // NAV) + 1)):
+                    px, pz = -half + (i + 0.5) * NAV - r["x"], -half + (j + 0.5) * NAV - r["z"]
+                    lx, lz = px * ca - pz * sa, px * sa + pz * ca
+                    if abs(lx) <= hw and abs(lz) <= hd:
+                        blocked[j][i] = True
     ACTIVE.update(doc=doc, blocked=blocked, cost=cost, n=W, half=half, colliders=colliders)
     world.set_half(half)
     # places the agent knows by name: derived from the map, never hand-coded

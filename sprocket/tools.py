@@ -98,6 +98,10 @@ def _schemas(publish_enabled):
         _fn("shop", "At the clothing store, wear an item in a color. item: hat, scarf, goggles, antenna, or paint (body).",
             {"item": {"type": "string", "enum": ["hat", "scarf", "goggles", "antenna", "paint"]},
              "color": {"type": "string", "description": "a color name like red, teal, gold"}}, ["item", "color"]),
+        _fn("use", "Do something with a thing your human placed nearby: knock on a door, go inside, sit on a bench, recharge at the charging station, look at the art, honk a car horn, ride a car to another place (to=<place>), pet the cat... "
+                   "Your prompt's 'YOU CAN DO HERE' line lists what is offered. You walk there first if needed.",
+            {"object": {"type": "string", "description": "the object's #id or name"}, "action": {"type": "string", "description": "one of the offered action ids, e.g. sit, knock, enter, recharge, look_art, honk, ride"},
+             "to": {"type": "string", "description": "only for ride: the place to ride to"}}, ["object", "action"]),
         _fn("search_assets", "Search the library of 3D models you can build with (trees, tents, walls, doors, space things...). Returns names, tags and sizes.",
             {"query": {"type": "string", "description": "e.g. 'tree', 'door', 'space', or empty to browse"}}, []),
         _fn("build", BUILD_HELP,
@@ -1258,7 +1262,8 @@ def publish_page(ctx, a):
                0.3, "Idle", subject="writing", pages=True)
 
 
-REGISTRY = {"wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
+from . import affordances as _aff
+REGISTRY = {"use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
             "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')

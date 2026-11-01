@@ -717,6 +717,10 @@ class Agent:
                                                                       f"d={world.dist(s['x'], s['z'], o['x'], o['z']):.0f}" for o in near) or "none"),
              f"WEARING: {outfit}",
              "GOALS: " + ("; ".join(f"#{g['id']} {g['text']}" for g in goals) or "none yet - consider setting one")]
+        from . import affordances
+        aff = affordances.prompt_line(s) if config.MAPS_ENABLED else None
+        if aff:
+            L.append(aff)
         prow = self.poi_rows()
         here = sorted([p for p in prow if world.dist(s["x"], s["z"], p["x"], p["z"]) <= pois.TRIGGER], key=lambda p: world.dist(s["x"], s["z"], p["x"], p["z"]))
         if here:
@@ -985,6 +989,7 @@ class Agent:
 
     async def _execute(self, name, args, thought):
         self.state["path"] = []                          # set again by whatever walks this tick
+        self.state["ride"] = None; self.state["honk"] = None
         s, db = self.state, self.db
         x0, z0 = s["x"], s["z"]
         fn = tools.REGISTRY.get(name)
@@ -1267,6 +1272,7 @@ class Agent:
         d = self._snapshot_base()
         d["map"] = {"name": (self.db.get("active_map") or ""), "rev": getattr(self, "map_rev", 0)}
         d["state"]["path"] = self.state.get("path") or []
+        d["state"]["ride"] = self.state.get("ride"); d["state"]["honk"] = self.state.get("honk")
         d["site"] = self.site_info()
         d["state"]["publish_mode"] = self.state.get("publish_mode", config.PUBLISH_MODE_DEFAULT)
         db, s = self.db, self.state

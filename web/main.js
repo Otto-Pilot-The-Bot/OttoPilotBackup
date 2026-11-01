@@ -7,6 +7,7 @@ import { createRealism } from './realism.js';
 import { createCameraModes } from './camera.js';
 import { createMapView, LOOKS } from './mapview.js';
 import { createEditor } from './editor.js';
+import { createTraffic } from './traffic.js';
 import { buildDesign, animateDesign, mixers, glowMats, kitGlow } from './models.js';
 
 const HALF = 24;
@@ -462,6 +463,10 @@ let ws, last = null, placesBuilt = false, snapHour = 8, snapAt = 0, intervalMs =
 const art = new ArtStore((o) => send(o));
 let EDITOR = null;
 const MV = createMapView({ scene, art });
+const TRAFFIC = createTraffic({ scene });
+let pathQ = [], pathSig = '', rideAnim = null, lastRideTick = -1, lastHonk = -1, fadedNow = null;
+let beepCtx = null;
+function honk() { try { beepCtx = beepCtx || new (window.AudioContext || window.webkitAudioContext)(); for (const t of [0, 0.32]) { const o = beepCtx.createOscillator(), g = beepCtx.createGain(); o.type = 'square'; o.frequency.value = 340; g.gain.value = 0.05; o.connect(g); g.connect(beepCtx.destination); o.start(beepCtx.currentTime + t); o.stop(beepCtx.currentTime + t + 0.22); } } catch (_) { /* no audio */ } }
 let forcedHour = null, mapActive = false, mapSeen = false;
 function applyLook(name) {
   const L = MV.setLook(name); forcedHour = L.hour; window.__look = MV.look;
@@ -469,7 +474,7 @@ function applyLook(name) {
   REAL.setTufts?.(false);
   UI.mapLook?.(MV.look);
 }
-window.__setFollow = (v) => { follow = v; }; window.__applyLook = applyLook; window.__MV = MV;
+window.__setFollow = (v) => { follow = v; }; window.__traffic = TRAFFIC; window.__startRide = (r) => startRide(r); window.__applyLook = applyLook; window.__MV = MV;
 art.onChange(updateGallery);
 const send = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
 
@@ -495,7 +500,7 @@ function connect() {
 function onMap(m) {
   mapActive = !!m.doc;
   if (m.doc) {
-    MV.setDoc(m.doc, m.nav);
+    MV.setDoc(m.doc, m.nav); TRAFFIC.rebuild(m.doc, m.traffic);
     const q = new URLSearchParams(location.search).get('look'); applyLook(q || MV.look);
     if (m.doc.n * m.doc.cell / 2 !== curHalf) { buildGround(m.doc.n * m.doc.cell / 2); if (!mapSeen) { mapSeen = true; resetCamera(); } }
     applyLook(MV.look);
@@ -514,11 +519,26 @@ function applySnapshot(m, teleport) {
   setMood(s.mood);
   { const dd = Math.hypot(s.x - robotPos.x, s.z - robotPos.z); walkSpeed = Math.max(1.3, Math.min(6, dd / Math.max(2, m.interval * 0.75))); }
   targetPos.set(s.x, 0, s.z);
+  { const sig = JSON.stringify(s.path || []);                                   // walk the route the engine found (roads, around things), not a straight line
+    if (sig !== pathSig) { pathSig = sig; pathQ = (s.path || []).slice(1).map(([x, z]) => new THREE.Vector3(x, 0, z)); }
+    let L = 0, p = robotPos; for (const q of pathQ) { L += Math.hypot(q.x - p.x, q.z - p.z); p = q; } if (pathQ.length) { L += Math.hypot(targetPos.x - p.x, targetPos.z - p.z); walkSpeed = Math.max(1.3, Math.min(8, L / Math.max(2, m.interval * 0.75))); } }
+  if (s.ride && s.ride.tick !== lastRideTick) { lastRideTick = s.ride.tick; if (!teleport) startRide(s.ride); }
+  if (s.honk && s.honk.tick !== lastHonk) { lastHonk = s.honk.tick; if (!teleport) honk(); }
+  { const insideObj = (s.inside && m.places && m.places[s.inside] && m.places[s.inside].object) || null;             // walls and roof fade while he is inside
+    if (insideObj !== fadedNow) { if (fadedNow) MV.fade(fadedNow, false); if (insideObj) MV.fade(insideObj, true); fadedNow = insideObj; } }
   snapHour = m.world.hour; snapAt = performance.now(); intervalMs = (m.effective_interval || m.interval) * 1000; paused = s.paused;
   if (teleport && robot) { robotPos.copy(targetPos); robot.position.copy(robotPos); }
   updateGallery();
 }
 
+function startRide(r) {
+  const o = MV.doc && MV.doc.objects.find((x) => x.id === r.obj); if (!o || !robot || !r.path || r.path.length < 2) return;
+  const g = buildDesign({ parts: [{ a: o.aid, f: o.fit, x: 0, y: 0, z: 0, s: 1, r: [0, 0, 0] }], scale: o.scale || 1, rot: 0 });
+  const w = new THREE.Group(); w.add(g); scene.add(w);
+  const pts = r.path.map(([x, z]) => new THREE.Vector3(x, 0.05, z)); w.position.copy(pts[0]);
+  robot.visible = false; robotPos.copy(targetPos); pathQ = [];
+  rideAnim = { g: w, pts, i: 1, speed: 8 };
+}
 function onAction(a) {
   UI.onAction(a);
   if (a.mood) setMood(a.mood);
@@ -568,12 +588,14 @@ function frame() {
   const hh = Math.floor(hour), mm = Math.floor((hour % 1) * 60), lbl = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   if (lbl !== lastClock && last) { lastClock = lbl; UI.setClock({ label: lbl, day: last.world.day, phase: hour >= 5 && hour < 7.5 ? 'dawn' : hour >= 7.5 && hour < 18 ? 'day' : hour >= 18 && hour < 20 ? 'dusk' : 'night' }); }
   if (robot) {
-    const d = tmp.subVectors(targetPos, robotPos); d.y = 0; const dist = d.length();
+    const wp = pathQ.length ? pathQ[0] : targetPos;
+    const d = tmp.subVectors(wp, robotPos); d.y = 0; const dist = d.length();
     if (dist > 0.12) {
       const speed = walkSpeed; robotPos.addScaledVector(d.normalize(), Math.min(dist, speed * dt));
       robot.rotation.y += shortest(Math.atan2(d.x, d.z) - robot.rotation.y) * Math.min(1, dt * 8);
       const want = speed > 4.2 ? 'Running' : 'Walking'; holdLoop = null;
       if (!current || current.name !== want) { oneShot = false; play(want); }
+    } else if (pathQ.length) { pathQ.shift();
     } else if (current && (current.name === 'Walking' || current.name === 'Running')) {
       if (targetFace) { const f = targetFace.clone().sub(robotPos); robot.rotation.y = Math.atan2(f.x, f.z); }
       if (pendingAnim) { playEmote(pendingAnim); pendingAnim = null; } else play('Idle');
@@ -588,6 +610,12 @@ function frame() {
   }
   const tsec = now / 1000;
   fadeBuildings(dt);
+  TRAFFIC.step(dt);
+  if (rideAnim) {                                                              // Otto rides along the road in a car; the real position is already the destination
+    const R = rideAnim, tg = R.pts[R.i], dv = tmp.subVectors(tg, R.g.position), dl = dv.length();
+    if (dl < 0.3) { R.i++; if (R.i >= R.pts.length) { scene.remove(R.g); rideAnim = null; if (robot) robot.visible = true; } }
+    else { R.g.position.addScaledVector(dv.normalize(), Math.min(dl, R.speed * dt)); R.g.rotation.y += shortest(Math.atan2(dv.x, dv.z) - R.g.rotation.y) * Math.min(1, dt * 6); }
+  }
   for (const m of mixers) m.update(dt);
   for (const m of glowMats) m.emissiveIntensity = 1.0 + nightness * 1.6;
   for (const m of kitGlow) m.emissiveIntensity = 0.9 + nightness * 1.8;
