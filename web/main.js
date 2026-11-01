@@ -595,7 +595,7 @@ const CAM = createCameraModes({
   getHalf: () => curHalf || HALF, getColliders: () => (window.__colliders || []),
   onChange: (m) => { if (m === 'walk') cancelPlace(); if (m !== 'overhead') EDITOR?.close(); },
 });
-window.__cam = CAM; window.__info = renderer.info;
+window.__cam = CAM; window.__info = renderer.info; window.__scene = scene;
 EDITOR = createEditor({ camera, controls, dom: renderer.domElement, MV, send, CAM, thumbDesign: (k, d, n) => thumbOfDesign(k, d, n), applyLook });
 window.__editor = EDITOR;
 { const q = new URLSearchParams(location.search), cm = q.get('cam');
