@@ -254,6 +254,15 @@ def activate(doc, db=None):
             ins = (o["x"], o["z"])
             pl.update(enter=True, inside=[round(ins[0], 2), round(ins[1], 2)])
         world.PLACES[key] = pl
+    taken = {p.get("object") for p in world.PLACES.values() if p.get("object")}
+    for o in doc["objects"]:                                          # any building with a door can be entered, even if you did not mark it as a place
+        if o["id"] in taken or o.get("panel") or not o.get("door") or "building" not in (o.get("tags") or []):
+            continue
+        dw = door_world(o) or (o["x"], o["z"] + o["fd"] * o["scale"] / 2 + 1.8)
+        spot = nearest_walkable(*dw) or dw
+        nm = re.sub(r"[-_]", " ", o["name"]).strip()
+        world.PLACES[f"b{o['id']}"] = {"label": nm, "x": round(spot[0], 2), "z": round(spot[1], 2), "aliases": [nm.lower()], "object": o["id"],
+                                       "enter": True, "inside": [round(o["x"], 2), round(o["z"], 2)]}
     FALL = {"home": ("home spot", ["home", "pad", "bed"]), "fuel_station": ("charging spot", ["charging", "station", "fuel", "battery", "food"]),
             "clothing_store": ("shop spot", ["shop", "store", "clothing"]), "gallery": ("gallery spot", ["gallery", "art"])}
     for i, (key, (label, al)) in enumerate(FALL.items()):            # a map without these still works: plain named spots near the middle until you mark real buildings

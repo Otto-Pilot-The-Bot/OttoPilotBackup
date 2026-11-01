@@ -1197,8 +1197,10 @@ def observe(ctx, a):
     if len(want) >= 3 and config.MAPS_ENABLED:                           # looking at something your human placed: learn what it is
         mo = _aff.find(want)
         if mo:
-            if _aff.dist_to(mo, s["x"], s["z"]) > 14:
-                return out(False, f"The {_aff.label(mo)} is too far away to see properly. Walk closer first (move_to).")
+            if _aff.inside_obj(s) != mo["id"]:
+                stepped = _aff.walk_to(ctx, mo, config.LOOK_REACH, "take a closer look")
+                if stepped:
+                    return stepped
             s["boredom"] = max(0, s["boredom"] - 4)
             return out(True, f"You look at the {_aff.label(mo)}. It is {_aff.describe(mo, True)}.", 0.2, "Idle", subject=_aff.label(mo).lower())
     if s.get("inside"):

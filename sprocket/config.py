@@ -28,6 +28,7 @@ KILL_FILE = ROOT / "KILL"          # `touch KILL` stops everything
 PUBLISH_ENABLED_DEFAULT = False    # publish_page tool hidden until you switch it on
 WORLD_HALF = 24                    # world spans -24..24 on x and z
 REACH = 3.0                        # distance needed to use something
+LOOK_REACH = 4.0                   # distance from the edge of an object needed to look closely at it (he walks closer first)
 MAX_STEP = 10.0                    # max distance walked per tick
 MAX_OBJECTS = 120
 HOST, PORT = "127.0.0.1", 8765     # localhost only

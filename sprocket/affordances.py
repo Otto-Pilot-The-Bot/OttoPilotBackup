@@ -236,6 +236,33 @@ def _log(ctx, a, o, text, v, extra=""):
     db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"I {text}."[:240] + (" It felt good." if v > 0.5 else ""), a["imp"] + (1 if v > 0.7 else 0))
 
 
+def walk_to(ctx, o, reach, what):
+    """Take one step toward a placed object until he is within `reach` of it. Returns None when he is there, else the tool result to hand back."""
+    from . import tools
+    s = ctx.state
+    if dist_to(o, s["x"], s["z"]) <= reach:
+        return None
+    ins = inside_obj(s)
+    if ins and ins != o["id"]:
+        tools._exit(ctx)
+    spot = maps.door_world(o, 1.2) if o.get("door") else None
+    spot = spot or maps.nearest_walkable(o["x"], o["z"]) or (o["x"], o["z"])
+    if not o.get("door"):
+        ang = math.atan2(s["z"] - o["z"], s["x"] - o["x"]); r = max(abs(o["fw"]), abs(o["fd"])) * o["scale"] / 2 + 1.0
+        spot = maps.nearest_walkable(o["x"] + math.cos(ang) * r, o["z"] + math.sin(ang) * r) or spot
+    ox_, oz_ = s["x"], s["z"]
+    nx, nz, arrived = world.step_toward(s["x"], s["z"], spot[0], spot[1])
+    s["x"], s["z"] = nx, nz
+    s["path"] = [[round(p, 1), round(q, 1)] for p, q in world.LAST_PATH][:40]
+    left = dist_to(o, nx, nz)
+    if left > reach and abs(nx - ox_) + abs(nz - oz_) < 0.05 and left <= reach + 2.0:
+        return None                                              # boxed in by other things: this is as close as he can get, which is close enough
+    if left > reach:
+        return tools.out(True, f"You walked toward the {label(o)} to {what}; {left:.0f} m left. Keep going.", 0.0, "Walking", moved=True,
+                         caption=f"Walking to the {label(o).lower()} to {what}")
+    return None
+
+
 def use(ctx, args):
     from . import tools
     out = tools.out
