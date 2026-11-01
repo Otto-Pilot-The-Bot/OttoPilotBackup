@@ -94,7 +94,7 @@ def _schemas(publish_enabled):
                     "from search_assets that matches. A few wishes per day; no repeats. They may say yes or not now.",
             {"item": {"type": "string"}, "reason": {"type": "string"}, "asset": {"type": "string", "description": "optional: name of a model from search_assets"}}, ["item", "reason"]),
         _fn("ponder", "Pause for a quiet moment: think, daydream, or just look around. Cheap and calming; good between projects.", {"thought": {"type": "string", "description": "what you are thinking about"}}, []),
-        _fn("observe", "Stand still and watch the world: the sky, the weather, birds, cats, plants, or something specific nearby. You may spot things; they go in your spotting log.",
+        _fn("observe", "Stand still and watch the world: the sky, the weather, birds, cats, plants, or something specific nearby. You may spot things; they go in your spotting log. Give target=<an object name or #id> to look at something your human placed and learn what it is and what you can do with it.",
             {"target": {"type": "string", "description": "optional: sky, weather, birds, a place or an object name"}}, []),
         _fn("make_music", "Compose a short tune. notes: up to 48 tokens like 'C4:q E4:q G4:h R:q' (letters A-G with optional #/b and octave 2-6, R = rest; :w whole :h half :q quarter :e eighth). Plays in the page.",
             {"title": {"type": "string"}, "notes": {"type": "string"}, "tempo": {"type": "integer"}, "wave": {"type": "string", "enum": ["sine", "triangle", "square", "chime"]}}, ["title", "notes"]),
@@ -1193,9 +1193,16 @@ def _sightings(ctx):
 
 def observe(ctx, a):
     s, db = ctx.state, ctx.db
+    want = str(a.get("target") or "").strip().lower()
+    if len(want) >= 3 and config.MAPS_ENABLED:                           # looking at something your human placed: learn what it is
+        mo = _aff.find(want)
+        if mo:
+            if _aff.dist_to(mo, s["x"], s["z"]) > 14:
+                return out(False, f"The {_aff.label(mo)} is too far away to see properly. Walk closer first (move_to).")
+            s["boredom"] = max(0, s["boredom"] - 4)
+            return out(True, f"You look at the {_aff.label(mo)}. It is {_aff.describe(mo, True)}.", 0.2, "Idle", subject=_aff.label(mo).lower())
     if s.get("inside"):
         _exit(ctx)
-    want = str(a.get("target") or "").strip().lower()
     cands = _sightings(ctx)
     if want:
         match = [c for c in cands if want in c[0] or c[0] in want or any(w in c[1].lower() for w in re.findall(r"[a-z]{4,}", want))]

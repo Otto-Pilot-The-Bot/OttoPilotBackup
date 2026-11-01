@@ -108,3 +108,9 @@ He starts with $50.00. The bank building, its cash machine and the sign were pla
 - The ledger refuses edits and deletes, refuses overdrafts, and ignores a repeated request with the same key. The panel shows whether the books balance.
 - **Real money later:** it is not connected to anything. `bank.py` has a `Provider` interface; `RealMoneyProvider` is a switched-off stub
   (`BANK_PROVIDER = "play"`, `BANK_REAL_ENABLED = False` in `config.py`). A real version should create pending requests you approve, and post to the ledger only after that.
+
+### Telling Otto what things are
+
+Every object in his NEARBY line now comes with a short description ("your charging station: recharge your battery here"). It is worked out from
+the object's tags and place; to say it in your own words, select the object in the Plan editor and fill in **About it** (up to 160 characters).
+Your text always wins. He can also look at an object (`observe` with its name or #id) to hear what it is and what he can do with it.

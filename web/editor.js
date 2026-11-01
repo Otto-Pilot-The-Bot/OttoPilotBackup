@@ -79,6 +79,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <div class="dim small">The ground look is not decided yet: A/B/C are previews. Lighting follows the day/night cycle.</div></div>
       ${tool === 'paint' ? `<div class="sec"><b>Ground</b><div class="row">${Object.entries(TILE_NAMES).map(([k, n]) => `<button data-a="tile" data-k="${k}" class="tilebtn ${tile === k ? 'on' : ''}"><i style="background:${tileSw[k]}"></i>${n}</button>`).join('')}</div><div class="dim small">Click or drag on the map. Water cannot be walked; roads and paths are preferred by Otto.</div></div>` : ''}
       ${s ? `<div class="sec"><label><b>Name</b> <input data-p="name" type="text" value="${esc(s.name)}" maxlength="60" placeholder="e.g. Otto's computer"></label> <span class="dim small">#${s.id} · ${esc(s.kit)}</span>
+        <label><b>About it</b> <input data-p="about" type="text" value="${esc(s.about || '')}" maxlength="160" placeholder="tell Otto what it is, e.g. my computer: use it to write" style="width:100%"></label>
         <div class="row"><button data-a="rot" data-d="-1">⟲</button><button data-a="rot" data-d="1">⟳</button><button data-a="dup">Duplicate</button><button data-a="drop" title="Put it on top of whatever is directly under it (a desk, a shelf)">⤓ Drop on surface</button><button data-a="del" class="warn">🗑 Delete</button></div>
         <div class="grid2"><label>x <input data-p="x" type="number" step="0.5" value="${s.x}"></label><label>z <input data-p="z" type="number" step="0.5" value="${s.z}"></label>
         <label>turn ° <input data-p="rot" type="number" step="15" value="${s.rot}"></label><label>scale <input data-p="scale" type="number" step="0.1" min="0.2" max="6" value="${s.scale}"></label>
@@ -171,6 +172,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
       if (t.value) { const L = { home: 'home', clothing_store: 'shop', gallery: 'gallery', fuel_station: 'charging station', plaza: 'plaza', park: 'park', pond: 'pond' }[t.value];
         doc.places[t.value] = { label: L, object: s.id, aliases: [L], enter: !!s.door && ['home', 'clothing_store', 'gallery'].includes(t.value) }; }
     }
+    else if (p === 'about') { if (t.value.trim()) s.about = t.value.slice(0, 160); else delete s.about; }
     else if (p === 'name') s.name = t.value.slice(0, 60) || s.name;
     else if (p === 'tags') s.tags = t.value.split(',').map((x) => x.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')).filter(Boolean).slice(0, 12);
     else if (p === 'pw' && s.panel) s.panel.w = Math.max(0.3, n); else if (p === 'ph' && s.panel) s.panel.h = Math.max(0.3, n);

@@ -105,6 +105,9 @@ def clean(doc, db):
                "fw": round(_num(o.get("fw"), 0.1, 60, d["fw"]), 2), "fd": round(_num(o.get("fd"), 0.1, 60, d["fd"]), 2),
                "tags": [t for t in (o.get("tags") if isinstance(o.get("tags"), list) else d["tags"]) if isinstance(t, str) and TAG_RX.match(t)][:12],
                "walkable": bool(o.get("walkable", d["walkable"]))}
+        about = re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f]", " ", str(o.get("about") or ""))).strip()[:160]
+        if about:
+            out["about"] = about
         dr = o.get("door")
         out["door"] = [round(_num(dr[0], -30, 30), 2), round(_num(dr[1], -30, 30), 2)] if isinstance(dr, list) and len(dr) == 2 else None
         if o.get("y") is not None:

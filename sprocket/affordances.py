@@ -94,6 +94,58 @@ def dist_to(o, x, z):
     return edge_dist(o, x, z)
 
 
+def _place_of(o):
+    k = place_key_for(o)
+    return k
+
+
+def describe(o, full=False):
+    """What this thing IS, in plain words, for Otto. Your own note (the 'About it' box in the Plan editor) always wins;
+    otherwise it comes from the object's place and tags. `full` adds what he can do with it."""
+    about = (o.get("about") or "").strip()
+    t = tags_of(o); name = label(o).lower(); k = _place_of(o)
+    if about:
+        text = about
+    elif k == "home":
+        text = "your home: go inside to rest and recover your energy"
+    elif k == "fuel_station" or t & {"charger", "recharge"}:
+        text = "your charging station: recharge your battery here"
+    elif "atm" in t:
+        text = "a cash machine: deposit or withdraw your money with the bank tool"
+    elif "bank" in t:
+        text = "the bank: go inside to deposit or withdraw your money (bank tool)"
+    elif t & {"computer", "screen", "terminal"}:
+        text = "a computer: use it to look things up or write"
+    elif "camera" in t:
+        text = "a camera: pick it up, then take photos of things"
+    elif "desk" in t:
+        text = "a desk to work at"
+    elif t & {"structure", "wall", "roof", "corridor"}:
+        text = "part of a building's walls or roof, just scenery"
+    elif t & {"vehicle", "ride"}:
+        text = "a vehicle: look at it, honk, or ride it to another place"
+    elif t & {"bench", "seat", "stool", "chair"}:
+        text = "somewhere to sit and rest"
+    elif t & {"planter", "plant", "flower", "tree", "nature"}:
+        text = "a plant to look at or tend"
+    elif t & {"gallery", "art"}:
+        text = "art to look at"
+    elif t & {"shop"}:
+        text = "a shop to browse"
+    elif t & {"building", "home"}:
+        text = "a building: knock on its door or go inside"
+    elif t & {"road", "sign", "light"}:
+        text = "street furniture, just scenery"
+    else:
+        text = f"a {name} your human placed"
+    if full:
+        acts = applicable({"tick": 10 ** 9, "inside": None, "x": 0, "z": 0, "holding": None, "energy": 0, "battery": 0}, o)
+        ids = [a["label"] for a in acts if a["id"] not in ("photo",)]
+        if ids:
+            text += ". You could: " + "; ".join(ids[:4])
+    return text
+
+
 def label(o):
     n = o["name"]
     return n.replace("-", " ").replace("_", " ").strip()

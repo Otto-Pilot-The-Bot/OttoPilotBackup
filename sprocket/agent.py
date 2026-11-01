@@ -695,7 +695,14 @@ class Agent:
             from . import maps as _m
             mo = [o for o in (_m.ACTIVE["doc"] or {"objects": []})["objects"] if o["name"] not in ("Road", "Street light") and not o.get("panel")]
             mo.sort(key=lambda o: ("structure" in (o.get("tags") or []) and not o.get("door"), world.dist(self.state["x"], self.state["z"], o["x"], o["z"])))
-            return f"NEARBY (things your human placed; name or #id works with move_to): " + ("; ".join(f"#{o['id']} {o['name'][:24]} d={world.dist(self.state['x'], self.state['z'], o['x'], o['z']):.0f}" for o in mo[:8]) or "none yet")
+            from . import affordances as _a
+            seen, items = set(), []
+            for o in mo[:8]:
+                nm = o["name"].lower()
+                what = "" if nm in seen else f" ({_a.describe(o)[:70]})"
+                seen.add(nm)
+                items.append(f"#{o['id']} {o['name'][:24]} d={world.dist(self.state['x'], self.state['z'], o['x'], o['z']):.0f}{what}")
+            return "NEARBY (things your human placed; name or #id works with move_to; observe an object to learn more): " + ("; ".join(items) or "none yet")
         return (f"NEARBY ({len(objs)} objects in the world): " + ("; ".join(f"#{o['id']} {o['name'][:22]} [{o['kind']}{', human' if o['source'] == 'user' else ''}] "
                 f"d={world.dist(self.state['x'], self.state['z'], o['x'], o['z']):.0f}" for o in near) or "none"))
 
