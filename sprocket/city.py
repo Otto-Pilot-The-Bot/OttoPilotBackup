@@ -107,12 +107,12 @@ def build(db):
     put("Furniture Kit", "bench", cx(3), cx(19) - 1, 0, scale=1.8, tags=["bench", "seat", "park"], fp=(1.6, 0.8), title="Park bench")
     put("Furniture Kit", "bench", cx(5), cx(19) + 1, 180, scale=1.8, tags=["bench", "seat", "park"], fp=(1.6, 0.8), title="Park bench")
     for k, (fx, fz) in enumerate(((3, 18), (5, 18), (4, 20), (5, 20))):
-        put("Nature Kit", ("flower redA", "flower yellowA", "flower purpleA", "flower yellowB")[k], cx(fx), cx(fz), k * 50, scale=1.5, tags=["flower", "plant", "garden"], title="Flowers")
+        put("Nature Kit", ("flower redA", "flower yellowA", "flower purpleA", "flower yellowB")[k], cx(fx), cx(fz), k * 50, scale=1.0, tags=["flower", "plant", "garden"], title="Flowers")
     put("Nature Kit", "tree oak", cx(4), cx(20) - 1, 20, tags=["tree", "plant", "park"], title="Tree")
     put("Car Kit", "sedan", cx(9) - 1, cx(2) - 2.6, 90, tags=["vehicle", "car", "sit", "honk"], walkable=True, title="Sedan")
     put("Car Kit", "taxi", cx(21) + 2.6, cx(9), 0, tags=["vehicle", "car", "sit", "honk"], walkable=True, title="Taxi")
     put("Car Kit", "van", cx(14) + 1, cx(21) + 2.6, 90, tags=["vehicle", "car", "sit", "honk"], walkable=True, title="Van")
-    put("Cube Pets", "animal-cat", cx(7) + 0.5, cx(10) + 1.0, 200, scale=0.38, tags=["animal", "cat", "pet"], walkable=False, fp=(0.5, 0.6), title="Cat")
+    put("Cube Pets", "animal-cat", cx(7) + 0.5, cx(10) + 1.0, 200, scale=0.8, tags=["animal", "cat", "pet"], walkable=False, fp=(0.5, 0.6), title="Cat")
 
     places = {}
     def place(key, label, o, aliases, enter=False):

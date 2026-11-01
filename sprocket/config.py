@@ -187,8 +187,18 @@ COLLECT_WEIGHT, COLLECT_FIND_BONUS = 0.12, 0.15   # how much he feels like colle
 # World scale (STYLE.md: 1 unit = 1 meter). Kenney kits are drawn at different sizes, so a kit may carry one uniform correction (never a recolor).
 # Otto is ROBOT_HEIGHT tall. Values are filled in after measuring each kit against him (see tools/measure_kits.py).
 WORLD_CELL = 4.0           # one map cell is 4 m: city road tiles, modular space pieces and station modules all line up on it
-KIT_SCALE = {"City Kit - Roads": 4.0, "City Kit - Commercial": 4.0, "City Kit - Suburban": 4.0, "City Kit - Industrial": 4.0, "Road Pack": 4.0,
-             "Car Kit": 1.3, "Modular Space Kit": 1.0, "Space Station Kit": 4.0, "Space Kit": 2.0, "Nature Kit": 3.0, "Furniture Kit": 2.2, "Train Kit": 2.0}
+KIT_SCALE = {
+    # 1-unit tile kits become 4 m tiles, like the city/road kits, so buildings are house-sized and doors are person-sized
+    "City Kit - Roads": 4.0, "City Kit - Commercial": 4.0, "City Kit - Suburban": 4.0, "City Kit - Industrial": 4.0, "Road Pack": 4.0, "Space Station Kit": 4.0,
+    "Castle Kit": 4.0, "Fantasy Town Kit": 4.0, "Hexagon Kit": 4.0, "Holiday Kit": 4.0, "Minigolf Kit": 4.0, "Modular Buildings": 4.0, "Prototype Kit": 4.0,
+    "Retro Fantasy Kit": 4.0, "Retro Urban Kit": 4.0, "Tower Defense Kit": 4.0, "Tower Defense (Classic)": 4.0, "Platformer Kit": 4.0, "Racing Kit": 4.0,
+    "Graveyard Kit": 4.0, "Factory Kit": 4.0, "Mini Arcade": 4.0, "Mini Arena": 4.0, "Mini Dungeon": 4.0, "Mini Forest": 4.0, "Mini Market": 4.0, "Mini Skate": 4.0,
+    "Building Kit": 2.0, "Survival Kit": 1.5, "Pirate Kit": 1.5, "Watercraft Pack": 1.3, "Train Kit": 1.3,
+    # things drawn at about real size relative to a 1.7 m robot
+    "Car Kit": 1.6, "Furniture Kit": 2.2, "Space Kit": 2.0, "Nature Kit": 3.0, "Nature Kit (Classic)": 3.0, "Mini Characters": 3.0, "Blocky Characters": 0.63,
+    "Cube Pets": 0.5, "Food Kit": 0.35, "Blaster Kit": 0.8,
+    "Modular Space Kit": 1.0, "Modular Cave Kit": 1.0, "Modular Dungeon Kit": 1.0, "Coaster Kit": 1.0, "Toy Car Kit": 1.0, "Weapon Pack": 1.0, "Brick Kit": 1.0, "Marble Kit": 1.0,
+}
 NAME_SCALE = [("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
 
 

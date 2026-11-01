@@ -93,7 +93,7 @@ def build(db):
     for (dx, dz, nm) in ((-12.5, 1.5, "tree default"), (-9, 4, "tree oak"), (-1, 5.5, "tree pineRoundA"), (3, 0, "tree default fall"), (-14, 5, "tree fat")):
         put("Nature Kit", nm, round(cx(3) + dx + 2, 2), round(cx(18) + dz - 2, 2), (dx * 37) % 360, tags=["tree", "plant", "park"], title="Tree")
     for k, (fx, fz) in enumerate(((-12, 15), (-10.2, 16.5), (-8.5, 15.6), (-5, 17), (-2.4, 15.5))):
-        put("Nature Kit", ("flower redA", "flower yellowA", "flower purpleA", "flower yellowB", "flower redB")[k], fx, fz, k * 50, scale=1.5, tags=["flower", "plant", "garden"])
+        put("Nature Kit", ("flower redA", "flower yellowA", "flower purpleA", "flower yellowB", "flower redB")[k], fx, fz, k * 50, scale=1.0, tags=["flower", "plant", "garden"])
     # --- trees on the margins, a few rocks by the pond
     for (x, z, nm) in ((-35, -33, "tree default"), (33, -34, "tree oak"), (-36, -5, "tree pineRoundA"), (-34, 12, "tree fat"), (35, 22, "tree default fall"), (20, 34, "tree oak"), (-26, -35, "tree pineTallA")):
         put("Nature Kit", nm, x, z, (x * 13) % 360, tags=["tree", "plant"])
@@ -107,7 +107,7 @@ def build(db):
     put("Car Kit", "van", cx(11), cx(16) + 0.2, 90, title="Van", tags=["vehicle", "car", "sit", "honk"], walkable=True)
     put("Space Kit", "rover", cx(2) + 1, cx(10), 90, scale=2.2, title="Rover", tags=["vehicle", "rover", "sit"], walkable=False)
     # --- a few props (cat by the home, planters)
-    put("Cube Pets", "animal-cat", cx(7) + 0.5, cx(8) + 2.2, 200, title="Cat", scale=0.38, tags=["animal", "cat", "pet"], walkable=False, fp=(0.5, 0.6))
+    put("Cube Pets", "animal-cat", cx(7) + 0.5, cx(8) + 2.2, 200, title="Cat", scale=0.8, tags=["animal", "cat", "pet"], walkable=False, fp=(0.5, 0.6))
     put("Furniture Kit", "plantSmall1", cx(8), cx(5) + 6.4, 0, scale=3.0, title="Potted plant", tags=["plant", "decor"])
     put("Furniture Kit", "lampRoundFloor", cx(10) - 0.5, cx(9), 0, scale=2.4, title="Plaza lamp", tags=["light", "lamp"], walkable=True)
 
