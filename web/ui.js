@@ -234,12 +234,12 @@ const PANELS = [
       if (!A.data) { $('#aBody', el).innerHTML = '<div class="empty">Loading the library…</div>'; return; }
       const host = $('#aBody', el);
       if (A.sel) return renderForm(host);
-      const q = A.q.toLowerCase(), isKit = A.tab === 'kit';
+      const q = A.q.toLowerCase(), isKit = A.tab === 'kit' && Object.keys(A.data.kit).length > 0, hasKit = Object.keys(A.data.kit).length > 0;
       const rows = isKit ? Object.keys(A.data.kit).map((g) => ({ gen: g })) : A.data.rows.filter((r) => (!A.pack || r.pack === A.pack) && (!q || (r.name + ' ' + r.tags.join(' ') + ' ' + r.pack).toLowerCase().includes(q)));
       const per = 12, pages = Math.max(1, Math.ceil(rows.length / per)); A.page = Math.min(A.page, pages - 1);
       const view = rows.slice(A.page * per, A.page * per + per), packs = [...new Set(A.data.rows.map((r) => r.pack))];
       const prev = keepFocus ? document.activeElement : null, val = prev && prev.id === 'aQ' ? prev.selectionStart : null;
-      host.innerHTML = `<div class="tabs"><button data-a="tab" data-t="models" class="${!isKit ? 'on' : ''}">🗂️ Model packs (${A.data.rows.length})</button><button data-a="tab" data-t="kit" class="${isKit ? 'on' : ''}">🏠 Buildings &amp; props</button></div>
+      host.innerHTML = `<div class="tabs"><button data-a="tab" data-t="models" class="${!isKit ? 'on' : ''}">🗂️ Model packs (${A.data.rows.length})</button>${hasKit ? `<button data-a="tab" data-t="kit" class="${isKit ? 'on' : ''}">🏠 Buildings &amp; props</button>` : ''}</div>
         ${isKit ? '<p class="dim small" style="margin-top:0">Adjustable buildings, trees, lamps, ponds, cars… Pick one, tweak it, place it.</p>' : `<div class="field"><input type="text" id="aQ" placeholder="search ${A.data.rows.length} models…" value="${esc(A.q)}"><select id="aPack"><option value="">all packs</option>${packs.map((p) => `<option ${p === A.pack ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>`}
         <div class="grid">${view.map((r) => { const key = isKit ? r.gen : r.id, d = isKit ? A.kitDesigns['k:' + r.gen] : { parts: [{ a: r.id, f: r.fit, x: 0, y: 0, z: 0, s: 1, r: [0, 0, 0] }], scale: 1, rot: 0 };
           const th = d ? api.thumbDesign((isKit ? 'k:' : 'a:') + key, d, isKit ? r.gen : r.name) : null; if (isKit && !d && !A.kitDesigns['asked:' + r.gen]) { A.kitDesigns['asked:' + r.gen] = 1; api.send({ type: 'design_preview', gen: r.gen, params: {}, key: 'k:' + r.gen }); }

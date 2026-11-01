@@ -80,7 +80,8 @@ CROWD_LIMIT = 0.14              # fraction of ground covered before the buildabl
 SPACING_MARGIN = 0.8            # extra space kept between footprints
 
 # --- assets ---
-ASSET_DIRS = ("assets", "assests")      # (the second spelling is accepted because that is how the folder was created)
+ASSET_DIRS = ("assets/kenney",)      # assets/_unused is never indexed
+KIT_ENABLED = False                      # the old procedural building/prop generators (web/kit/gens.js): off, see STYLE.md
 ASSET_MAX_BYTES = 25_000_000
 ASSET_MAX_TRIS = 12_000
 ASSET_KEEP_RANGE = (0.4, 6.0)            # models whose longest side is in this range keep their native scale (kit pieces still fit together)

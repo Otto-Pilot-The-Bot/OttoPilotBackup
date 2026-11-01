@@ -31,10 +31,10 @@ OTHER_MODEL_EXT = {".obj", ".fbx", ".gltf", ".dae", ".blend", ".stl", ".usd", ".
 
 
 def default_dest():
-    for n in ("assests", "assets"):                    # the project accepts both spellings; use the one that exists
+    for n in ("assets/kenney",):
         if (ROOT / n).is_dir():
             return ROOT / n
-    return ROOT / "assests"
+    return ROOT / "assets/kenney"
 
 
 def scan_pack(folder):
