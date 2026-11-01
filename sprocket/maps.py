@@ -198,7 +198,7 @@ def activate(doc, db=None):
                 cost[j][i] = tc
     colliders = []
     for o in doc["objects"]:
-        if o.get("walkable") or o.get("panel"):
+        if o.get("walkable") or o.get("panel") or (o.get("y") or 0) >= 1.8:      # a roof or anything raised overhead never blocks the ground below
             continue
         for r in world_rects(o):
             colliders.append(r)

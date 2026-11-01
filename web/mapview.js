@@ -103,7 +103,7 @@ export function createMapView({ scene, art, onReady }) {
   MV.updateColliders = () => {
     MV.colliders = [];
     for (const o of MV.doc?.objects || []) {
-      if (o.walkable || o.panel) continue;
+      if (o.walkable || o.panel || (o.y || 0) >= 1.8) continue;
       const c = Math.cos((o.rot * Math.PI) / 180), sn = Math.sin((o.rot * Math.PI) / 180), sc = o.scale || 1;
       for (const r of o.solids || [{ x: 0, z: 0, w: o.fw, d: o.fd }]) MV.colliders.push({ x: o.x + r.x * sc * c + r.z * sc * sn, z: o.z - r.x * sc * sn + r.z * sc * c, hw: (r.w * sc) / 2, hd: (r.d * sc) / 2, rot: (o.rot * Math.PI) / 180, id: o.id });
     }

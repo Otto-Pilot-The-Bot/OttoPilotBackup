@@ -12,6 +12,7 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 
 export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign, applyLook }) {
   let open = false, doc = null, rows = [], byKit = new Map(), maps = [], active = '', dirty = false;
+  let pickRot = 0, pickY = 0, autoY = true, ghostY = 0;
   let tool = 'select', sel = null, pick = null, tile = 'r', snap = 1, rsnap = 15, kit = 'Space Kit', q = '', cat = '', limit = 48, drag = null, painting = false;
   const undo = [], redo = [];
   const ndc = new THREE.Vector2(), ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
@@ -21,6 +22,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
   const el = document.createElement('aside'); el.id = 'plan'; el.hidden = true; document.body.appendChild(el);
   const ghost = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-1, 0.12, -1), new THREE.Vector3(1, 0.12, -1), new THREE.Vector3(1, 0.12, 1), new THREE.Vector3(-1, 0.12, 1)]),
     new THREE.LineBasicMaterial({ color: 0x00e5ff, depthTest: false })); ghost.visible = false; ghost.renderOrder = 40; MV.root.add(ghost);
+  const arrow = new THREE.Group(); { const c = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.9, 10).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x00e5ff, depthTest: false })); c.renderOrder = 41; arrow.add(c); arrow.visible = false; MV.root.add(arrow); }   // points the way the front (+z, where doors are) will face
 
   const toast = (t) => { const x = $('#toast'); if (x) { x.textContent = t; x.hidden = false; setTimeout(() => { x.hidden = true; }, 2200); } };
   const snapV = (v) => (snap > 0 ? Math.round(v / snap) * snap : v);
@@ -46,8 +48,8 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
       walkable: r.cat === 'road' || fw * fd < 0.04 || (r.sy * r.fit < 0.25 && !bld) };
   }
   function addObject(r, x, z) {
-    commit(); const d = defaults(r), id = nextId();
-    doc.objects.push({ id, asset: r.file, aid: r.id, fit: r.fit, kit: r.pack, name: r.name, x, z, rot: 0, scale: 1, ...d });
+    commit(); const d = defaults(r), id = nextId(), y = autoY ? ghostY : pickY;
+    doc.objects.push({ id, asset: r.file, aid: r.id, fit: r.fit, kit: r.pack, name: r.name, x, z, rot: pickRot, scale: 1, ...d, ...(y > 0 ? { y } : {}) });
     sel = id; refresh(); return id;
   }
 
@@ -80,13 +82,17 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <div class="grid2"><label>x <input data-p="x" type="number" step="0.5" value="${s.x}"></label><label>z <input data-p="z" type="number" step="0.5" value="${s.z}"></label>
         <label>turn ° <input data-p="rot" type="number" step="15" value="${s.rot}"></label><label>scale <input data-p="scale" type="number" step="0.1" min="0.2" max="6" value="${s.scale}"></label>
         <label>footprint w <input data-p="fw" type="number" step="0.1" value="${s.fw}"></label><label>footprint d <input data-p="fd" type="number" step="0.1" value="${s.fd}"></label>
+        <label>height y <input data-p="y" type="number" step="0.5" value="${s.y || 0}"></label><span></span>
         <label>door x <input data-p="dx" type="number" step="0.5" value="${s.door ? s.door[0] : ''}" placeholder="none"></label><label>door z <input data-p="dz" type="number" step="0.5" value="${s.door ? s.door[1] : ''}" placeholder="none"></label></div>
         <label>Otto's… <select data-p="placekey"><option value="">(nothing special)</option>${[['home', 'home'], ['clothing_store', 'shop'], ['gallery', 'gallery'], ['fuel_station', 'charging station'], ['plaza', 'plaza'], ['park', 'park'], ['pond', 'pond']].map(([k, l]) => `<option value="${k}" ${doc.places?.[k]?.object === s.id ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label class="row"><input type="checkbox" data-p="walkable" ${s.walkable ? 'checked' : ''}> walkable (no collision)</label>
         <label>tags <input data-p="tags" type="text" value="${esc((s.tags || []).join(', '))}" placeholder="bench, seat, park"></label>
-        ${s.panel ? `<div class="grid2"><label>art w <input data-p="pw" type="number" step="0.1" value="${s.panel.w}"></label><label>art h <input data-p="ph" type="number" step="0.1" value="${s.panel.h}"></label><label>height y <input data-p="y" type="number" step="0.1" value="${s.y}"></label></div><div class="dim small">Flat panels show Otto's newest pictures.</div>` : ''}</div>` : ''}
+        ${s.panel ? `<div class="grid2"><label>art w <input data-p="pw" type="number" step="0.1" value="${s.panel.w}"></label><label>art h <input data-p="ph" type="number" step="0.1" value="${s.panel.h}"></label></div><div class="dim small">Flat panels show Otto's newest pictures.</div>` : ''}</div>` : ''}
       ${giftPics().length ? `<div class="sec"><b>Pictures you gave Otto</b> <span class="dim small">(flat panels)</span><div class="row">${giftPics().map((g) => `<button data-a="gift" data-id="${g.id}" title="Put this picture on a flat panel">🖼 ${esc(g.name)}</button>`).join('')}</div></div>` : ''}
       <div class="sec"><b>Models</b>${pick ? ` <span class="dim small">placing: ${esc(pick.name)}</span>` : ''}
+        ${tool === 'place' && pick ? `<div class="row"><span>Turn before placing</span><button data-a="prot" data-d="-1" title="Turn left (Shift+R)">⟲</button><b>${pickRot}°</b><button data-a="prot" data-d="1" title="Turn right (R)">⟳</button></div>
+        <div class="row"><label><input type="checkbox" id="pAuto" ${autoY ? 'checked' : ''}> sit on top of whatever is under the cursor (roofs, shelves)</label></div>
+        <div class="row"><label>${autoY ? 'extra' : ''} height <input id="pY" type="number" step="0.5" min="0" max="30" value="${pickY}" style="width:70px"> m</label></div>` : ''}
         <div class="row"><select id="pKit"><optgroup label="Core">${kl.core.map(opt).join('')}</optgroup><optgroup label="Supporting">${kl.sup.map(opt).join('')}</optgroup><optgroup label="Other kits (ask before using)">${kl.rest.map(opt).join('')}</optgroup></select></div>
         <div class="row"><input id="pQ" type="text" placeholder="search…" value="${esc(q)}"><select id="pCat"><option value="">all</option>${cats.map((c) => `<option ${c === cat ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
         <div class="pal" id="pPal"></div></div>`;
@@ -131,6 +137,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         panel: { w: +(h * asp).toFixed(2), h, art_id: null, gift_id: g.id, caption: g.name.slice(0, 80) } });
       sel = id; refresh(); toast('Panel placed at the middle of the map: drag it where you want it.');
     }
+    else if (a === 'prot') { pickRot = (((pickRot + (+b.dataset.d) * rsnap) % 360) + 360) % 360; render(); }
     else if (a === 'more') { limit += 48; paintPalette(); }
     else if (a === 'del') delSel();
     else if (a === 'dup') { const s = objOf(sel); if (s) { commit(); const c = clone(s); c.id = nextId(); c.x += 2; c.z += 2; doc.objects.push(c); sel = c.id; refresh(); } }
@@ -142,6 +149,8 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     if (t.id === 'pSnap') snap = +t.value; else if (t.id === 'pRot') rsnap = +t.value;
     else if (t.id === 'pKit') { kit = t.value; cat = ''; limit = 48; render(); }
     else if (t.id === 'pCat') { cat = t.value; limit = 48; paintPalette(); }
+    else if (t.id === 'pAuto') { autoY = t.checked; render(); }
+    else if (t.id === 'pY') { pickY = Math.max(0, Math.min(30, +t.value || 0)); }
     else if (t.id === 'pFoot') { MV.setOverlay('foot', t.checked); }
     else if (t.id === 'pWalk') { MV.setOverlay('walk', t.checked); }
     else if (t.id === 'pLook') { applyLook(t.value); }
@@ -175,6 +184,12 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     const r = dom.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera); return ray.ray.intersectPlane(plane, hit) ? hit.clone() : null;
   }
+  function surfaceY(e) {                                       // height of whatever model is under the cursor (0 = open ground)
+    if (!autoY) return pickY;
+    ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
+    const h = ray.intersectObjects(MV.objG.children, true)[0];
+    return h ? Math.max(0, Math.round(h.point.y * 4) / 4) : 0;
+  }
   function paintAt(p) {
     const c = doc.cell, h = half(), i = Math.floor((p.x + h) / c), j = Math.floor((p.z + h) / c);
     if (i < 0 || j < 0 || i >= doc.n || j >= doc.n || doc.ground[j][i] === tile) return;
@@ -182,14 +197,14 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
   }
   function applyTool() {
     controls.mouseButtons = tool === 'select' ? { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN } : { LEFT: -1, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
-    dom.style.cursor = tool === 'select' ? '' : 'crosshair'; ghost.visible = false;
+    dom.style.cursor = tool === 'select' ? '' : 'crosshair'; ghost.visible = false; arrow.visible = false;
   }
   window.addEventListener('pointerdown', (e) => {
     if (!open || e.target !== dom || e.button !== 0 || !doc) return;
     const p = worldAt(e); if (!p) return;
     if (tool === 'paint') { commit(); painting = true; paintAt(p); return; }
     if (tool === 'place') {
-      if (!pick) return; addObject(pick, snapV(Math.max(-half(), Math.min(half(), p.x))), snapV(Math.max(-half(), Math.min(half(), p.z)))); return;
+      if (!pick) return; ghostY = surfaceY(e); addObject(pick, snapV(Math.max(-half(), Math.min(half(), p.x))), snapV(Math.max(-half(), Math.min(half(), p.z)))); return;
     }
     ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
     const id = MV.pick(ray);
@@ -209,8 +224,10 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
       return;
     }
     if (tool === 'place' && pick) {
-      const d = defaults(pick); ghost.visible = true; ghost.scale.set(Math.max(0.4, d.fw / 2), 1, Math.max(0.4, d.fd / 2)); ghost.position.set(snapV(p.x), 0, snapV(p.z));
-    } else ghost.visible = false;
+      const d = defaults(pick); ghostY = surfaceY(e); ghost.visible = true; ghost.scale.set(Math.max(0.4, d.fw / 2), 1, Math.max(0.4, d.fd / 2));
+      ghost.position.set(snapV(p.x), ghostY, snapV(p.z)); ghost.rotation.y = (pickRot * Math.PI) / 180; arrow.visible = true;
+      arrow.position.set(snapV(p.x), ghostY + 0.3, snapV(p.z)); arrow.rotation.y = (pickRot * Math.PI) / 180; arrow.children[0].position.z = Math.max(0.4, d.fd / 2) + 0.7;
+    } else { ghost.visible = false; arrow.visible = false; }
   });
   window.addEventListener('pointerup', () => {
     if (painting) { painting = false; render(false); }
@@ -223,7 +240,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); doRedo(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); delSel(); }
-    else if (e.key.toLowerCase() === 'r' && !mod) turn(e.shiftKey ? -1 : 1);
+    else if (e.key.toLowerCase() === 'r' && !mod) { if (tool === 'place' && pick && !sel) { pickRot = (((pickRot + (e.shiftKey ? -1 : 1) * rsnap) % 360) + 360) % 360; render(); } else turn(e.shiftKey ? -1 : 1); }
     else if (e.key === 'Escape') { if (tool !== 'select') { tool = 'select'; pick = null; applyTool(); render(); } else if (sel) { sel = null; MV.select(null); render(false); } else close(); }
     else if (e.key.startsWith('Arrow') && sel) {
       e.preventDefault(); const s = objOf(sel), st = snap || 0.5; commit();
@@ -239,7 +256,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     applyTool(); render();
   }
   function close() {
-    if (!open) return; open = false; el.hidden = true; btn.classList.remove('on'); document.body.classList.remove('planning'); ghost.visible = false; drag = null; painting = false;
+    if (!open) return; open = false; el.hidden = true; btn.classList.remove('on'); document.body.classList.remove('planning'); ghost.visible = false; arrow.visible = false; drag = null; painting = false;
     controls.enabled = CAM.mode === 'overhead'; controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
     if (dirty && window.__mapMsg?.doc) { doc = null; MV.setDoc(window.__mapMsg.doc, window.__mapMsg.nav); dirty = false; undo.length = redo.length = 0; }   // unsaved edits are dropped from view
     sel = null; MV.select(null);
