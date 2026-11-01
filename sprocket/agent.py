@@ -685,7 +685,7 @@ class Agent:
         if config.MAPS_ENABLED:
             from . import maps as _m
             mo = [o for o in (_m.ACTIVE["doc"] or {"objects": []})["objects"] if o["name"] not in ("Road", "Street light") and not o.get("panel")]
-            mo.sort(key=lambda o: world.dist(self.state["x"], self.state["z"], o["x"], o["z"]))
+            mo.sort(key=lambda o: ("structure" in (o.get("tags") or []) and not o.get("door"), world.dist(self.state["x"], self.state["z"], o["x"], o["z"])))
             return f"NEARBY (things your human placed; name or #id works with move_to): " + ("; ".join(f"#{o['id']} {o['name'][:24]} d={world.dist(self.state['x'], self.state['z'], o['x'], o['z']):.0f}" for o in mo[:8]) or "none yet")
         return (f"NEARBY ({len(objs)} objects in the world): " + ("; ".join(f"#{o['id']} {o['name'][:22]} [{o['kind']}{', human' if o['source'] == 'user' else ''}] "
                 f"d={world.dist(self.state['x'], self.state['z'], o['x'], o['z']):.0f}" for o in near) or "none"))

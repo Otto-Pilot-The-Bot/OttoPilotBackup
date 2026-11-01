@@ -153,9 +153,12 @@ def offers(state, limit=4):
         if d > NEAR:
             continue
         acts = applicable(state, o)
+        if "structure" in (o.get("tags") or []) and not o.get("door"):
+            acts = [a for a in acts if a["id"] != "photo"]            # walls and roofs are not worth a photo
         if acts:
             res.append((o, d, acts))
-    res.sort(key=lambda r: r[1])
+    # things with a real use (take, sit, recharge...) come before things that only offer a photo
+    res.sort(key=lambda r: (all(a["id"] == "photo" for a in r[2]), r[1]))
     return res[:limit]
 
 

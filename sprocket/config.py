@@ -10,12 +10,12 @@ SHORT_NAME = os.environ.get("SPROCKET_SHORT_NAME", "Otto")  # what the UI and ca
 MODEL = os.environ.get("SPROCKET_MODEL", "gemma4:e4b")      # the one model setting
 FALLBACK_MODEL = os.environ.get("SPROCKET_FALLBACK", "qwen3:8b")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
-NUM_CTX = 8192
+NUM_CTX = 4096
 THINK = False                 # thinking for small helper calls (summaries, reflections JSON, learning notes): keep OFF for speed
 THINK_MAIN = os.environ.get("SPROCKET_THINK", "low")   # thinking for the main decision step: False | "low" | "medium" | "high" | True
 THINK_TIMEOUT_NOTE = 60       # a decision slower than this many seconds is logged as slow (the loop and UI keep going either way)
 TEMPERATURE = 0.9
-KEEP_ALIVE = "30m"
+KEEP_ALIVE = "3m"
 
 TICK_SECONDS = float(os.environ.get("SPROCKET_TICK", 20))   # start-to-start interval (default 20 s; adjustable in the You panel)
 REFLECT_EVERY = 10            # ticks between reflection calls
