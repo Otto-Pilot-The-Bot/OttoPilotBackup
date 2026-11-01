@@ -607,16 +607,24 @@ const clock = new THREE.Clock(), tmp = new THREE.Vector3(), UP = new THREE.Vecto
 let lastClock = '', frameN = 0, walkSpeed = 3;
 const shortest = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 let fpsEma = 60, fpsCheck = 0, prNow = Math.min(devicePixelRatio, 2);
-function adaptQuality(rawDt, now) {                          // a slow machine drops the render resolution a step at a time (never back up) until it runs smoothly
+function adaptQuality(rawDt, now, cap) {                          // a slow machine drops the render resolution a step at a time (never back up) until it runs smoothly
   fpsEma = fpsEma * 0.95 + (1 / Math.max(rawDt, 0.001)) * 0.05;
   if (now - fpsCheck < 2500 || now < 8000) return;
   fpsCheck = now;
-  if (fpsEma < 28 && prNow > 1) { prNow = Math.max(1, prNow - 0.25); renderer.setPixelRatio(prNow); renderer.setSize(innerWidth, innerHeight); window.__pixelRatio = prNow; }
+  if (fpsEma < Math.min(28, cap * 0.8) && prNow > 1) { prNow = Math.max(1, prNow - 0.25); renderer.setPixelRatio(prNow); renderer.setSize(innerWidth, innerHeight); window.__pixelRatio = prNow; }
 }
+// Frame-rate cap: watching Otto does not need 60+ fps. Default 30 (walk mode, where you steer, 60). Change with ?fps=N in the address or window.__setFps(N); 0 = no cap.
+let fpsCap = (() => { const q = +new URLSearchParams(location.search).get('fps'); if (q >= 0 && new URLSearchParams(location.search).has('fps')) return q; const v = localStorage.getItem('fpsCap'); return v === null ? 30 : +v; })();
+window.__setFps = (n) => { fpsCap = Math.max(0, +n || 0); localStorage.setItem('fpsCap', String(fpsCap)); return fpsCap; };
+let lastDraw = 0;
+const capNow = () => (fpsCap === 0 ? 0 : (CAM && CAM.mode === 'walk' ? Math.max(fpsCap, 60) : fpsCap));
 function frame() {
   requestAnimationFrame(frame);
+  const nowT = performance.now(), cap = capNow();
+  if (cap && nowT - lastDraw < 1000 / cap - 3) return;            // too soon: skip this screen refresh (nothing is drawn or updated)
+  lastDraw = nowT;
   const rawDt = clock.getDelta(), dt = Math.min(rawDt, 0.1), now = performance.now();
-  adaptQuality(rawDt, now);
+  adaptQuality(rawDt, now, cap || 60);
   // world clock: glides between ticks (10 world minutes per tick)
   const hour = new URLSearchParams(location.search).get('hour') ? +new URLSearchParams(location.search).get('hour') : forcedHour != null ? forcedHour : (snapHour + (paused ? 0 : Math.min(1, (now - snapAt) / intervalMs)) * (10 / 60)) % 24;
   applyTime(hour); REAL.update(hour, nightness, dt, now / 1000);
