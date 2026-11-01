@@ -170,11 +170,49 @@ def _place(key):
 # ------------------------------------------------------------------ going inside buildings
 def _enter(ctx, key):
     p = world.PLACES[key]
+    if config.MAPS_ENABLED and not ctx.state.get("interior") and p.get("object") and _enter_interior(ctx, key, p):
+        return
     ctx.state["inside"] = key
     ctx.state["x"], ctx.state["z"] = p["inside"]
 
 
+def _enter_interior(ctx, key, p):
+    """If this building has an interior map, switch to it (the view follows). Returns False when it has none, so he just goes in as before."""
+    from . import affordances as _aff, maps as _maps
+    s = ctx.state
+    o = _aff.find(f"#{p['object']}")
+    itr = (o or {}).get("interior")
+    if not itr:
+        return False
+    try:
+        _maps.load(itr)                                              # make sure it really exists before leaving the outside map
+    except Exception:
+        return False
+    s["interior"] = {"outdoor": ctx.db.get("active_map"), "object": o["id"], "label": p["label"], "ret": [p["x"], p["z"]]}
+    s["inside"] = None
+    ctx.load_map(itr)
+    ex = world.PLACES.get("exit")
+    spot = (ex["x"], ex["z"]) if ex else (_maps.nearest_walkable(0.0, 0.0) or (0.0, 0.0))
+    s["x"], s["z"] = spot
+    s["path"] = []
+    return True
+
+
+def _leave_interior(ctx):
+    s = ctx.state
+    itn = s.pop("interior", None)
+    if not itn:
+        return None
+    ctx.load_map(itn["outdoor"])
+    s["x"], s["z"] = itn["ret"]
+    s["inside"] = None
+    s["path"] = []
+    return itn["label"]
+
+
 def _exit(ctx):
+    if ctx.state.get("interior"):
+        return _leave_interior(ctx)
     key = ctx.state.get("inside")
     if key:
         p = world.PLACES[key]
@@ -215,6 +253,18 @@ _OUT_RE = re.compile(r"^(?:go\s+)?(?:outside|out|exit|leave|step out)(?:\s+.*)?$
 def move_to(ctx, a):
     s = ctx.state
     raw = str(a.get("target", "")).strip()
+    if s.get("interior") and (_OUT_RE.match(raw) or raw.lower() in ("exit", "the way out", "way out", "door", "outside")):
+        ex = world.PLACES.get("exit")
+        if ex and dist(s["x"], s["z"], ex["x"], ex["z"]) > config.REACH:
+            ox, oz = s["x"], s["z"]
+            s["x"], s["z"], arrived = world.step_toward(s["x"], s["z"], ex["x"], ex["z"])
+            s["path"] = [[round(p, 1), round(q, 1)] for p, q in world.LAST_PATH][:40]
+            if (s["x"], s["z"]) == (ox, oz):
+                return out(True, "There is no way through to the exit: something blocks it.", -0.2, "No", noop=True)
+            if dist(s["x"], s["z"], ex["x"], ex["z"]) > config.REACH:
+                return out(True, f"You walked toward the way out; {dist(s['x'], s['z'], ex['x'], ex['z']):.0f} m left. Keep going.", 0.0, "Walking", moved=True, caption="Heading for the way out")
+        label = _leave_interior(ctx)
+        return out(True, f"You stepped outside the {label}.", 0.2, "Walking", moved=True, caption=f"Stepping outside the {label}")
     if _OUT_RE.match(raw):
         if not s.get("inside"):
             return out(True, "You are already outside.", 0.0, "Idle")
@@ -227,7 +277,7 @@ def move_to(ctx, a):
         enter, raw = True, m.group(1)
     tgt = world.resolve_target(raw, s["x"], s["z"], ctx.objects())
     if not tgt:
-        return out(False, f"Unknown target '{a.get('target')}'. Use a place, an object name, or 'x,z'.")
+        return out(False, f"Unknown target '{a.get('target')}'. Use a place, an object name, or 'x,z'." + (f" You are inside the {s['interior']['label']}: move_to exit first to go outside." if s.get("interior") else ""))
     if enter and not (tgt.get("key") and world.PLACES[tgt["key"]].get("enter")):
         return out(False, f"You cannot go inside {tgt['label']}. You can go inside: " +
                    ", ".join(p["label"] for p in world.PLACES.values() if p.get("enter")) + ".")

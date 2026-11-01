@@ -105,6 +105,9 @@ def clean(doc, db):
                "fw": round(_num(o.get("fw"), 0.1, 60, d["fw"]), 2), "fd": round(_num(o.get("fd"), 0.1, 60, d["fd"]), 2),
                "tags": [t for t in (o.get("tags") if isinstance(o.get("tags"), list) else d["tags"]) if isinstance(t, str) and TAG_RX.match(t)][:12],
                "walkable": bool(o.get("walkable", d["walkable"]))}
+        itr = str(o.get("interior") or "").strip()
+        if itr and NAME_RX.match(itr):
+            out["interior"] = itr                                       # name of the map that is the inside of this building
         about = re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f]", " ", str(o.get("about") or ""))).strip()[:160]
         if about:
             out["about"] = about
@@ -138,7 +141,18 @@ def clean(doc, db):
                          "aliases": [str(a)[:20] for a in (p.get("aliases") or [])][:8], "enter": bool(p.get("enter", False))}
             if isinstance(at, list) and len(at) == 2:
                 places[k]["at"] = [round(_num(at[0], -config.WORLD_HALF_MAX, config.WORLD_HALF_MAX), 2), round(_num(at[1], -config.WORLD_HALF_MAX, config.WORLD_HALF_MAX), 2)]
-    return {"version": 1, "name": name, "cell": cell, "n": n, "ground": ground, "objects": objs, "places": places}
+    res = {"version": 1, "name": name, "cell": cell, "n": n, "ground": ground, "objects": objs, "places": places}
+    half = n * cell / 2
+    b = doc.get("bounds")
+    if isinstance(b, dict):                                              # interiors: the walkable room; everything outside this rectangle is wall
+        x0, x1 = sorted((_num(b.get("x0"), -half, half), _num(b.get("x1"), -half, half)))
+        z0, z1 = sorted((_num(b.get("z0"), -half, half), _num(b.get("z1"), -half, half)))
+        if x1 - x0 >= 2 and z1 - z0 >= 2:
+            res["bounds"] = {"x0": round(x0, 2), "z0": round(z0, 2), "x1": round(x1, 2), "z1": round(z1, 2)}
+    e = doc.get("exit")
+    if isinstance(e, dict):                                              # interiors: where Otto appears and where he leaves from
+        res["exit"] = {"x": round(_num(e.get("x"), -half, half), 2), "z": round(_num(e.get("z"), -half, half), 2)}
+    return res
 
 
 def path_for(name):
@@ -219,6 +233,13 @@ def activate(doc, db=None):
                 blocked[j][i] = True
             else:
                 cost[j][i] = tc
+    bd = doc.get("bounds")
+    if bd:
+        for j in range(W):
+            for i in range(W):
+                x, z = -half + (i + 0.5) * NAV, -half + (j + 0.5) * NAV
+                if not (bd["x0"] <= x <= bd["x1"] and bd["z0"] <= z <= bd["z1"]):
+                    blocked[j][i] = True
     colliders = []
     for o in doc["objects"]:
         if o.get("walkable") or o.get("panel") or (o.get("y") or 0) >= 1.8:      # a roof or anything raised overhead never blocks the ground below
@@ -254,6 +275,9 @@ def activate(doc, db=None):
             ins = (o["x"], o["z"])
             pl.update(enter=True, inside=[round(ins[0], 2), round(ins[1], 2)])
         world.PLACES[key] = pl
+    if doc.get("exit"):                                               # an interior always has a way out
+        ex = nearest_walkable(doc["exit"]["x"], doc["exit"]["z"]) or (doc["exit"]["x"], doc["exit"]["z"])
+        world.PLACES["exit"] = {"label": "the way out", "x": round(ex[0], 2), "z": round(ex[1], 2), "aliases": ["exit", "way out", "door", "outside", "leave"]}
     taken = {p.get("object") for p in world.PLACES.values() if p.get("object")}
     for o in doc["objects"]:                                          # any building with a door can be entered, even if you did not mark it as a place
         if o["id"] in taken or o.get("panel") or not o.get("door") or "building" not in (o.get("tags") or []):

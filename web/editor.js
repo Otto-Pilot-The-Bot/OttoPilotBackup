@@ -67,10 +67,16 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     const cats = [...new Set((byKit.get(kit) || []).map((r) => r.cat))].sort();
     el.innerHTML = `
       <div class="ph"><b>🗺️ Plan editor</b><span class="dim small">only you can edit; Otto can only wish</span><button data-a="close" title="Close (Esc)">✕</button></div>
+      ${editing ? `<div class="warnbox" style="background:#e4eefc;border-color:#a9c4ee">✏️ Editing <b>${esc(doc.name)}</b> (not where Otto is). Saving will not move him. <button data-a="backlive">Back to the live map</button></div>` : ''}
       ${(window.__mapMsg?.warnings || []).map((w) => `<div class="warnbox">⚠️ ${esc(w)}</div>`).join('')}
       <div class="sec"><label>Map <select id="pMap">${maps.map((m) => `<option ${m === doc.name ? 'selected' : ''}>${esc(m)}</option>`).join('')}${maps.includes(doc.name) ? '' : `<option selected>${esc(doc.name)} (unsaved)</option>`}</select></label>
         <div class="row"><button data-a="save" class="pri">💾 Save${dirty ? ' •' : ''}</button><button data-a="saveas">Save as…</button><button data-a="new">New</button><button data-a="load">Load</button></div>
         <div class="row"><button data-a="undo" ${undo.length ? '' : 'disabled'}>↶ Undo</button><button data-a="redo" ${redo.length ? '' : 'disabled'}>↷ Redo</button><span class="dim small">${doc.objects.length} objects · ${doc.n}×${doc.n} cells of ${doc.cell} m</span></div></div>
+      <details class="sec" ${doc.bounds || doc.exit ? 'open' : ''}><summary><b>Room settings</b> <span class="dim small">(for an interior map)</span></summary>
+        <div class="dim small">A room Otto can walk in: set the walkable rectangle (everything outside it is wall) and where he appears and leaves. Leave empty for an outdoor map.</div>
+        <div class="grid2">${['x0', 'z0', 'x1', 'z1'].map((k) => `<label>${k} <input data-r="${k}" type="number" step="0.5" value="${doc.bounds ? doc.bounds[k] : ''}" placeholder="none"></label>`).join('')}
+        ${['x', 'z'].map((k) => `<label>exit ${k} <input data-r="e${k}" type="number" step="0.5" value="${doc.exit ? doc.exit[k] : ''}" placeholder="none"></label>`).join('')}</div>
+        <div class="row"><button data-a="room" title="Walls at 8 m each way, the way out on the front side">Make it a 16 × 16 m room</button><button data-a="noroom">Clear</button></div></details>
       <div class="sec"><div class="row tools">${[['select', '☝ Select / move'], ['place', '➕ Place'], ['paint', '🖌 Ground']].map(([k, l]) => `<button data-a="tool" data-k="${k}" class="${tool === k ? 'on' : ''}">${l}</button>`).join('')}</div>
         <div class="row"><label>Snap <select id="pSnap">${[[0, 'off'], [0.5, '0.5 m'], [1, '1 m'], [2, '2 m'], [doc.cell, `cell (${doc.cell} m)`]].map(([v, l]) => `<option value="${v}" ${v === snap ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label>Turn <select id="pRot">${[15, 45, 90].map((v) => `<option ${v === rsnap ? 'selected' : ''}>${v}</option>`).join('')}</select>°</label></div>
@@ -87,6 +93,8 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <label>height y <input data-p="y" type="number" step="0.5" value="${s.y || 0}"></label><span></span>
         <label>door x <input data-p="dx" type="number" step="0.5" value="${s.door ? s.door[0] : ''}" placeholder="none"></label><label>door z <input data-p="dz" type="number" step="0.5" value="${s.door ? s.door[1] : ''}" placeholder="none"></label></div>
         <label>Otto's… <select data-p="placekey"><option value="">(nothing special)</option>${[['home', 'home'], ['clothing_store', 'shop'], ['gallery', 'gallery'], ['fuel_station', 'charging station'], ['plaza', 'plaza'], ['park', 'park'], ['pond', 'pond']].map(([k, l]) => `<option value="${k}" ${doc.places?.[k]?.object === s.id ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        ${s.door ? `<label>Interior (its inside) <select data-p="interior"><option value="">none: walls just fade when he goes in</option>${maps.filter((m) => m !== doc.name).map((m) => `<option ${m === s.interior ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label>
+        <div class="row"><button data-a="newint">➕ New interior for this</button><button data-a="editint" ${s.interior ? '' : 'disabled'}>✏️ Edit its inside</button></div>` : ''}
         <label class="row"><input type="checkbox" data-p="walkable" ${s.walkable ? 'checked' : ''}> walkable (no collision)</label>
         <label>tags <input data-p="tags" type="text" value="${esc((s.tags || []).join(', '))}" placeholder="bench, seat, park"></label>
         ${s.panel ? `<div class="grid2"><label>art w <input data-p="pw" type="number" step="0.1" value="${s.panel.w}"></label><label>art h <input data-p="ph" type="number" step="0.1" value="${s.panel.h}"></label></div><div class="dim small">Flat panels show Otto's newest pictures.</div>` : ''}</div>` : ''}
@@ -128,6 +136,11 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (a === 'saveas') { const n = (window.prompt('Name for this map (letters, numbers, spaces, - _):', doc.name) || '').trim(); if (n) { doc.name = n; save(); } }
     else if (a === 'new') { const n = (window.prompt('Name for the new, empty map:', 'my map') || '').trim(); if (n && (!dirty || window.confirm('Discard unsaved changes?'))) send({ type: 'map_new', name: n, n: 20 }); }
     else if (a === 'load') { const n = $('#pMap').value; if (n && n !== doc.name && (!dirty || window.confirm('Discard unsaved changes?'))) send({ type: 'map_load', name: n }); }
+    else if (a === 'backlive') { send({ type: 'get_map' }); }
+    else if (a === 'room') { commit(); doc.bounds = { x0: -8, z0: -8, x1: 8, z1: 8 }; doc.exit = { x: 0, z: 6 }; refresh(); }
+    else if (a === 'noroom') { commit(); delete doc.bounds; delete doc.exit; refresh(); }
+    else if (a === 'newint') { const o = objOf(sel); if (!o) return; const n = (window.prompt('Name for the inside map:', (o.name + ' inside').slice(0, 40)) || '').trim(); if (n) { commit(); o.interior = n; save(); send({ type: 'map_new', name: n, n: 8, interior: true, edit: true }); } }
+    else if (a === 'editint') { const o = objOf(sel); if (o && o.interior) { if (dirty && !window.confirm('Discard unsaved changes?')) return; send({ type: 'map_edit', name: o.interior }); } }
     else if (a === 'undo') doUndo(); else if (a === 'redo') doRedo();
     else if (a === 'tool') { tool = b.dataset.k; if (tool !== 'place') pick = null; applyTool(); render(); }
     else if (a === 'tile') { tile = b.dataset.k; render(); }
@@ -157,6 +170,8 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (t.id === 'pFoot') { MV.setOverlay('foot', t.checked); }
     else if (t.id === 'pWalk') { MV.setOverlay('walk', t.checked); }
     else if (t.id === 'pLook') { applyLook(t.value); }
+    else if (t.dataset.r) { commit(); const k = t.dataset.r, v = t.value === '' ? null : +t.value; doc.bounds = doc.bounds || { x0: -8, z0: -8, x1: 8, z1: 8 }; doc.exit = doc.exit || { x: 0, z: 6 };
+      if (k[0] === 'e') { if (v !== null) doc.exit[k[1]] = v; } else if (v !== null) doc.bounds[k] = v; refresh(); }
     else if (t.dataset.p && sel) editProp(t);
   });
   el.addEventListener('input', (e) => { if (e.target.id === 'pName') pickName = e.target.value; if (e.target.id === 'pQ') { q = e.target.value; limit = 48; paintPalette(); } });
@@ -173,6 +188,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         doc.places[t.value] = { label: L, object: s.id, aliases: [L], enter: !!s.door && ['home', 'clothing_store', 'gallery'].includes(t.value) }; }
     }
     else if (p === 'about') { if (t.value.trim()) s.about = t.value.slice(0, 160); else delete s.about; }
+    else if (p === 'interior') { if (t.value) s.interior = t.value; else delete s.interior; }
     else if (p === 'name') s.name = t.value.slice(0, 60) || s.name;
     else if (p === 'tags') s.tags = t.value.split(',').map((x) => x.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')).filter(Boolean).slice(0, 12);
     else if (p === 'pw' && s.panel) s.panel.w = Math.max(0.3, n); else if (p === 'ph' && s.panel) s.panel.h = Math.max(0.3, n);
@@ -180,8 +196,8 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
   }
   function turn(dir) { const s = objOf(sel); if (!s) return; commit(); s.rot = (((s.rot + dir * rsnap) % 360) + 360) % 360; refresh(); }
   function delSel() { if (!sel) return; commit(); doc.objects = doc.objects.filter((o) => o.id !== sel); sel = null; refresh(); }
-  let awaitingSave = false;
-  function save() { awaitingSave = true; setTimeout(() => { awaitingSave = false; }, 4000); send({ type: 'map_save', doc: doc, use: true }); }
+  let awaitingSave = false, editing = false;
+  function save() { awaitingSave = true; setTimeout(() => { awaitingSave = false; }, 4000); send({ type: 'map_save', doc: doc, use: !editing }); }
 
   // ---------------------------------------------------------------- events: the 3D view
   function worldAt(e) {
@@ -281,7 +297,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
   }
   return {
     get open() { return open; }, close, openEd,
-    onMap(m) { maps = m.maps || maps; if (open) { const f = awaitingSave; awaitingSave = false; loadFromMsg(m, f); if (doc) { MV.doc = doc; MV.sync(); MV.updateColliders(); MV.rebuildOverlays(); MV.nav = m.nav; } render(); } },
+    onMap(m) { maps = m.maps || maps; editing = !!m.edit; if (open) { const f = awaitingSave; awaitingSave = false; loadFromMsg(m, f); if (doc) { MV.doc = doc; MV.sync(); MV.updateColliders(); MV.rebuildOverlays(); MV.nav = m.nav; } render(); } },
     assetsData(m) {
       rows = m.rows || []; byKit = new Map(); for (const r of rows) { if (!byKit.has(r.pack)) byKit.set(r.pack, []); byKit.get(r.pack).push(r); }
       if (!byKit.has(kit)) kit = [...byKit.keys()][0]; if (open) render();

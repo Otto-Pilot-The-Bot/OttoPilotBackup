@@ -114,3 +114,12 @@ He starts with $50.00. The bank building, its cash machine and the sign were pla
 Every object in his NEARBY line now comes with a short description ("your charging station: recharge your battery here"). It is worked out from
 the object's tags and place; to say it in your own words, select the object in the Plan editor and fill in **About it** (up to 160 characters).
 Your text always wins. He can also look at an object (`observe` with its name or #id) to hear what it is and what he can do with it.
+
+## Interiors (foundation)
+
+A building with a door can have an **interior**: another map that is the inside of it. In the Plan editor, select the building, then under
+**Interior** pick a map or press **New interior for this**; **Edit its inside** opens that map for editing without moving Otto (a blue banner
+says so; **Back to the live map** returns). In an interior map, **Room settings** set the walkable rectangle (everything outside is wall) and the
+exit point where he appears and leaves. When Otto goes into a building that has an interior, the page switches to that map (camera modes still work);
+`move_to exit` takes him back out at the building's door. Buildings with no interior behave as before (walls fade). Nothing is built into interior
+maps yet; fill them in the Plan editor, or add a room modelled in Blender as a single object.

@@ -468,7 +468,7 @@ const TRAFFIC = createTraffic({ scene });
 let pathQ = [], pathSig = '', rideAnim = null, lastRideTick = -1, lastHonk = -1, fadedNow = null;
 let beepCtx = null;
 function honk() { try { beepCtx = beepCtx || new (window.AudioContext || window.webkitAudioContext)(); for (const t of [0, 0.32]) { const o = beepCtx.createOscillator(), g = beepCtx.createGain(); o.type = 'square'; o.frequency.value = 340; g.gain.value = 0.05; o.connect(g); g.connect(beepCtx.destination); o.start(beepCtx.currentTime + t); o.stop(beepCtx.currentTime + t + 0.22); } } catch (_) { /* no audio */ } }
-let forcedHour = null, mapActive = false, mapSeen = false;
+let forcedHour = null, mapActive = false, mapSeen = false, lastMapName = null;
 function applyLook(name) {
   const L = MV.setLook(name); window.__look = MV.look;
   for (const o of groundParts) o.visible = !L.hideGrass;
@@ -529,6 +529,8 @@ function onMap(m) {
     const q = new URLSearchParams(location.search).get('look'); applyLook(q || MV.look);
     if (m.doc.n * m.doc.cell / 2 !== curHalf) { buildGround(m.doc.n * m.doc.cell / 2); if (!mapSeen) { mapSeen = true; resetCamera(); } }
     applyLook(MV.look);
+    if (lastMapName !== null && lastMapName !== m.doc.name) resetCamera();       // he went into (or out of) a building with an interior: look at the new place
+    lastMapName = m.doc.name;
   }
   window.__mapMsg = m; EDITOR?.onMap?.(m); updateInsideFade();
 }

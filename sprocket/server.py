@@ -35,6 +35,14 @@ async def serve(agent, runner, interval=None):
             clients.discard(ws)
 
     agent.listeners.append(push)
+    seen_rev = [getattr(agent, "map_rev", 0)]
+
+    def _watch_map(ev):                                  # he walked into a building that has an interior (or back out): the page must switch maps too
+        r = getattr(agent, "map_rev", 0)
+        if r != seen_rev[0]:
+            seen_rev[0] = r
+            push(map_msg())
+    agent.listeners.append(_watch_map)
 
     async def ws_handler(request):
         if request.headers.get("Origin") and not re.match(rf"^https?://(127\.0\.0\.1|localhost):{config.PORT}$", request.headers["Origin"]):
@@ -68,6 +76,19 @@ async def serve(agent, runner, interval=None):
             "SELECT id,fit,name FROM assets WHERE usable=1 AND pack='Car Kit' AND name IN ('sedan','taxi','van','hatchback-sports','suv') ORDER BY name")]
         return {"type": "map", "doc": d, "bright": bright, "nav": nav, "traffic": cars, "warnings": maplib.ACTIVE.get("warnings", []), "maps": maplib.list_maps(), "active": agent.db.get("active_map"), "rev": getattr(agent, "map_rev", 0)}
 
+    def map_edit_msg(name):
+        """A map to EDIT while Otto stays where he is (an interior, say). It is built the same way, then the live map is put back."""
+        doc = maplib.load(name)
+        prev = maplib.ACTIVE["doc"]
+        maplib.activate(doc)
+        try:
+            msg = map_msg()
+        finally:
+            if prev:
+                maplib.activate(prev)
+        msg["edit"] = True
+        return msg
+
     def map_handle(t, m, ws):
         """Map editing. HUMAN ONLY: these messages come from the page's Plan editor; no model tool can reach maplib's writers."""
         db = agent.db
@@ -75,6 +96,10 @@ async def serve(agent, runner, interval=None):
             if t == "get_map":
                 if ws is not None:
                     asyncio.ensure_future(_send(ws, json.dumps(map_msg())))
+                return
+            if t == "map_edit":
+                if ws is not None:
+                    asyncio.ensure_future(_send(ws, json.dumps(map_edit_msg(str(m.get("name", ""))))))
                 return
             if t == "map_load":
                 maplib.load(str(m.get("name", "")))
@@ -84,11 +109,21 @@ async def serve(agent, runner, interval=None):
                 if m.get("use", True):
                     agent.load_map(doc["name"])
                 db.control(f"map saved: {doc['name']} ({len(doc['objects'])} objects)")
-                toast(f"Saved map '{doc['name']}'.")
+                toast(f"Saved map '{doc['name']}'." + ("" if m.get("use", True) else " Otto stays where he is."))
+                if not m.get("use", True) and ws is not None:                 # editing a map he is not in: keep showing it
+                    asyncio.ensure_future(_send(ws, json.dumps(map_edit_msg(doc["name"]))))
+                    return
             elif t == "map_new":
                 nm = str(m.get("name", "")).strip()
-                doc = maplib.save(maplib.blank(nm, int(m.get("n", 20))), db)
-                agent.load_map(doc["name"]); db.control(f"map created: {nm}")
+                new = maplib.blank(nm, int(m.get("n", 20)))
+                if m.get("interior"):                                           # a room: walls at +-8 m, the way in/out on the front (+z) side
+                    new["bounds"] = {"x0": -8, "z0": -8, "x1": 8, "z1": 8}; new["exit"] = {"x": 0, "z": 6}
+                doc = maplib.save(new, db)
+                db.control(f"map created: {nm}")
+                if m.get("edit") and ws is not None:                            # open it for editing without moving Otto
+                    asyncio.ensure_future(_send(ws, json.dumps(map_edit_msg(doc["name"]))))
+                    return
+                agent.load_map(doc["name"])
             elif t == "map_city":
                 from . import city as citylib
                 doc = citylib.ensure(db, force=True); agent.load_map(doc["name"]); db.control("city map generated"); toast("City map generated and loaded.")
@@ -101,7 +136,7 @@ async def serve(agent, runner, interval=None):
 
     def handle(m, ws=None):
         t, s, db = m.get("type"), agent.state, agent.db
-        if t in ("get_map", "map_load", "map_save", "map_new", "map_starter", "map_city") and config.MAPS_ENABLED:
+        if t in ("get_map", "map_edit", "map_load", "map_save", "map_new", "map_starter", "map_city") and config.MAPS_ENABLED:
             return map_handle(t, m, ws)
         if t in ("place_object", "place_design") and config.MAPS_ENABLED:
             return toast("Placing now happens in the Plan editor (the 🗺️ Plan button, bottom left).", False)
