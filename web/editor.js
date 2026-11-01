@@ -12,7 +12,7 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 
 export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign, applyLook }) {
   let open = false, doc = null, rows = [], byKit = new Map(), maps = [], active = '', dirty = false;
-  let pickRot = 0, pickY = 0, autoY = true, ghostY = 0;
+  let pickName = '', pickRot = 0, pickY = 0, autoY = true, ghostY = 0;
   let tool = 'select', sel = null, pick = null, tile = 'r', snap = 1, rsnap = 15, kit = 'Space Kit', q = '', cat = '', limit = 48, drag = null, painting = false;
   const undo = [], redo = [];
   const ndc = new THREE.Vector2(), ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
@@ -49,7 +49,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
   }
   function addObject(r, x, z) {
     commit(); const d = defaults(r), id = nextId(), y = autoY ? ghostY : pickY;
-    doc.objects.push({ id, asset: r.file, aid: r.id, fit: r.fit, kit: r.pack, name: r.name, x, z, rot: pickRot, scale: 1, ...d, ...(y > 0 ? { y } : {}) });
+    doc.objects.push({ id, asset: r.file, aid: r.id, fit: r.fit, kit: r.pack, name: (pickName.trim() || r.name).slice(0, 60), x, z, rot: pickRot, scale: 1, ...d, ...(y > 0 ? { y } : {}) });
     sel = id; refresh(); return id;
   }
 
@@ -77,7 +77,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <div class="row"><label>Look <select id="pLook">${Object.entries(LOOKS).map(([k, v]) => `<option value="${k}" ${k === MV.look ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select></label></div>
         <div class="dim small">The ground look is not decided yet: A/B/C are previews. Lighting follows the day/night cycle.</div></div>
       ${tool === 'paint' ? `<div class="sec"><b>Ground</b><div class="row">${Object.entries(TILE_NAMES).map(([k, n]) => `<button data-a="tile" data-k="${k}" class="tilebtn ${tile === k ? 'on' : ''}"><i style="background:${tileSw[k]}"></i>${n}</button>`).join('')}</div><div class="dim small">Click or drag on the map. Water cannot be walked; roads and paths are preferred by Otto.</div></div>` : ''}
-      ${s ? `<div class="sec"><label><b>Name</b> <input data-p="name" type="text" value="${esc(s.name)}" maxlength="60"></label> <span class="dim small">#${s.id} · ${esc(s.kit)}</span>
+      ${s ? `<div class="sec"><label><b>Name</b> <input data-p="name" type="text" value="${esc(s.name)}" maxlength="60" placeholder="e.g. Otto's computer"></label> <span class="dim small">#${s.id} · ${esc(s.kit)}</span>
         <div class="row"><button data-a="rot" data-d="-1">⟲</button><button data-a="rot" data-d="1">⟳</button><button data-a="dup">Duplicate</button><button data-a="del" class="warn">🗑 Delete</button></div>
         <div class="grid2"><label>x <input data-p="x" type="number" step="0.5" value="${s.x}"></label><label>z <input data-p="z" type="number" step="0.5" value="${s.z}"></label>
         <label>turn ° <input data-p="rot" type="number" step="15" value="${s.rot}"></label><label>scale <input data-p="scale" type="number" step="0.1" min="0.2" max="6" value="${s.scale}"></label>
@@ -90,7 +90,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         ${s.panel ? `<div class="grid2"><label>art w <input data-p="pw" type="number" step="0.1" value="${s.panel.w}"></label><label>art h <input data-p="ph" type="number" step="0.1" value="${s.panel.h}"></label></div><div class="dim small">Flat panels show Otto's newest pictures.</div>` : ''}</div>` : ''}
       ${giftPics().length ? `<div class="sec"><b>Pictures you gave Otto</b> <span class="dim small">(flat panels)</span><div class="row">${giftPics().map((g) => `<button data-a="gift" data-id="${g.id}" title="Put this picture on a flat panel">🖼 ${esc(g.name)}</button>`).join('')}</div></div>` : ''}
       <div class="sec"><b>Models</b>${pick ? ` <span class="dim small">placing: ${esc(pick.name)}</span>` : ''}
-        ${tool === 'place' && pick ? `<div class="row"><span>Turn before placing</span><button data-a="prot" data-d="-1" title="Turn left (Shift+R)">⟲</button><b>${pickRot}°</b><button data-a="prot" data-d="1" title="Turn right (R)">⟳</button></div>
+        ${tool === 'place' && pick ? `<div class="row"><label>Name it <input id="pName" type="text" maxlength="60" placeholder="${esc(pick.name)} (e.g. Otto's computer)" value="${esc(pickName)}" style="width:190px"></label></div><div class="row"><span>Turn before placing</span><button data-a="prot" data-d="-1" title="Turn left (Shift+R)">⟲</button><b>${pickRot}°</b><button data-a="prot" data-d="1" title="Turn right (R)">⟳</button></div>
         <div class="row"><label><input type="checkbox" id="pAuto" ${autoY ? 'checked' : ''}> sit on top of whatever is under the cursor (roofs, shelves)</label></div>
         <div class="row"><label>${autoY ? 'extra' : ''} height <input id="pY" type="number" step="0.5" min="0" max="30" value="${pickY}" style="width:70px"> m</label></div>` : ''}
         <div class="row"><select id="pKit"><optgroup label="Core">${kl.core.map(opt).join('')}</optgroup><optgroup label="Supporting">${kl.sup.map(opt).join('')}</optgroup><optgroup label="Other kits (ask before using)">${kl.rest.map(opt).join('')}</optgroup></select></div>
@@ -156,7 +156,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (t.id === 'pLook') { applyLook(t.value); }
     else if (t.dataset.p && sel) editProp(t);
   });
-  el.addEventListener('input', (e) => { if (e.target.id === 'pQ') { q = e.target.value; limit = 48; paintPalette(); } });
+  el.addEventListener('input', (e) => { if (e.target.id === 'pName') pickName = e.target.value; if (e.target.id === 'pQ') { q = e.target.value; limit = 48; paintPalette(); } });
 
   function editProp(t) {
     const s = objOf(sel), p = t.dataset.p; if (!s) return; commit();

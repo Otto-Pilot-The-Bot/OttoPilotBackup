@@ -46,6 +46,8 @@ ACTIONS = [
          fx={"boredom": -3}, v=0.25, anim="Idle", verb="looked closely at the {name}", imp=1),
     dict(id="tend", label="tend to it", tags={"plant", "flower", "garden", "tree"}, where="outside", why="to help it grow",
          fx={"creativity": 4, "boredom": -4}, v=0.5, anim="Yes", verb="tended to the {name}", imp=1),
+    dict(id="use_computer", label="use the computer", tags={"computer", "screen", "terminal"}, where="outside", why="to look things up or write something",
+         fx={"boredom": -8, "creativity": 6}, v=0.5, anim="Yes", verb="used the {name}", imp=1),
     dict(id="pet", label="say hello and pet it", tags={"animal", "pet", "cat", "dog"}, where="outside", why="because it is friendly",
          fx={"boredom": -6}, v=0.8, anim="Wave", verb="said hello to the {name}", imp=2),
 ]
