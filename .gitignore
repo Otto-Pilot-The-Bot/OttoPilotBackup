@@ -19,8 +19,8 @@ site/
 site_dryrun/
 
 # third-party model packs (license unknown; not mine to redistribute)
-assets/
-assests/
+assets/kenney/
+assets/_unused/
 
 # read-only reference clone of another project
 reference/

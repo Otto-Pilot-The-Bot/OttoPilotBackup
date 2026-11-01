@@ -1,3 +1,5 @@
+> **CANCELLED for now.** The isometric city view is parked in `unused/city/` (not served, not loaded).
+
 # Otto in the city: Stage 1 plan (robot from TheFollowerCity)
 
 Source (read-only, `reference/city`, commit 302c013 "Add robot character to People assets"): `src/assets/people.js` `robot()`, registered in `src/registry.js` as People "Robot", "Robot 2", "Robot 3" (`{scale 4.2, oy 120, dirs: true, anim: true}`).

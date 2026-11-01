@@ -84,14 +84,9 @@ ASSET_DIRS = ("assets/kenney",)      # assets/_unused is never indexed
 KIT_ENABLED = False                      # the old procedural building/prop generators (web/kit/gens.js): off, see STYLE.md
 ASSET_MAX_BYTES = 25_000_000
 ASSET_MAX_TRIS = 12_000
-ASSET_KEEP_RANGE = (0.4, 6.0)            # models whose longest side is in this range keep their native scale (kit pieces still fit together)
-ASSET_TARGET_BY_TAG = {"animal": 1.6, "celestial": 3.0}   # oversized models with these tags are scaled to this size instead
 ROBOT_HEIGHT = 1.7                       # Otto's height in world units (the 3D robot is scaled to this)
 # Packs whose models look tiny next to Otto get a uniform scale-up (pieces of one pack keep fitting together).
-ASSET_PACK_SCALE = {"Building Kit": 2.1, "Misc Builds": 2.1, "Space Habitat Kit": 1.5, "Sci-fi Pack": 1.3}
 # Things with a known real-world size (longest side in world units; Otto is 1.7 tall). Matched on the lowercase file name; beats the pack scale.
-ASSET_SIZE_BY_NAME = {"motorcycle": 2.3, "vending": 1.9, "dollar": 0.8, "bicycle": 2.0, "scooter": 1.8, "car ": 4.2, "truck": 6.0, "bus": 9.0}
-ASSET_FIT_MIN, ASSET_FIT_MAX = 0.6, 5.0   # models outside that range are rescaled into this many world units
 BLOCKED_SITE_HOURS = 6                   # how long he remembers a site that refused him
 MAX_GOALS = 5                    # active goals kept at once (near-duplicates are merged)
 BUILD_WINDOW = (30, 3)           # at most 3 build actions (any stage) in any 30 ticks: builds are an occasional thing
@@ -186,3 +181,23 @@ NEW_INTEREST_ENERGY = 2.0                 # energy gained when a brand-new inter
 COLLECT_MIN_TICKS = 100          # at least this many ticks between two pick-ups
 COLLECT_PER_DAY = 2              # and at most this many per world day (144 ticks)
 COLLECT_WEIGHT, COLLECT_FIND_BONUS = 0.12, 0.15   # how much he feels like collecting (was 0.6 and +0.8)
+
+
+# World scale (STYLE.md: 1 unit = 1 meter). Kenney kits are drawn at different sizes, so a kit may carry one uniform correction (never a recolor).
+# Otto is ROBOT_HEIGHT tall. Values are filled in after measuring each kit against him (see tools/measure_kits.py).
+WORLD_CELL = 4.0           # one map cell is 4 m: city road tiles, modular space pieces and station modules all line up on it
+KIT_SCALE = {"City Kit - Roads": 4.0, "City Kit - Commercial": 4.0, "City Kit - Suburban": 4.0, "City Kit - Industrial": 4.0, "Road Pack": 4.0,
+             "Car Kit": 3.0, "Modular Space Kit": 1.0, "Space Station Kit": 4.0, "Space Kit": 2.0, "Nature Kit": 3.0, "Furniture Kit": 2.0, "Train Kit": 2.0}
+NAME_SCALE = [("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
+
+
+def kit_scale(kit, name):
+    import re as _re
+    for k, rx, sc in NAME_SCALE:
+        if k == kit and _re.search(rx, name, _re.I):
+            return sc
+    return KIT_SCALE.get(kit, 1.0)
+
+# used only for models you hand him as gifts (gifts.py)
+ASSET_KEEP_RANGE = (0.4, 6.0)
+ASSET_FIT_MIN, ASSET_FIT_MAX = 0.6, 5.0

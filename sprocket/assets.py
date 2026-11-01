@@ -122,8 +122,50 @@ def inspect(path):
     for r in (scenes[j.get("scene", 0)].get("nodes", []) if scenes else range(len(nodes))):
         walk(r, ident)
     size = [max(0.0, hi[k] - lo[k]) for k in range(3)] if seen else [1.0, 1.0, 1.0]
-    return {"size": size, "tris": tris, "anims": [a.get("name", f"anim{i}") for i, a in enumerate(j.get("animations", []))],
+    return {"lo": lo if seen else [0, 0, 0], "hi": hi if seen else [1, 1, 1], "size": size, "tris": tris, "anims": [a.get("name", f"anim{i}") for i, a in enumerate(j.get("animations", []))],
             "skins": bool(j.get("skins")), "bad_ext": sorted(bad), "extras": j.get("asset", {}).get("extras") or {}, "copyright": j.get("asset", {}).get("copyright", "")}
+
+
+# Tags guessed from names (editable later per map object). First matching rule wins for `cat`; every matching rule adds its tags.
+CAT_RULES = [
+    (r"\b(character|astronaut|alien|robot|person|man|woman|boy|girl|skin|npc)\b", "character", "character"),
+    (r"\b(road|street|path|track|rail|crossing|bridge|asphalt|pavement|sidewalk|intersection|roundabout|curve|ramp)\b", "road", "road"),
+    (r"\b(car|truck|van|bus|taxi|police|ambulance|sedan|suv|hatchback|kart|cart|vehicle|bike|motorcycle|scooter|rover|tractor|train|locomotive|wagon|tram|boat|ship|spaceship|craft|rocket|shuttle|speeder|ufo)\b", "vehicle", "vehicle"),
+    (r"\b(tree|pine|palm|oak|bush|shrub|hedge|grass|flower|plant|cactus|fern|mushroom|leaf|stump|log|bamboo)\b", "tree", "nature"),
+    (r"\b(rock|stone|boulder|cliff|hill|mountain|crystal)\b", "rock", "nature"),
+    (r"\b(bench|seat|sofa|couch|stool|chair|armchair)\b", "bench", "seat"),
+    (r"\b(charger|charging|battery|generator|reactor|power|solar|antenna|tower|pylon)\b", "charger", "power"),
+    (r"\b(ride|coaster|ferris|carousel|swing|slide|merry|roundabout|bumper|arcade)\b", "ride", "ride"),
+    (r"\b(shop|store|market|stand|kiosk|stall|vending|bakery|cafe|restaurant|diner)\b", "shop", "shop"),
+    (r"\b(building|house|home|cottage|hut|cabin|skyscraper|tower|garage|warehouse|factory|station|habitat|hangar|dome|module|castle|church|barn|silo|tent|apartment|hotel)\b", "building", "building"),
+    (r"\b(wall|floor|roof|window|door|corridor|stairs|stair|pillar|column|fence|gate|railing|ceiling|hull)\b", "structure", "structure"),
+]
+PROP_CAT = "prop"
+
+
+PACK_CAT = {"Car Kit": "vehicle", "Racing Kit": "vehicle", "Toy Car Kit": "vehicle", "Train Kit": "vehicle", "Watercraft Pack": "vehicle",
+            "Road Pack": "road", "City Kit - Roads": "road", "Blocky Characters": "character", "Mini Characters": "character", "Cube Pets": "character",
+            "Coaster Kit": "ride", "Nature Kit": "tree", "Mini Forest": "tree", "City Kit - Suburban": "building", "City Kit - Commercial": "building",
+            "City Kit - Industrial": "building", "Modular Buildings": "building", "Fantasy Town Kit": "building"}
+
+
+def category(name, pack):
+    """-> (cat, tags). The model name decides; the kit name only decides when the name says nothing."""
+    text = " ".join(_words(name))
+    hits = [(cat, tag) for rx, cat, tag in CAT_RULES if re.search(rx, text)]
+    if not hits and pack in PACK_CAT:
+        c = PACK_CAT[pack]
+        hits = [(c, next((t for _, cc, t in CAT_RULES if cc == c), c))]
+    if not hits:
+        return PROP_CAT, [PROP_CAT]
+    return hits[0][0], list(dict.fromkeys([h[0] for h in hits] + [h[1] for h in hits]))
+
+
+def door_guess(cat, tags, fw, fd):
+    """Best guess for where a visitor goes in: the middle of the front (+z) side, for things people can enter. Editable per object."""
+    if cat in ("building", "shop") or "building" in tags:
+        return 0.0, round(fd / 2, 2)
+    return None, None
 
 
 def tags_for(name, pack):
@@ -167,7 +209,7 @@ def _pack_name(folder_name):
     return n.strip()
 
 
-INDEX_VERSION = 3          # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
+INDEX_VERSION = 5          # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
 
 
 def scan(db, log=print):
@@ -179,7 +221,7 @@ def scan(db, log=print):
     for root in asset_dirs():
         for folder in sorted(p for p in root.iterdir() if p.is_dir()):
             pack = _pack_name(folder.name)
-            files = sorted(f for f in folder.rglob("*") if f.suffix.lower() == ".glb" and f.is_file())
+            files = sorted(f for f in folder.rglob("*") if f.suffix.lower() == ".glb" and f.is_file() )
             pi = pack_info(folder)
             n_usable = 0
             for f in files:
@@ -205,28 +247,25 @@ def scan(db, log=print):
                         usable, reason = 0, "terrain-sized (too large to place as an object)"
                 except Exception as e:
                     usable, reason = 0, f"unreadable: {str(e)[:80]}"
-                    meta = {"size": [1, 1, 1], "tris": 0, "anims": [], "extras": {}, "copyright": ""}
+                    meta = {"lo": [0, 0, 0], "hi": [1, 1, 1], "size": [1, 1, 1], "tris": 0, "anims": [], "extras": {}, "copyright": ""}
                 nat = max(meta["size"]) or 1.0
-                lo_k, hi_k = config.ASSET_KEEP_RANGE
-                fit = 1.0 if lo_k <= nat <= hi_k else (max(config.ASSET_FIT_MIN, min(config.ASSET_FIT_MAX, nat)) / nat if nat > 0 else 1.0)
-                tags = tags_for(name, pack)
-                if fit != 1.0:                                   # only extreme sizes: animals and planets get a believable size
-                    tgt = next((v for t, v in config.ASSET_TARGET_BY_TAG.items() if t in tags), None)
-                    fit = tgt / nat if tgt and nat > 0 else fit
-                fit *= config.ASSET_PACK_SCALE.get(pack, 1.0)    # world scale: buildings should tower over the robot, not match it
-                real = next((v for k, v in config.ASSET_SIZE_BY_NAME.items() if k in (name + " ").lower()), None)
-                if real and nat > 0:
-                    fit = real / nat                              # known real-world things (a motorcycle is about 2 m) ignore the pack scale
+                cat, ctags = category(name, pack)
+                tags = list(dict.fromkeys(ctags + tags_for(name, pack)))
+                fit = config.kit_scale(pack, name)               # STYLE.md: 1 unit = 1 m; only a per-kit/per-name correction, never a recolor
                 sx, sy, sz = meta["size"]
                 radius = max(0.4, max(sx, sz) * fit / 2)
+                lo, hi = meta["lo"], meta["hi"]
+                ox, oy, oz = -(lo[0] + hi[0]) / 2, -lo[1], -(lo[2] + hi[2]) / 2       # model units: puts the middle of the footprint on the spot, feet on the ground
+                fw, fd = round(sx * fit, 3), round(sz * fit, 3)
+                dxx, dzz = door_guess(cat, tags, fw, fd)
                 credit = (meta.get("copyright") or "")[:200] or (json.dumps(meta["extras"])[:200] if meta["extras"] else "")
                 vals = (pack, name, rel, json.dumps(tags), sx, sy, sz, meta["tris"], json.dumps(meta["anims"]), usable, reason, fit, radius,
-                        st.st_mtime, st.st_size, credit)
+                        st.st_mtime, st.st_size, credit, ox, oy, oz, fw, fd, dxx, dzz, cat)
                 if row:
-                    db.x("UPDATE assets SET pack=?,name=?,file=?,tags=?,sx=?,sy=?,sz=?,tris=?,anims=?,usable=?,reason=?,fit=?,radius=?,mtime=?,size_bytes=?,credit=? WHERE id=?", *vals, row["id"])
+                    db.x("UPDATE assets SET pack=?,name=?,file=?,tags=?,sx=?,sy=?,sz=?,tris=?,anims=?,usable=?,reason=?,fit=?,radius=?,mtime=?,size_bytes=?,credit=?,ox=?,oy=?,oz=?,fw=?,fd=?,door_x=?,door_z=?,cat=? WHERE id=?", *vals, row["id"])
                     updated += 1
                 else:
-                    db.x("INSERT INTO assets(pack,name,file,tags,sx,sy,sz,tris,anims,usable,reason,fit,radius,mtime,size_bytes,credit) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", *vals)
+                    db.x("INSERT INTO assets(pack,name,file,tags,sx,sy,sz,tris,anims,usable,reason,fit,radius,mtime,size_bytes,credit,ox,oy,oz,fw,fd,door_x,door_z,cat) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", *vals)
                     added += 1
                 if usable:
                     n_usable += 1
