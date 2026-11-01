@@ -38,6 +38,7 @@ Every kit is from Kenney (https://kenney.nl). License is checked against the Lic
 | Modular Space Kit | Kenney | CC0 | 40 |
 | Nature Kit | Kenney | CC0 | 329 |
 | Nature Kit (Classic) | Kenney | CC0 (License.txt checked) | 232 (converted from glTF+bin with tools/gltf_to_glb.py) |
+| Otto Props | Kenney (copies of Mini Arcade ticket-machine and Space Kit machine_generatorLarge, renamed Charger / Charging cabinet) | CC0 | 2 |
 | Pirate Kit | Kenney | CC0 | 72 |
 | Platformer Kit | Kenney | CC0 | 153 |
 | Prototype Kit | Kenney | CC0 | 145 |

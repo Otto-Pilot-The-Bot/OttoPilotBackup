@@ -197,9 +197,10 @@ KIT_SCALE = {
     # things drawn at about real size relative to a 1.7 m robot
     "Car Kit": 1.5, "Furniture Kit": 2.2, "Space Kit": 2.0, "Nature Kit": 3.0, "Nature Kit (Classic)": 3.0, "Mini Characters": 3.0, "Blocky Characters": 0.63,
     "Cube Pets": 0.5, "Food Kit": 0.35, "Blaster Kit": 0.8,
+    "Otto Props": 2.4,
     "Modular Space Kit": 1.0, "Modular Cave Kit": 1.0, "Modular Dungeon Kit": 1.0, "Coaster Kit": 1.0, "Toy Car Kit": 1.0, "Weapon Pack": 1.0, "Brick Kit": 1.0, "Marble Kit": 1.0,
 }
-NAME_SCALE = [("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
+NAME_SCALE = [("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
 
 
 def kit_scale(kit, name):
