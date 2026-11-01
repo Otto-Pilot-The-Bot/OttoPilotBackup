@@ -98,7 +98,7 @@ const PANELS = [
     } else if (thingsTab === 'logs') {
       tb.innerHTML = s.hobbies && s.hobbies.length ? s.hobbies.map((h) => `<div class="card"><div class="t">📒 ${esc(h.name)} <span class="chip">${h.n}</span></div>${h.entries.map((e) => `<div class="small" style="margin-top:3px">${esc(e.text)} <span class="dim">${ago(e.ts)}</span></div>`).join('')}</div>`).join('') : '<div class="empty">No logs yet. He starts them when he spots, collects or composes things.</div>';
     } else if (thingsTab === 'wear') {
-      const slots = [['hat', 'Hat'], ['goggles', 'Goggles'], ['scarf', 'Scarf'], ['antenna', 'Antenna'], ['body', 'Paint']];
+      const slots = [['hat', 'Hat'], ['scarf', 'Scarf'], ['antenna', 'Antenna'], ['body', 'Paint']];
       const fav = s.prefs.filter((p) => p.subject.endsWith(' color') && p.score > 0.3).slice(0, 5);
       tb.innerHTML = `<h3>Wearing now</h3>` + slots.map(([k, l]) => `<div class="card"><span class="sw" style="background:${esc(s.outfit[k] || 'transparent')}"></span>${l}: <span class="dim">${s.outfit[k] ? 'yes' : 'nothing'}</span></div>`).join('')
         + `<h3>Favorite colors</h3>${fav.length ? `<div class="chips">${fav.map((p) => `<span class="chip">${esc(p.subject.replace(' color', ''))}</span>`).join('')}</div>` : '<div class="empty">Still deciding.</div>'}`;

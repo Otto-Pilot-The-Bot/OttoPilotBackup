@@ -103,8 +103,8 @@ def _schemas(publish_enabled):
             {"item": {"type": "string", "description": "optional name"}}, []),
         _fn("interact_with", "Go to and interact with an object in the world by name or id. Use 'gallery' to look at your art.",
             {"object": {"type": "string"}}, ["object"]),
-        _fn("shop", "At the clothing store, wear an item in a color. item: hat, scarf, goggles, antenna, or paint (body).",
-            {"item": {"type": "string", "enum": ["hat", "scarf", "goggles", "antenna", "paint"]},
+        _fn("shop", "At the clothing store, wear an item in a color. item: hat, scarf, antenna, or paint (body).",
+            {"item": {"type": "string", "enum": ["hat", "scarf", "antenna", "paint"]},
              "color": {"type": "string", "description": "a color name like red, teal, gold"}}, ["item", "color"]),
         _fn("use", "Do something with a thing your human placed nearby: knock on a door, go inside, sit on a bench, recharge at the charging station, look at the art, honk a car horn, ride a car to another place (to=<place>), pet the cat... "
                    "Your prompt's 'YOU CAN DO HERE' line lists what is offered. You walk there first if needed.",
@@ -527,8 +527,8 @@ def shop(ctx, a):
     if r:
         return r
     item = str(a.get("item", "")).lower()
-    if item not in ("hat", "scarf", "goggles", "antenna", "paint"):
-        return out(False, "Items: hat, scarf, goggles, antenna, paint.")
+    if item not in ("hat", "scarf", "antenna", "paint"):
+        return out(False, "Items: hat, scarf, antenna, paint.")
     name, hexv = _color(a.get("color"))
     if not hexv:
         return out(False, f"Unknown color. Try: {', '.join(world.COLORS)}.")
