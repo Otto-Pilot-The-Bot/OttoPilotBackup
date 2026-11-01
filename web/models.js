@@ -48,6 +48,7 @@ function template(id, fit, url) {
             m.color.multiplyScalar(br);
             if (m.map && !m.emissiveMap) { m.emissiveMap = m.map; m.emissive = new THREE.Color(1, 1, 1); m.emissiveIntensity = Math.min(0.6, (br - 1) * 0.3); }
           }
+          if (m && m.isMeshStandardMaterial && m.metalnessMap && m.metalness > 0.3) m.metalness = 0.15;      // Meshy files: a metal map with no reflections to show renders near-black, so scale it right down
           if (m && m.isMeshStandardMaterial && !m.metalnessMap && m.metalness > 0.3) m.metalness = m.roughness >= 0.99 ? 0 : 0.3;   // metal with no reflections to show renders black; keep the base colours as authored
         }
       });

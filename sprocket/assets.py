@@ -212,7 +212,7 @@ def _pack_name(folder_name):
     return n.strip()
 
 
-INDEX_VERSION = 11          # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
+INDEX_VERSION = 14          # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
 
 
 def scan(db, log=print):
@@ -255,6 +255,10 @@ def scan(db, log=print):
                 nat = max(meta["size"]) or 1.0
                 cat, ctags = category(name, pack)
                 tags = list(dict.fromkeys(ctags + tags_for(name, pack)))
+                for k_, rx_, cat_, add_, rem_ in config.NAME_TAGS:           # things the file name cannot say (a casino is a building, a bookshelf is not holdable)
+                    if k_ == pack and re.search(rx_, name, re.I):
+                        cat = cat_ or cat
+                        tags = [t for t in dict.fromkeys(tags + add_) if t not in rem_] if cat != "building" else [t for t in dict.fromkeys(tags + add_) if t not in rem_]
                 fit = config.kit_scale(pack, name)               # STYLE.md: 1 unit = 1 m; only a per-kit/per-name correction, never a recolor
                 sx, sy, sz = meta["size"]
                 radius = max(0.4, max(sx, sz) * fit / 2)

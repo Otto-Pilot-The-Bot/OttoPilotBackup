@@ -86,7 +86,7 @@ MAPS_ENABLED = True                      # data-driven maps (sprocket/maps.py) r
 KIT_ENABLED = False                      # the old procedural building/prop generators (web/kit/gens.js): off, see STYLE.md
 ASSET_MAX_BYTES = 25_000_000
 ASSET_MAX_TRIS = 12_000
-ASSET_LIMITS = {"assets/meshy": (150_000_000, 600_000)}     # (max file bytes, max triangles) for folders that hold detailed AI-made models
+ASSET_LIMITS = {"assets/meshy": (150_000_000, 3_000_000)}     # (max file bytes, max triangles) for folders that hold detailed AI-made models
 ROBOT_HEIGHT = 1.7                       # Otto's height in world units (the 3D robot is scaled to this)
 # Packs whose models look tiny next to Otto get a uniform scale-up (pieces of one pack keep fitting together).
 # Things with a known real-world size (longest side in world units; Otto is 1.7 tall). Matched on the lowercase file name; beats the pack scale.
@@ -202,11 +202,19 @@ KIT_SCALE = {
     "Otto Props": 2.4,
     "Modular Space Kit": 1.0, "Modular Cave Kit": 1.0, "Modular Dungeon Kit": 1.0, "Coaster Kit": 1.0, "Toy Car Kit": 1.0, "Weapon Pack": 1.0, "Brick Kit": 1.0, "Marble Kit": 1.0,
 }
-NAME_SCALE = [("Meshy Buildings", r"^ottos house", 3.7), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
+NAME_SCALE = [("Meshy Buildings", r"^ottos casino", 5.0), ("Meshy Buildings", r"^ottos bank", 4.2), ("Meshy Buildings", r"^bookshelf", 0.6), ("Meshy Buildings", r"camera", 0.1), ("Meshy Buildings", r"^ottos house", 3.7), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
 
 
 # Per-model brightness (1.0 = as authored). Lifts a model whose texture is very dark; it multiplies the texture, it does not tint or change hues.
-NAME_BRIGHT = [("Meshy Buildings", r"^ottos house", 1.7)]
+NAME_BRIGHT = [("Meshy Buildings", r"^ottos house", 1.7), ("Meshy Buildings", r"^ottos casino", 2.2), ("Meshy Buildings", r"^ottos bank", 1.2)]
+
+
+# Per-model category/tags that the file name alone cannot tell us: (pack, name regex, category or None, tags to add, tags to remove)
+NAME_TAGS = [("Meshy Buildings", r"^ottos (bank|casino)", "building", ["building"], ["prop"]),
+             ("Meshy Buildings", r"^ottos bank", "building", ["bank", "money"], []),
+             ("Meshy Buildings", r"^ottos casino", "building", ["casino"], []),
+             ("Meshy Buildings", r"^bookshelf", "prop", ["shelf", "furniture", "books"], ["holdable", "building", "book"]),
+             ("Meshy Buildings", r"camera", "prop", ["camera", "holdable", "tool"], ["building"])]
 
 
 def kit_bright(kit, name):
