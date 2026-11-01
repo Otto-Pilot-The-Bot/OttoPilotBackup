@@ -98,6 +98,12 @@ def resolve_target(text, x, z, objects):
     for key, p in PLACES.items():
         if t == key or t.replace(" ", "_") == key or t == p["label"] or t in p["aliases"]:
             return {"label": p["label"], "kind": "place", "x": p["x"], "z": p["z"], "key": key, "id": None}
+    if config.MAPS_ENABLED:
+        from . import maps
+        mo = maps.find_object(t)
+        if mo:
+            sp = maps.approach_spot(mo, x, z)
+            return {"label": mo["name"].lower(), "kind": "object", "x": round(sp[0], 2), "z": round(sp[1], 2), "key": None, "id": None, "map_id": mo["id"]}
     if t.isdigit():
         for o in objects:
             if o["id"] == int(t):

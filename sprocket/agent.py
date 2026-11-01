@@ -681,6 +681,15 @@ class Agent:
         return cat
 
     # ---- prompt --------------------------------------------------------
+    def nearby_line(self, objs, near):
+        if config.MAPS_ENABLED:
+            from . import maps as _m
+            mo = [o for o in (_m.ACTIVE["doc"] or {"objects": []})["objects"] if o["name"] not in ("Road", "Street light") and not o.get("panel")]
+            mo.sort(key=lambda o: world.dist(self.state["x"], self.state["z"], o["x"], o["z"]))
+            return f"NEARBY (things your human placed; name or #id works with move_to): " + ("; ".join(f"#{o['id']} {o['name'][:24]} d={world.dist(self.state['x'], self.state['z'], o['x'], o['z']):.0f}" for o in mo[:8]) or "none yet")
+        return (f"NEARBY ({len(objs)} objects in the world): " + ("; ".join(f"#{o['id']} {o['name'][:22]} [{o['kind']}{', human' if o['source'] == 'user' else ''}] "
+                f"d={world.dist(self.state['x'], self.state['z'], o['x'], o['z']):.0f}" for o in near) or "none"))
+
     def build_prompt(self):
         s, db = self.state, self.db
         objs = self.objects()
@@ -721,8 +730,7 @@ class Agent:
              f"boredom {s['boredom']:.0f}/100" + (" (restless: try something new)" if s["boredom"] > 65 else ""),
              f"POSITION ({s['x']:.0f},{s['z']:.0f}). PLACES: {places}",
              f"AREAS (world {2 * world.half():.0f}x{2 * world.half():.0f}): {layout.zone_report(objs)}",
-             f"NEARBY ({len(objs)} objects in the world): " + ("; ".join(f"#{o['id']} {o['name'][:22]} [{o['kind']}{', human' if o['source'] == 'user' else ''}] "
-                                                                      f"d={world.dist(s['x'], s['z'], o['x'], o['z']):.0f}" for o in near) or "none"),
+             self.nearby_line(objs, near),
              f"WEARING: {outfit}",
              "GOALS: " + ("; ".join(f"#{g['id']} {g['text']}" for g in goals) or "none yet - consider setting one")]
         from . import affordances

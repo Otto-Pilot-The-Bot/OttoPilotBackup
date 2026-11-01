@@ -141,17 +141,19 @@ CAT_RULES = [
     (r"\b(wall|floor|roof|window|door|corridor|stairs|stair|pillar|column|fence|gate|railing|ceiling|hull)\b", "structure", "structure"),
 ]
 PROP_CAT = "prop"
+PROP_WORDS = r"\b(planter|driveway|fence|path|awning|overhang|parasol|detail|sign|light|pole|wires)\b"
 
 
 PACK_CAT = {"Car Kit": "vehicle", "Racing Kit": "vehicle", "Toy Car Kit": "vehicle", "Train Kit": "vehicle", "Watercraft Pack": "vehicle",
             "Road Pack": "road", "City Kit - Roads": "road", "Blocky Characters": "character", "Mini Characters": "character", "Cube Pets": "character",
-            "Coaster Kit": "ride", "Nature Kit": "tree", "Mini Forest": "tree", "City Kit - Suburban": "building", "City Kit - Commercial": "building",
-            "City Kit - Industrial": "building", "Modular Buildings": "building", "Fantasy Town Kit": "building"}
+            "Coaster Kit": "ride", "Nature Kit": "tree", "Mini Forest": "tree", "Modular Buildings": "building", "Fantasy Town Kit": "building"}
 
 
 def category(name, pack):
     """-> (cat, tags). The model name decides; the kit name only decides when the name says nothing."""
     text = " ".join(_words(name))
+    if re.search(PROP_WORDS, text) and not re.search(r"\b(building|house|shop|store)\b", text):
+        return PROP_CAT, [PROP_CAT]
     hits = [(cat, tag) for rx, cat, tag in CAT_RULES if re.search(rx, text)]
     if not hits and pack in PACK_CAT:
         c = PACK_CAT[pack]
@@ -209,7 +211,7 @@ def _pack_name(folder_name):
     return n.strip()
 
 
-INDEX_VERSION = 7          # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
+INDEX_VERSION = 8          # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
 
 
 def scan(db, log=print):

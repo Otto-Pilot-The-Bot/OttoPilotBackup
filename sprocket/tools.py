@@ -226,7 +226,7 @@ def move_to(ctx, a):
     if enter and not (tgt.get("key") and world.PLACES[tgt["key"]].get("enter")):
         return out(False, f"You cannot go inside {tgt['label']}. You can go inside: " +
                    ", ".join(p["label"] for p in world.PLACES.values() if p.get("enter")) + ".")
-    if s.get("inside") == tgt.get("key"):
+    if tgt.get("key") and s.get("inside") == tgt.get("key"):
         return out(True, f"You are already inside the {tgt['label']}.", 0.0, "Idle")
     if s.get("inside"):
         _exit(ctx)
@@ -489,6 +489,16 @@ def _use_poi(ctx, tgt):
 
 def interact_with(ctx, a):
     s = ctx.state
+    if config.MAPS_ENABLED:
+        from . import affordances as _aff, maps as _maps
+        mo = _maps.find_object(a.get("object", ""))
+        if mo:                                                   # things on the map are used through their affordances
+            acts = [x for x in _aff.applicable(s, mo) if x["id"] != "ride"]
+            want = str(a.get("action") or "").strip().lower()
+            pick = next((x for x in acts if x["id"] == want), None) or (acts[0] if acts else None)
+            if not pick:
+                return out(True, f"There is nothing more to do with the {_aff.label(mo)} right now.", 0.0, "Idle", noop=True)
+            return _aff.use(ctx, {"object": str(mo["id"]), "action": pick["id"]})
     tgt = world.resolve_target(a.get("object", ""), s["x"], s["z"], ctx.objects())
     if tgt and tgt.get("key") == "gallery":
         r = _approach(ctx, tgt, "look at the art", enter=True)
@@ -1159,6 +1169,14 @@ def make_music(ctx, a):
 def tend(ctx, a):
     s, db = ctx.state, ctx.db
     plants = [o for o in ctx.objects() if o["kind"] == "landscape" and any(k in o["name"].lower() for k in ("tree", "bush", "flower", "garden"))]
+    if not plants and config.MAPS_ENABLED:
+        from . import affordances as _aff
+        mp = [o for o in _aff.objects() if {"plant", "tree", "flower", "garden"} & set(o.get("tags") or []) and "tend" in [x["id"] for x in _aff.applicable(s, o)]]
+        if mp:
+            want = str(a.get("target") or "").strip().lower()
+            c = [o for o in mp if want and want in o["name"].lower()] or mp
+            o = min(c, key=lambda q: world.dist(s["x"], s["z"], q["x"], q["z"]))
+            return _aff.use(ctx, {"object": str(o["id"]), "action": "tend"})
     if not plants:
         return out(True, "You have no plants to tend yet. Put a tree, bush or flower bed in the world first (landscape).", 0.0, "Idle", noop=True)
     want = str(a.get("target") or "").strip().lower()

@@ -375,3 +375,28 @@ def walk(x, z, tx, tz, step):
             way.append((cx, cz)); return cx, cz, way, False
         left -= d; cx, cz = px, pz; way.append((cx, cz))
     return cx, cz, way, True
+
+
+def approach_spot(o, fx, fz):
+    """Where to stand to use an object: just outside its door, or just outside its edge on the side nearest (fx, fz)."""
+    d = door_world(o, 1.2) if o.get("door") else None
+    if d:
+        return nearest_walkable(*d) or d
+    ang = math.atan2(fz - o["z"], fx - o["x"]); r = max(abs(o["fw"]), abs(o["fd"])) * o["scale"] / 2 + 1.0
+    return nearest_walkable(o["x"] + math.cos(ang) * r, o["z"] + math.sin(ang) * r) or nearest_walkable(o["x"], o["z"]) or (o["x"], o["z"])
+
+
+def find_object(text):
+    """Map object by '#id' / id / name (exact, then contained). Roads and lights are ignored for name matches."""
+    doc = ACTIVE["doc"]
+    if not doc:
+        return None
+    t = str(text or "").strip().lower().lstrip("#")
+    if not t:
+        return None
+    objs = doc["objects"]
+    if t.isdigit():
+        return next((o for o in objs if o["id"] == int(t)), None)
+    t = re.sub(r"^#\d+\s*", "", t)
+    c = [o for o in objs if o["name"].lower() == t] or [o for o in objs if t in o["name"].lower() or o["name"].lower().replace("-", " ") in t.replace("-", " ")]
+    return c[0] if c else None
