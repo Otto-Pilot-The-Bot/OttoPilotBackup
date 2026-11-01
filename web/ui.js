@@ -16,6 +16,7 @@ const openPrev = new Set();
 let armedGift = 0;
 let confirmLive = false;
 let A = { data: null, tab: 'models', q: '', pack: '', page: 0, sel: null, pf: null, kitDesigns: {}, asked: false, count: -1 }, armedObj = 0;
+const mapObjOpts = () => { const d = window.__MV && window.__MV.doc; return d ? d.objects.filter((o) => !/^Road$|Street light|^Tree$/.test(o.name)).map((o) => `<option value="${o.id}">${esc(o.name)} · ${esc(o.kit)} (${Math.round(o.x)}, ${Math.round(o.z)})</option>`).join('') : ''; };
 let wishBanner = null, fulfilId = 0, assetFilter = '', pickedAsset = '';
 let thingsTab = 'world', browseFilter = 'all', draggingSpeed = false, killArmed = false, logRows = null, showLog = false;
 const gift = { kind: 'tree', color: '#43a047' };
@@ -174,6 +175,8 @@ const PANELS = [
       const b = e.target.closest('[data-w]'); if (!b) return; const a = b.dataset.w, id = +b.dataset.id;
       if (a === 'open') { fulfilId = id; const w = snap.wishes.find((x) => x.id === id); pickedAsset = w && w.asset_id ? String(w.asset_id) : ''; assetFilter = ''; refresh(true); }
       else if (a === 'cancel') { fulfilId = 0; refresh(true); }
+      else if (a === 'mapgrant') { const v = $('#wMapObj', el)?.value; if (!v) { wishBanner = { text: 'Choose the object you placed first.', ok: false, ts: Date.now() / 1000 }; refresh(true); return; } api.send({ type: 'wish_fulfil', id, map_obj: +v }); fulfilId = 0; }
+      else if (a === 'mappick') { api.startPlace({ pickMap: true, id }); closePanel(); toast('Click the object in the world that grants this wish · Esc to cancel', 6000); }
       else if (a === 'decline' || a === 'hide') { api.send({ type: 'wish_' + a, id }); if (fulfilId === id) fulfilId = 0; }
       else if (a === 'place' || a === 'click') {
         const asset = $('#wAsset', el)?.value || pickedAsset; if (!asset) { wishBanner = { text: 'Choose a model from the list first.', ok: false, ts: Date.now() / 1000 }; refresh(true); return; }
@@ -189,7 +192,10 @@ const PANELS = [
     const open = (s.wishes || []).filter((w) => w.status === 'open'), done = (s.wishes || []).filter((w) => w.status !== 'open');
     $('#wOpen', el).innerHTML = `<h3>Open wishes</h3>` + (open.length ? open.map((w) => `<div class="card"><div class="t">${esc(w.item)}</div><div class="small">${esc(w.reason)}</div>
         <div class="meta">${ago(w.ts)}${w.interest ? ` · <span class="chip">${esc(w.interest)}</span>` : ''}${w.asset_name ? ` · suggests <span class="chip">${esc(w.asset_name)}</span>` : ''}</div>
-        ${fulfilId === w.id ? `<div class="card" style="background:#fff8e8;margin-top:8px"><div class="small"><b>Choose a model</b></div><div class="field"><input type="text" id="wFilter" placeholder="search the library…" value="${esc(assetFilter)}"></div>
+        ${fulfilId === w.id && s.map && s.map.name ? `<div class="card" style="background:#fff8e8;margin-top:8px"><div class="small"><b>Which thing in his world is it?</b> You already placed it in the Plan editor; pick it so Otto is told.</div>
+          <select id="wMapObj" style="width:100%"><option value="">choose a placed object…</option>${mapObjOpts()}</select>
+          <div class="field"><button class="btn primary" data-w="mapgrant" data-id="${w.id}">This one</button><button class="btn" data-w="mappick" data-id="${w.id}">Click it in the world…</button><button class="btn" data-w="cancel" data-id="${w.id}">Cancel</button></div></div>`
+          : fulfilId === w.id ? `<div class="card" style="background:#fff8e8;margin-top:8px"><div class="small"><b>Choose a model</b></div><div class="field"><input type="text" id="wFilter" placeholder="search the library…" value="${esc(assetFilter)}"></div>
           <select id="wAsset" size="6" style="width:100%">${el._opts(s)}</select><div class="small" style="margin-top:6px"><b>Where?</b></div>
           <select id="wZone" style="width:100%"><option value="">Let the engine choose a fitting spot</option>${(s.zones || []).map((z) => `<option value="${z.key}">${esc(z.label)}</option>`).join('')}</select>
           <div class="field"><button class="btn primary" data-w="place" data-id="${w.id}">Place it</button><button class="btn" data-w="click" data-id="${w.id}">Click on the ground…</button><button class="btn" data-w="cancel" data-id="${w.id}">Cancel</button></div></div>`

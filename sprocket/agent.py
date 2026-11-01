@@ -407,13 +407,14 @@ class Agent:
         return {"description": clean(d.get("description"), 260) or f"It is {info}.", "reaction": clean(d.get("reaction"), 260) or "I am glad someone thought of me.",
                 "feeling": clean(d.get("feeling"), 12).lower(), "topics": [clean(t, 30) for t in (d.get("topics") or [])[:2] if clean(t, 30)]}
 
-    def wish_event(self, kind, w, obj_id=None):
+    def wish_event(self, kind, w, obj_id=None, where=None):
         """Your human answered a wish. Granted: he notices, goes to see it and reflects. Declined: a gentle memory, no repeated asking."""
         s, db = self.state, self.db
         notes = [n for n in s.get("wish_notes", []) if s["tick"] - n["tick"] <= 14]
         if kind == "granted":
-            notes.append({"tick": s["tick"], "text": f"YOUR WISH FOR \"{w['item']}\" WAS GRANTED: your human put it in the world. Go and see it, and write about how it feels."})
-            db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"My wish for {w['item']} was granted. It felt wonderful to be heard."[:200], 4)
+            at = f" It is the {where['name']} at about ({where['x']:.0f},{where['z']:.0f}); you can walk there with move_to \"{where['x']:.0f},{where['z']:.0f}\"." if where else ""
+            notes.append({"tick": s["tick"], "text": f"YOUR WISH FOR \"{w['item']}\" WAS GRANTED: your human put it in the world.{at} Go and see it, and write about how it feels."})
+            db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], (f"My wish for {w['item']} was granted: it is the {where['name']}. " if where else f"My wish for {w['item']} was granted. ") + "It felt wonderful to be heard.", 4)
             s["reflect_due"] = {"what": f"had a wish granted: {w['item']}", "detail": w["reason"][:120], "tick": s["tick"]}
             self.touch_interest(w.get("interest") or w["item"], 0.8, "wish granted")
         else:

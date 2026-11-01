@@ -564,6 +564,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => { downAt = [e.clientX
 renderer.domElement.addEventListener('pointerup', (e) => {
   if (CAM.mode === 'walk' || !placing || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
   ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
+  if (placing.pickMap) { const oid = MV.pick(ray); if (oid == null) { UI.toast('That is not one of the placed objects. Try again, or Esc.', 2500); return; } send({ type: 'wish_fulfil', id: placing.id, map_obj: oid }); cancelPlace(); UI.placed(); return; }
   const hit = ray.intersectObject(ground)[0]; if (!hit) return;
   const base = placing.design ? { type: 'place_design', ...placing.payload } : placing.move ? { type: 'object_move', id: placing.id, exact: placing.exact, snap: placing.snap }
     : placing.wish ? { type: 'wish_fulfil', ...placing } : { type: 'place_object', ...placing };

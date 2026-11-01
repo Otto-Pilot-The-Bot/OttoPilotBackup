@@ -293,12 +293,16 @@ async def serve(agent, runner, interval=None):
             db.x("UPDATE wishes SET status='declined', resolved_ts=?, notified=1 WHERE id=?", time.time(), w["id"])
             agent.wish_event("declined", w); db.control(f"wish declined #{w['id']}"); agent.save()
             return wish_result(f"Told Otto \"not now\" about \"{w['item']}\".", True)
-        if config.MAPS_ENABLED:                              # you place it yourself in the Plan editor; this just tells Otto the wish is granted
-            db.x("UPDATE wishes SET status='granted', resolved_ts=? WHERE id=?", time.time(), w["id"])
-            agent.wish_event("granted", w, None)
-            db.thought(s["tick"], "system", f"Your human granted a wish: {w['item']}.")
-            db.control(f"wish granted #{w['id']} (placed in the Plan editor)"); agent.save()
-            return wish_result(f"Granted! Place it yourself in the Plan editor (🗺️ Plan); Otto has been told \"{w['item']}\" is coming.", True)
+        if config.MAPS_ENABLED:                              # you placed it yourself in the Plan editor; pick which object it is so Otto is told
+            from . import maps as _maps
+            o = next((x for x in (_maps.ACTIVE["doc"] or {"objects": []})["objects"] if x["id"] == int(m.get("map_obj", 0) or 0)), None)
+            if not o:
+                return wish_result("Pick the object you placed for this wish (in the list, or click it in the world).", False)
+            db.x("UPDATE wishes SET status='granted', resolved_ts=?, asset_name=? WHERE id=?", time.time(), o["name"][:60], w["id"])
+            agent.wish_event("granted", w, None, where=o)
+            db.thought(s["tick"], "system", f"Your human granted a wish: {w['item']} (it is the {o['name']} at {o['x']:.0f},{o['z']:.0f}).")
+            db.control(f"wish granted #{w['id']} -> map object #{o['id']} {o['name']}"); agent.save()
+            return wish_result(f"Granted! Otto has been told that \"{w['item']}\" is the {o['name']}.", True)
         aid = m.get("asset") or w["asset_id"]
         row = db.one("SELECT id,name,tags FROM assets WHERE id=? AND usable=1", int(aid)) if str(aid or "").isdigit() else None
         if not row:
