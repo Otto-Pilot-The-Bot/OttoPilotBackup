@@ -126,8 +126,8 @@ INTEREST_MIN = 0.35              # below this an interest has faded away
 MAX_INTERESTS = 12
 MIN_TICKS_BETWEEN_TUNES = 10
 TEND_COOLDOWN = 20               # per plant
-MAX_FINDS = 2                    # small found objects lying around at once
-FIND_SPAWN_CHANCE = 0.03         # per tick
+MAX_FINDS = 0                         # no collectible finds (glass beads, feathers...): you place everything yourself
+FIND_SPAWN_CHANCE = 0.0
 BUILD_REASON_MIN = 12            # characters
 
 # --- memory recall (local embeddings via Ollama; no cloud) ---

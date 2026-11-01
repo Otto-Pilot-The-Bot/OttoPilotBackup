@@ -557,6 +557,10 @@ class Agent:
         """Small found objects (pebbles, feathers, shells...) turn up around the world for him to collect."""
         db, s = self.db, self.state
         finds = db.q("SELECT id FROM objects WHERE kind='find' ORDER BY id")
+        if config.MAX_FINDS <= 0:
+            if finds:
+                db.x("DELETE FROM objects WHERE kind='find'")
+            return
         if len(finds) >= config.MAX_FINDS:
             if random.random() < 0.08:
                 db.x("DELETE FROM objects WHERE id=?", finds[0]["id"])
