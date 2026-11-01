@@ -73,7 +73,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <label>Turn <select id="pRot">${[15, 45, 90].map((v) => `<option ${v === rsnap ? 'selected' : ''}>${v}</option>`).join('')}</select>°</label></div>
         <div class="row"><label><input type="checkbox" id="pFoot" ${MV.overlays.foot ? 'checked' : ''}> footprints &amp; doors</label><label><input type="checkbox" id="pWalk" ${MV.overlays.walk ? 'checked' : ''}> blocked (last save)</label></div>
         <div class="row"><label>Look <select id="pLook">${Object.entries(LOOKS).map(([k, v]) => `<option value="${k}" ${k === MV.look ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select></label></div>
-        <div class="dim small">Ground and lighting are not decided yet: A/B/C are previews only.</div></div>
+        <div class="dim small">The ground look is not decided yet: A/B/C are previews. Lighting follows the day/night cycle.</div></div>
       ${tool === 'paint' ? `<div class="sec"><b>Ground</b><div class="row">${Object.entries(TILE_NAMES).map(([k, n]) => `<button data-a="tile" data-k="${k}" class="tilebtn ${tile === k ? 'on' : ''}"><i style="background:${tileSw[k]}"></i>${n}</button>`).join('')}</div><div class="dim small">Click or drag on the map. Water cannot be walked; roads and paths are preferred by Otto.</div></div>` : ''}
       ${s ? `<div class="sec"><label><b>Name</b> <input data-p="name" type="text" value="${esc(s.name)}" maxlength="60"></label> <span class="dim small">#${s.id} · ${esc(s.kit)}</span>
         <div class="row"><button data-a="rot" data-d="-1">⟲</button><button data-a="rot" data-d="1">⟳</button><button data-a="dup">Duplicate</button><button data-a="del" class="warn">🗑 Delete</button></div>

@@ -88,6 +88,9 @@ async def serve(agent, runner, interval=None):
                 nm = str(m.get("name", "")).strip()
                 doc = maplib.save(maplib.blank(nm, int(m.get("n", 20))), db)
                 agent.load_map(doc["name"]); db.control(f"map created: {nm}")
+            elif t == "map_city":
+                from . import city as citylib
+                doc = citylib.ensure(db, force=True); agent.load_map(doc["name"]); db.control("city map generated"); toast("City map generated and loaded.")
             elif t == "map_starter":
                 doc = starterlib.ensure(db, force=True); agent.load_map(doc["name"]); db.control("starter map regenerated")
                 toast("Starter map regenerated.")
@@ -97,7 +100,7 @@ async def serve(agent, runner, interval=None):
 
     def handle(m, ws=None):
         t, s, db = m.get("type"), agent.state, agent.db
-        if t in ("get_map", "map_load", "map_save", "map_new", "map_starter") and config.MAPS_ENABLED:
+        if t in ("get_map", "map_load", "map_save", "map_new", "map_starter", "map_city") and config.MAPS_ENABLED:
             return map_handle(t, m, ws)
         if t in ("place_object", "place_design") and config.MAPS_ENABLED:
             return toast("Placing now happens in the Plan editor (the 🗺️ Plan button, bottom left).", False)

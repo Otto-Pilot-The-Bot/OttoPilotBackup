@@ -3,11 +3,11 @@
 import * as THREE from 'three';
 import { buildDesign } from './models.js';
 
-// Three ground/lighting options (UNDECIDED, see STYLE.md). They only change flat tile colours and the light, never the models.
+// Three ground options (UNDECIDED, see STYLE.md). They only change flat tile colours, never the models. Lighting follows the day/night cycle.
 export const LOOKS = {
-  A: { label: 'A · Soft tiles, bright day', hour: 11, hideGrass: true, tiles: { g: 0xa8d08a, p: 0xe9dfc6, r: 0x5b6270, t: 0xdccfa9, w: 0x6db4d6, s: 0xeedca8, d: 0xb78f68 } },
-  B: { label: 'B · Grass field, golden afternoon', hour: 16.6, hideGrass: false, tiles: { p: 0xd8cdb0, r: 0x4f545e, t: 0xcdb98d, w: 0x5aa3c6, s: 0xe3cf98, d: 0x9a7a55 } },
-  C: { label: 'C · Dusk, glowing night town', hour: 21.3, hideGrass: true, tiles: { g: 0x27402f, p: 0x41445c, r: 0x23252f, t: 0x4a4a58, w: 0x1d4a78, s: 0x59553f, d: 0x3a2f2c } },
+  A: { label: 'A · Soft pastel tiles', hideGrass: true, tiles: { g: 0xa8d08a, p: 0xe9dfc6, r: 0x5b6270, t: 0xdccfa9, w: 0x6db4d6, s: 0xeedca8, d: 0xb78f68 } },
+  B: { label: 'B · Grass field', hideGrass: false, tiles: { p: 0xd8cdb0, r: 0x4f545e, t: 0xcdb98d, w: 0x5aa3c6, s: 0xe3cf98, d: 0x9a7a55 } },
+  C: { label: 'C · Dark ground', hideGrass: true, tiles: { g: 0x27402f, p: 0x41445c, r: 0x23252f, t: 0x4a4a58, w: 0x1d4a78, s: 0x59553f, d: 0x3a2f2c } },
 };
 export const TILE_NAMES = { g: 'grass', p: 'plaza', r: 'road', t: 'path', w: 'water', s: 'sand', d: 'dirt' };
 
@@ -37,7 +37,7 @@ export function createMapView({ scene, art, onReady }) {
       const mat = new THREE.MeshStandardMaterial({ color: L.tiles[t] ?? 0x888888, roughness: 0.95, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
         ...(t === 'w' ? { roughness: 0.25, metalness: 0.05, transparent: true, opacity: 0.9 } : {}) });
       const im = new THREE.InstancedMesh(geo, mat, cells.length); im.receiveShadow = true;
-      cells.forEach(([i, j], k) => { m4.makeTranslation(-half + (i + 0.5) * cell, t === 'w' ? 0.015 : 0.03, -half + (j + 0.5) * cell); im.setMatrixAt(k, m4); });
+      cells.forEach(([i, j], k) => { m4.makeTranslation(-half + (i + 0.5) * cell, t === 'w' ? 0.015 : t === 'r' ? -0.02 : 0.03, -half + (j + 0.5) * cell); im.setMatrixAt(k, m4); });
       im.userData.tile = t; tileG.add(im);
     }
     if (L.hideGrass) {                                  // a base so the world edge is not a void

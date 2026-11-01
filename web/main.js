@@ -469,7 +469,7 @@ let beepCtx = null;
 function honk() { try { beepCtx = beepCtx || new (window.AudioContext || window.webkitAudioContext)(); for (const t of [0, 0.32]) { const o = beepCtx.createOscillator(), g = beepCtx.createGain(); o.type = 'square'; o.frequency.value = 340; g.gain.value = 0.05; o.connect(g); g.connect(beepCtx.destination); o.start(beepCtx.currentTime + t); o.stop(beepCtx.currentTime + t + 0.22); } } catch (_) { /* no audio */ } }
 let forcedHour = null, mapActive = false, mapSeen = false;
 function applyLook(name) {
-  const L = MV.setLook(name); forcedHour = L.hour; window.__look = MV.look;
+  const L = MV.setLook(name); window.__look = MV.look;
   for (const o of groundParts) o.visible = !L.hideGrass;
   REAL.setTufts?.(false);
   UI.mapLook?.(MV.look);
