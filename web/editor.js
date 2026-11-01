@@ -79,7 +79,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <div class="dim small">The ground look is not decided yet: A/B/C are previews. Lighting follows the day/night cycle.</div></div>
       ${tool === 'paint' ? `<div class="sec"><b>Ground</b><div class="row">${Object.entries(TILE_NAMES).map(([k, n]) => `<button data-a="tile" data-k="${k}" class="tilebtn ${tile === k ? 'on' : ''}"><i style="background:${tileSw[k]}"></i>${n}</button>`).join('')}</div><div class="dim small">Click or drag on the map. Water cannot be walked; roads and paths are preferred by Otto.</div></div>` : ''}
       ${s ? `<div class="sec"><label><b>Name</b> <input data-p="name" type="text" value="${esc(s.name)}" maxlength="60" placeholder="e.g. Otto's computer"></label> <span class="dim small">#${s.id} · ${esc(s.kit)}</span>
-        <div class="row"><button data-a="rot" data-d="-1">⟲</button><button data-a="rot" data-d="1">⟳</button><button data-a="dup">Duplicate</button><button data-a="del" class="warn">🗑 Delete</button></div>
+        <div class="row"><button data-a="rot" data-d="-1">⟲</button><button data-a="rot" data-d="1">⟳</button><button data-a="dup">Duplicate</button><button data-a="drop" title="Put it on top of whatever is directly under it (a desk, a shelf)">⤓ Drop on surface</button><button data-a="del" class="warn">🗑 Delete</button></div>
         <div class="grid2"><label>x <input data-p="x" type="number" step="0.5" value="${s.x}"></label><label>z <input data-p="z" type="number" step="0.5" value="${s.z}"></label>
         <label>turn ° <input data-p="rot" type="number" step="15" value="${s.rot}"></label><label>scale <input data-p="scale" type="number" step="0.1" min="0.2" max="6" value="${s.scale}"></label>
         <label>footprint w <input data-p="fw" type="number" step="0.1" value="${s.fw}"></label><label>footprint d <input data-p="fd" type="number" step="0.1" value="${s.fd}"></label>
@@ -143,6 +143,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (a === 'del') delSel();
     else if (a === 'dup') { const s = objOf(sel); if (s) { commit(); const c = clone(s); c.id = nextId(); c.x += 2; c.z += 2; doc.objects.push(c); sel = c.id; refresh(); } }
     else if (a === 'rot') turn(+b.dataset.d);
+    else if (a === 'drop') { const o = objOf(sel); if (o) { commit(); const y = dropY(o, o.x, o.z); if (y > 0) o.y = y; else delete o.y; refresh(); toast(y > 0 ? `Resting on a surface at ${y.toFixed(2)} m` : 'Nothing under it; it is on the ground.'); } }
   });
   el.addEventListener('change', (e) => {
     const t = e.target;
@@ -191,6 +192,12 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     const h = ray.intersectObjects(MV.objG.children, true)[0];
     return h ? Math.max(0, Math.round(h.point.y * 4) / 4) : 0;
   }
+  function dropY(o, ex, ez) {                                   // top of whatever is directly below (x, z), ignoring the object itself
+    const g = MV.meshes.get(o.id)?.g; if (g) g.visible = false;
+    const r = new THREE.Raycaster(new THREE.Vector3(ex, 60, ez), new THREE.Vector3(0, -1, 0));
+    const h = r.intersectObjects(MV.objG.children, true)[0]; if (g) g.visible = true;
+    return h ? Math.max(0, Math.round(h.point.y * 100) / 100) : 0;
+  }
   function paintAt(p) {
     const c = doc.cell, h = half(), i = Math.floor((p.x + h) / c), j = Math.floor((p.z + h) / c);
     if (i < 0 || j < 0 || i >= doc.n || j >= doc.n || doc.ground[j][i] === tile) return;
@@ -221,7 +228,8 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     if (drag) {
       const o = objOf(drag.id); if (!o) return;
       const nx = snapV(p.x + drag.dx), nz = snapV(p.z + drag.dz);
-      if (nx !== o.x || nz !== o.z) { o.x = Math.max(-half(), Math.min(half(), nx)); o.z = Math.max(-half(), Math.min(half(), nz)); drag.moved = true; MV.sync(); MV.select(o.id); MV.updateColliders(); }
+      if (nx !== o.x || nz !== o.z) { o.x = Math.max(-half(), Math.min(half(), nx)); o.z = Math.max(-half(), Math.min(half(), nz)); drag.moved = true;
+        if (autoY && !o.panel) { const y = dropY(o, o.x, o.z); if (y > 0) o.y = y; else delete o.y; } MV.sync(); MV.select(o.id); MV.updateColliders(); }
       return;
     }
     if (tool === 'place' && pick) {
