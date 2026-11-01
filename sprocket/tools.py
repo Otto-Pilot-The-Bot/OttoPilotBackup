@@ -42,7 +42,7 @@ def _fn(name, desc, props, required):
 
 
 WORLD_MAKING = ("build", "landscape")
-ART_HELP_NB = ("Make a small artwork; it hangs in the gallery. kind=drawing: content is SVG markup (<svg viewBox='0 0 100 100'>...</svg>) or canvas JS using ctx (2D, 256x256), W, H, rand(). "
+ART_HELP_NB = ("Make a small artwork; it is shown on the art panels in the gallery (and you can write about it on your website). kind=drawing: content is SVG markup (<svg viewBox='0 0 100 100'>...</svg>) or canvas JS using ctx (2D, 256x256), W, H, rand(). "
                "kind=pixel: content is rows of letters (max 32x32) plus palette like 'R=red B=#2244ff' ('.'=empty).")
 
 
