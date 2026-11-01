@@ -110,6 +110,10 @@ def _schemas(publish_enabled):
                    "Your prompt's 'YOU CAN DO HERE' line lists what is offered. You walk there first if needed.",
             {"object": {"type": "string", "description": "the object's #id or name"}, "action": {"type": "string", "description": "one of the offered action ids, e.g. sit, knock, enter, recharge, look_art, honk, ride"},
              "to": {"type": "string", "description": "only for ride: the place to ride to"}}, ["object", "action"]),
+        *([_fn("bank", "Use the bank in your world (money is US dollars). action: balance, deposit (cash from your pocket into your account) or withdraw (account to pocket cash). "
+               "amount like 5 or 12.50. You walk to the bank (or its cash machine) first if you are not there. You can only move your own money between your pocket and your account.",
+               {"action": {"type": "string", "enum": ["balance", "deposit", "withdraw"]}, "amount": {"type": "string", "description": "dollars, e.g. 5 or 12.50 (not needed for balance)"}}, ["action"])]
+          if config.BANK_ENABLED else []),
         _fn("put_away", "Put away the item you are holding (it goes back where you found it, in your pocket).", {}, []),
         _fn("search_assets", "Search the library of 3D models you can build with (trees, tents, walls, doors, space things...). Returns names, tags and sizes.",
             {"query": {"type": "string", "description": "e.g. 'tree', 'door', 'space', or empty to browse"}}, []),
@@ -495,6 +499,77 @@ def put_away(ctx, a):
     ctx.state["holding"] = None
     ctx.db.x("INSERT INTO journal(ts,tick,kind,text,mood) VALUES(?,?,?,?,?)", time.time(), ctx.state["tick"], "interaction", f"Put away the {h['name']}."[:200], ctx.state["mood"])
     return out(True, f"You put the {h['name']} away.", 0.1, "Idle", subject=h["name"])
+
+
+def bank_spot(state):
+    """The nearest placed object tagged atm or bank: (obj, is_atm) or None."""
+    from . import maps as _maps
+    doc = _maps.ACTIVE["doc"] if config.MAPS_ENABLED else None
+    if not doc:
+        return None
+    best = None
+    for o in doc["objects"]:
+        t = set(o.get("tags") or [])
+        if not (t & {"atm", "bank"}):
+            continue
+        d = world.dist(state["x"], state["z"], o["x"], o["z"]) - (2.0 if "atm" in t else 0.0)       # prefer a cash machine when it is about as close
+        if best is None or d < best[0]:
+            best = (d, o, "atm" in t)
+    return (best[1], best[2]) if best else None
+
+
+def bank_tool(ctx, a):
+    from . import bank, affordances as aff, maps as _maps
+    s, db = ctx.state, ctx.db
+    action = str(a.get("action", "")).strip().lower()
+    if action not in ("balance", "deposit", "withdraw"):
+        return out(False, "Use the bank with action balance, deposit or withdraw.")
+    b = bank.balances(db)
+    if action == "balance":
+        return out(True, f"You have {bank.fmt(b['wallet'])} cash in your pocket and {bank.fmt(b['account'])} in your bank account.", 0.1, "Idle", noop=True)
+    try:
+        cents = bank.parse_amount(a.get("amount"))
+    except bank.BankError as e:
+        return out(False, str(e))
+    if action == "deposit" and cents > b["wallet"]:
+        return out(False, f"You only have {bank.fmt(b['wallet'])} in your pocket.")
+    if action == "withdraw" and cents > b["account"]:
+        return out(False, f"You only have {bank.fmt(b['account'])} in your bank account.")
+    spot = bank_spot(s)
+    if not spot:
+        return out(False, "There is no bank or cash machine in your world yet. Your human decides where things go.")
+    o, is_atm = spot
+    ins = aff.inside_obj(s)
+    here = (ins == o["id"]) if not is_atm else (aff.dist_to(o, s["x"], s["z"]) <= config.REACH and not ins)
+    if not here:                                               # walk there first, like the use tool does
+        if ins:
+            _exit(ctx)
+        if o.get("door"):
+            spot_xy = _maps.door_world(o, 1.2)
+        else:
+            spot_xy = None
+        spot_xy = spot_xy or _maps.nearest_walkable(o["x"], o["z"]) or (o["x"], o["z"])
+        nx, nz, arrived = world.step_toward(s["x"], s["z"], spot_xy[0], spot_xy[1])
+        s["x"], s["z"] = nx, nz
+        s["path"] = [[round(p, 1), round(q, 1)] for p, q in world.LAST_PATH][:40]
+        if aff.dist_to(o, nx, nz) > config.REACH:
+            return out(True, f"You walked toward the {aff.label(o)} to use the bank; {aff.dist_to(o, nx, nz):.0f} m left. Keep going.", 0.0, "Walking", moved=True,
+                       caption=f"Walking to the {aff.label(o).lower()} to {action}")
+        if not is_atm:
+            key = aff.place_key_for(o)
+            if key and world.PLACES[key].get("enter"):
+                _enter(ctx, key)
+    idem = f"otto:{s['tick']}:{action}:{cents}"
+    try:
+        nb = bank.deposit(db, cents, s["tick"], idem) if action == "deposit" else bank.withdraw(db, cents, s["tick"], idem)
+    except bank.BankError as e:
+        return out(False, str(e))
+    word = "deposited" if action == "deposit" else "withdrew"
+    text = f"I {word} {bank.fmt(cents)} at the {aff.label(o).lower()}."
+    db.x("INSERT INTO journal(ts,tick,kind,text,mood) VALUES(?,?,?,?,?)", time.time(), s["tick"], "interaction", text[:200], s["mood"])
+    db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], text[:240], 1)
+    return out(True, f"You {word} {bank.fmt(cents)}. Now {bank.fmt(nb['wallet'])} in your pocket and {bank.fmt(nb['account'])} in your account.", 0.4, "ThumbsUp",
+               subject="the bank", caption=f"{word.capitalize()} {bank.fmt(cents)} at the bank")
 
 
 def interact_with(ctx, a):
@@ -1307,7 +1382,7 @@ def publish_page(ctx, a):
 
 
 from . import affordances as _aff
-REGISTRY = {"put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
+REGISTRY = {"bank": bank_tool, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
             "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')

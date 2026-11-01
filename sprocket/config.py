@@ -213,3 +213,10 @@ def kit_scale(kit, name):
 # used only for models you hand him as gifts (gifts.py)
 ASSET_KEEP_RANGE = (0.4, 6.0)
 ASSET_FIT_MIN, ASSET_FIT_MAX = 0.6, 5.0
+
+# --- bank (play money in USD, whole cents; see sprocket/bank.py) ---
+BANK_ENABLED = True
+BANK_PROVIDER = "play"             # "play" = pretend money. "real" does nothing unless BANK_REAL_ENABLED is also turned on (it is not wired to anything).
+BANK_REAL_ENABLED = False
+BANK_START_CENTS = 5000            # Otto starts with $50.00 cash
+BANK_MAX_TXN_CENTS = 1_000_000     # no single move above $10,000.00

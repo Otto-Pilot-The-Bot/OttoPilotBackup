@@ -97,3 +97,14 @@ The **Assets** panel (right menu) is for you, not Otto: browse every indexed mod
 - **Interactions:** `sprocket/affordances.py` is a registry keyed by tags (building, shop, home, gallery/art, vehicle, bench/seat, charger, ride, tree/plant, animal). Nearby placed objects are offered in his prompt; the `use` tool does them, adjusts needs and mood, and writes the journal and memory. Ambient cars drive the road tiles (`web/traffic.js`); he can ride a parked vehicle to another place.
 - **Cameras:** `1` overhead (orbit/pan/zoom), `2` follow Otto (low, smooth, Detach button), `3` walk (WASD, mouse look, Shift runs, collides with footprints and map edge, Esc leaves; nothing can be edited in walk mode).
 - **Ground and lighting are not decided.** `?look=A|B|C` (or the Look menu in the Plan panel) previews three options; screenshots are in `docs/looks/`. The isometric city view is cancelled and parked in `unused/city/`.
+
+## The bank (play money, USD)
+
+Otto has pocket cash and a bank account, in US dollars, kept in whole cents in an append-only ledger (`sprocket/bank.py`).
+He starts with $50.00. The bank building, its cash machine and the sign were placed in the `mine` map; Otto uses the `bank` tool
+(balance / deposit / withdraw) and walks there first. He can only move money between his own pocket and account.
+
+- **Only you** can add or remove money: the 🏦 Bank panel (Give / Take back). No model tool can reach that.
+- The ledger refuses edits and deletes, refuses overdrafts, and ignores a repeated request with the same key. The panel shows whether the books balance.
+- **Real money later:** it is not connected to anything. `bank.py` has a `Provider` interface; `RealMoneyProvider` is a switched-off stub
+  (`BANK_PROVIDER = "play"`, `BANK_REAL_ENABLED = False` in `config.py`). A real version should create pending requests you approve, and post to the ledger only after that.

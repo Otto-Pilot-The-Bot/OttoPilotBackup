@@ -165,6 +165,20 @@ const PANELS = [
       <span class="dim">${h.ok ? (h.mode === 'live' ? 'published' : 'dry run') : esc(h.error || 'failed')}</span> ${h.commit_url && safeUrl(h.commit_url) ? `<a href="${esc(h.commit_url)}" target="_blank" rel="noopener noreferrer">commit</a>` : ''}</span><span class="small dim">${ago(h.ts)}</span></div>`).join('') : '<div class="empty">Nothing published yet.</div>');
   } },
 
+  { id: 'bank', icon: '🏦', label: 'Bank', title: 'Otto\'s bank (US dollars)', build(el) {
+    el.innerHTML = `<div id="bkTop"></div><div class="card"><div class="t">Give or take money</div><div class="small dim">Only you can add or remove money. He can only move his own money between his pocket and his bank account.</div>
+      <div class="field"><input type="text" id="bkAmt" placeholder="amount, e.g. 10 or 5.50" inputmode="decimal"> <select id="bkTo"><option value="wallet">into his pocket</option><option value="account">into his bank account</option></select></div>
+      <div class="field"><button class="btn primary" data-bk="grant">Give</button><button class="btn" data-bk="take">Take back</button></div></div><div id="bkLog"></div>`;
+    el.addEventListener('click', (e) => { const b = e.target.closest('[data-bk]'); if (!b) return; const amount = $('#bkAmt', el).value.trim(); if (!amount) { toast('Type an amount first.'); return; }
+      api.send(b.dataset.bk === 'grant' ? { type: 'bank_grant', amount, to: $('#bkTo', el).value } : { type: 'bank_take', amount }); $('#bkAmt', el).value = ''; });
+  }, update(el, s) {
+    const k = s.bank; if (!k) { $('#bkTop', el).innerHTML = '<div class="empty">The bank is switched off.</div>'; return; }
+    const usd = (c) => (c < 0 ? '-' : '') + '$' + (Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    $('#bkTop', el).innerHTML = `<div class="card"><div class="t">💵 Pocket cash: ${usd(k.wallet)}</div><div class="t">🏦 Bank account: ${usd(k.account)}</div><div class="small dim">Total ${usd(k.wallet + k.account)} · ${k.provider.real_money ? 'REAL money' : 'play money'} · books ${k.audit ? 'balanced ✓' : 'DO NOT ADD UP ⚠️'}</div></div>`;
+    const lbl = { deposit: '⬆️ deposit', withdraw: '⬇️ withdrew', grant: '🎁 gift', take_back: '↩️ taken back' };
+    if (!el.contains(document.activeElement) || document.activeElement.tagName !== 'INPUT') $('#bkLog', el).innerHTML = '<h3>Recent activity</h3>' + (k.txns.length ? k.txns.map((t) => `<div class="act"><span class="ico">💲</span><span class="x2"><b>${usd(t.cents)}</b> <span class="dim">${lbl[t.kind] || esc(t.kind)}${t.memo ? ' · ' + esc(t.memo) : ''}</span></span><span class="small dim">${ago(t.ts)}</span></div>`).join('') : '<div class="empty">No activity yet.</div>');
+  } },
+
   { id: 'wishes', icon: '💫', label: 'Wishlist', title: 'Wishlist', build(el) {
     el.innerHTML = `<div id="wBanner"></div><p class="dim small" style="margin-top:0">Things he would like in his world. You decide: fulfil with a model from the library, say "not now", or hide the card.</p><div id="wOpen"></div><div id="wHist"></div>`;
     const opts = (s) => (s.assets_pick || []).filter((a) => !assetFilter || (a.name + ' ' + a.pack).toLowerCase().includes(assetFilter.toLowerCase())).slice(0, 80)

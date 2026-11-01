@@ -40,6 +40,9 @@ SYSTEM = SYSTEM_BUILD if config.BUILDING_ENABLED else SYSTEM_NOBUILD
 class Agent:
     def __init__(self, db, log=print):
         self.db, self.log = db, log
+        if config.BANK_ENABLED:
+            from . import bank as _bank
+            _bank.setup(db); _bank.ensure_start(db)
         self.client = ollama.AsyncClient(host=config.OLLAMA_HOST, timeout=config.REQUEST_TIMEOUT)
         self.model = config.MODEL
         self.listeners = []          # callbacks(event_dict) for UI
@@ -195,6 +198,12 @@ class Agent:
 
     def save(self):
         self.db.put("state", self.state)
+
+    def bank_view(self):
+        from . import bank
+        b = bank.balances(self.db)
+        return {**b, "provider": bank.provider().status(), "audit": bank.audit(self.db)["ok"],
+                "txns": [dict(t, cents=int(t["cents"])) for t in bank.recent(self.db, 25)]}
 
     def objects(self):
         return self.db.q("SELECT id,kind,name,x,z,color,source,radius FROM objects ORDER BY id")
@@ -533,7 +542,7 @@ class Agent:
         hid = db.one("SELECT id FROM hobbies WHERE name=?", name[:40])["id"]
         db.x("INSERT INTO hobby_entries(ts,tick,hobby_id,text) VALUES(?,?,?,?)", time.time(), self.state["tick"], hid, str(text)[:300])
 
-    TOOL_CAT = {"move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
+    TOOL_CAT = {"bank": "explore", "move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
                 "publish_page": "write", "make_art": "art", "make_music": "music", "landscape": "garden", "wish": "socialize", "arrange": "organize", "ponder": "reflect", "gift": "socialize", "tend": "garden", "collect": "collect", "observe": "observe",
                 "build": "build", "rest": "rest", "eat": "rest"}
 
@@ -737,6 +746,12 @@ class Agent:
         aff = affordances.prompt_line(s) if config.MAPS_ENABLED else None
         if aff:
             L.append(aff)
+        if config.BANK_ENABLED:
+            from . import bank as _bank, tools as _t
+            b = _bank.balances(db)
+            spot = _t.bank_spot(s)
+            L.append(f"MONEY (US dollars): cash in pocket {_bank.fmt(b['wallet'])}, bank account {_bank.fmt(b['account'])}."
+                     + (" There is a bank in your world: the bank tool deposits or withdraws (it walks you there first)." if spot else " (No bank has been placed in your world yet.)"))
         prow = self.poi_rows()
         here = sorted([p for p in prow if world.dist(s["x"], s["z"], p["x"], p["z"]) <= pois.TRIGGER], key=lambda p: world.dist(s["x"], s["z"], p["x"], p["z"]))
         if here:
@@ -1211,6 +1226,7 @@ class Agent:
         return {"type": "snapshot", "name": NAME, "short_name": SHORT, "model": self.model, "interval": iv,
                 "state": {k: s[k] for k in ("tick", "x", "z", "energy", "battery", "boredom", "creativity", "mood", "paused",
                                             "publish_enabled", "last_anim", "last_say", "pace")},
+                "bank": self.bank_view() if config.BANK_ENABLED else None,
                 "think": str(config.THINK_MAIN), "pace_presets": config.PACE_PRESETS,
                 "arousal": round(self.arousal(), 2), "arousal_label": self.arousal_label(), "effective_interval": round(iv * self.decision_factor(), 1), "world": world.world_time(s["tick"]), "robot_height": config.ROBOT_HEIGHT, "server_time": time.time(),
                 "objects": objs, "places": world.PLACES, "outfit": {o["slot"]: o["color"] for o in db.q("SELECT * FROM outfit")},

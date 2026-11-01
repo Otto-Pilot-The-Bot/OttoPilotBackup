@@ -134,6 +134,21 @@ async def serve(agent, runner, interval=None):
             runner.set_paused(False)
         elif t == "kill":
             runner.kill("kill switch (UI)")
+        elif t in ("bank_grant", "bank_take") and config.BANK_ENABLED:
+            # HUMAN ONLY: money entering or leaving Otto's world. No model tool can reach these.
+            from . import bank as bnk
+            try:
+                cents = bnk.parse_amount(m.get("amount"))
+                if t == "bank_grant":
+                    bnk.grant(db, cents, str(m.get("memo") or "Gift from your human")[:80], s["tick"], bnk.ACCOUNT if m.get("to") == "account" else bnk.WALLET)
+                    toast(f"Gave Otto {bnk.fmt(cents)}.")
+                else:
+                    bnk.take_back(db, cents, "Taken back by your human", s["tick"])
+                    toast(f"Took {bnk.fmt(cents)} back.")
+                db.control(f"{t} {bnk.fmt(cents)}")
+            except bnk.BankError as e:
+                toast(str(e), False)
+            push(agent.snapshot())
         elif t == "toggle_publish":
             s["publish_enabled"] = bool(m.get("on"))
             db.control(f"publish_enabled={s['publish_enabled']}")
