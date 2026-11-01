@@ -62,10 +62,11 @@ async def serve(agent, runner, interval=None):
             return {"type": "map", "doc": None, "maps": maplib.list_maps()}
         ids = {r["file"]: r for r in agent.db.q("SELECT id,file,fit FROM assets WHERE usable=1")}
         d = dict(doc, objects=[dict(o, aid=(ids.get(o["asset"]) or {"id": None})["id"], fit=(ids.get(o["asset"]) or {"fit": 1.0})["fit"]) for o in doc["objects"]])
+        bright = {r["id"]: config.kit_bright(r["pack"], r["name"]) for r in agent.db.q("SELECT id,pack,name FROM assets WHERE usable=1 AND pack LIKE 'Meshy%'") if config.kit_bright(r["pack"], r["name"]) != 1.0}
         nav = ["".join("1" if c else "0" for c in row) for row in maplib.ACTIVE["blocked"]]
         cars = [{"aid": r["id"], "fit": r["fit"], "name": r["name"]} for r in agent.db.q(
             "SELECT id,fit,name FROM assets WHERE usable=1 AND pack='Car Kit' AND name IN ('sedan','taxi','van','hatchback-sports','suv') ORDER BY name")]
-        return {"type": "map", "doc": d, "nav": nav, "traffic": cars, "warnings": maplib.ACTIVE.get("warnings", []), "maps": maplib.list_maps(), "active": agent.db.get("active_map"), "rev": getattr(agent, "map_rev", 0)}
+        return {"type": "map", "doc": d, "bright": bright, "nav": nav, "traffic": cars, "warnings": maplib.ACTIVE.get("warnings", []), "maps": maplib.list_maps(), "active": agent.db.get("active_map"), "rev": getattr(agent, "map_rev", 0)}
 
     def map_handle(t, m, ws):
         """Map editing. HUMAN ONLY: these messages come from the page's Plan editor; no model tool can reach maplib's writers."""

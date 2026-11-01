@@ -8,7 +8,7 @@ import { createCameraModes } from './camera.js';
 import { createMapView, LOOKS } from './mapview.js';
 import { createEditor } from './editor.js';
 import { createTraffic } from './traffic.js';
-import { buildDesign, animateDesign, mixers, glowMats, kitGlow } from './models.js';
+import { buildDesign, animateDesign, mixers, glowMats, kitGlow, setBright } from './models.js';
 
 const HALF = 24;
 
@@ -523,6 +523,7 @@ function updateInsideFade() {
 }
 function onMap(m) {
   mapActive = !!m.doc;
+  setBright(m.bright);
   if (m.doc) {
     MV.setDoc(m.doc, m.nav); TRAFFIC.rebuild(m.doc, m.traffic);
     const q = new URLSearchParams(location.search).get('look'); applyLook(q || MV.look);

@@ -14,6 +14,9 @@ const waiting = [];
 let active = 0;
 const MAX_PARALLEL = 3;
 
+const BRIGHT = new Map();           // asset id -> brightness multiplier (from the server; 1 = as authored)
+export function setBright(o) { BRIGHT.clear(); for (const k of Object.keys(o || {})) BRIGHT.set(+k, +o[k]); }
+
 export const mixers = new Set();      // AnimationMixers of models that carry their own animations
 export const glowMats = new Set();    // glowing materials (boosted at night by main.js)
 export { kitGlow };
@@ -40,6 +43,11 @@ function template(id, fit, url) {
         if (!o.isMesh) return;
         o.castShadow = true; o.receiveShadow = true;
         for (const m of Array.isArray(o.material) ? o.material : [o.material]) {   // Kenney files leave metallic/roughness at the glTF default (fully metal), which renders black without a reflection probe; use them matte as authored
+          const br = BRIGHT.get(+id);
+          if (br && br !== 1 && m && m.isMeshStandardMaterial) {      // a dark texture: lift it (multiplies the texture and adds a little self-light so shaded sides are not black); hues stay as authored
+            m.color.multiplyScalar(br);
+            if (m.map && !m.emissiveMap) { m.emissiveMap = m.map; m.emissive = new THREE.Color(1, 1, 1); m.emissiveIntensity = Math.min(0.6, (br - 1) * 0.3); }
+          }
           if (m && m.isMeshStandardMaterial && !m.metalnessMap && m.metalness > 0.3) m.metalness = m.roughness >= 0.99 ? 0 : 0.3;   // metal with no reflections to show renders black; keep the base colours as authored
         }
       });

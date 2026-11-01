@@ -204,6 +204,18 @@ KIT_SCALE = {
 NAME_SCALE = [("Meshy Buildings", r"^ottos house", 3.7), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
 
 
+# Per-model brightness (1.0 = as authored). Lifts a model whose texture is very dark; it multiplies the texture, it does not tint or change hues.
+NAME_BRIGHT = [("Meshy Buildings", r"^ottos house", 1.7)]
+
+
+def kit_bright(kit, name):
+    import re as _re
+    for k, rx, b in NAME_BRIGHT:
+        if k == kit and _re.search(rx, name, _re.I):
+            return b
+    return 1.0
+
+
 def kit_scale(kit, name):
     import re as _re
     for k, rx, sc in NAME_SCALE:
