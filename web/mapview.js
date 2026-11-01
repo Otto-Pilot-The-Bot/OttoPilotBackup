@@ -19,7 +19,7 @@ export function createMapView({ scene, art, onReady }) {
   const MV = { doc: null, nav: null, look: 'B', colliders: [], root, objG, meshes, overlays: { foot: false, walk: false }, selected: null };
   let panelMats = [];
 
-  const sig = (o) => JSON.stringify([o.asset, o.aid, o.fit, o.scale, o.panel && [o.panel.w, o.panel.h, o.panel.art_id]]);   // what needs a rebuild; moving/turning does not
+  const sig = (o) => JSON.stringify([o.asset, o.aid, o.fit, o.scale, o.panel && [o.panel.w, o.panel.h, o.panel.art_id, o.panel.gift_id]]);   // what needs a rebuild; moving/turning does not
 
   MV.setDoc = (doc, nav) => { MV.doc = doc; if (nav) MV.nav = nav; MV.rebuildGround(); MV.sync(); MV.rebuildOverlays(); MV.updateColliders(); };
 
@@ -60,6 +60,10 @@ export function createMapView({ scene, art, onReady }) {
     const ids = [...(art?.canvas?.keys() || [])].sort((a, b) => b - a);              // newest pictures first
     let slot = 0;
     for (const { mat, o } of panelMats) {
+      if (o.panel.gift_id) {                                                       // a picture you gave Otto
+        new THREE.TextureLoader().load(`/gift/${o.panel.gift_id}/file`, (t) => { t.colorSpace = THREE.SRGBColorSpace; mat.map = t; mat.color.set(0xffffff); mat.needsUpdate = true; }, undefined, () => { mat.map = emptyTex; mat.needsUpdate = true; });
+        continue;
+      }
       const id = o.panel.art_id || ids[slot++]; const cv = id && art.canvas.get(id);
       if (cv) { const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; mat.map = t; mat.color.set(0xffffff); }
       else { mat.map = emptyTex; }
@@ -151,11 +155,11 @@ export function createMapView({ scene, art, onReady }) {
   };
   // ------------- fade a building's walls and roof while Otto is inside (materials are cloned per object so other copies are untouched)
   const faded = new Map();
-  MV.fade = (id, on) => {
+  MV.fade = (id, on) => {                      // idempotent: models that finish loading later are picked up on the next call
     const m = meshes.get(id); if (!m) return;
     if (on) {
-      if (faded.has(id)) return; const saved = [];
-      m.g.traverse((n) => { if (!n.isMesh) return; saved.push([n, n.material]);
+      const saved = faded.get(id) || []; const have = new Set(saved.map((x) => x[0]));
+      m.g.traverse((n) => { if (!n.isMesh || have.has(n)) return; saved.push([n, n.material]);
         const c = (Array.isArray(n.material) ? n.material : [n.material]).map((x) => { const y = x.clone(); y.transparent = true; y.opacity = 0.22; y.depthWrite = false; return y; });
         n.material = Array.isArray(n.material) ? c : c[0]; });
       faded.set(id, saved);

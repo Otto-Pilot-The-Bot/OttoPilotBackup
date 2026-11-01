@@ -99,6 +99,8 @@ async def serve(agent, runner, interval=None):
         t, s, db = m.get("type"), agent.state, agent.db
         if t in ("get_map", "map_load", "map_save", "map_new", "map_starter") and config.MAPS_ENABLED:
             return map_handle(t, m, ws)
+        if t in ("place_object", "place_design") and config.MAPS_ENABLED:
+            return toast("Placing now happens in the Plan editor (the 🗺️ Plan button, bottom left).", False)
         if t == "set_pace":
             name = m.get("name")
             if name in config.PACE_PRESETS:
@@ -288,6 +290,12 @@ async def serve(agent, runner, interval=None):
             db.x("UPDATE wishes SET status='declined', resolved_ts=?, notified=1 WHERE id=?", time.time(), w["id"])
             agent.wish_event("declined", w); db.control(f"wish declined #{w['id']}"); agent.save()
             return wish_result(f"Told Otto \"not now\" about \"{w['item']}\".", True)
+        if config.MAPS_ENABLED:                              # you place it yourself in the Plan editor; this just tells Otto the wish is granted
+            db.x("UPDATE wishes SET status='granted', resolved_ts=? WHERE id=?", time.time(), w["id"])
+            agent.wish_event("granted", w, None)
+            db.thought(s["tick"], "system", f"Your human granted a wish: {w['item']}.")
+            db.control(f"wish granted #{w['id']} (placed in the Plan editor)"); agent.save()
+            return wish_result(f"Granted! Place it yourself in the Plan editor (🗺️ Plan); Otto has been told \"{w['item']}\" is coming.", True)
         aid = m.get("asset") or w["asset_id"]
         row = db.one("SELECT id,name,tags FROM assets WHERE id=? AND usable=1", int(aid)) if str(aid or "").isdigit() else None
         if not row:

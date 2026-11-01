@@ -124,7 +124,7 @@ export function createCameraModes({ camera, controls, dom, getRobot, getHalf, ge
 
   paint();
   return {
-    get mode() { return mode; }, setMode, setDetached,
+    get mode() { return mode; }, get pos() { return me.clone(); }, setMode, setDetached,
     /** debugging / screenshots: ?cam=walk&at=x,z&yaw=deg */
     pose(x, z, yawDeg, pitchDeg = 0) { me.set(x, EYE, z); look.yaw = (yawDeg * Math.PI) / 180; look.pitch = (pitchDeg * Math.PI) / 180; pushOut(me); },
     update(dt) {

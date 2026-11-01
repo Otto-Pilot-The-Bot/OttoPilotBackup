@@ -48,6 +48,14 @@ ART_HELP_NB = ("Make a small artwork; it hangs in the gallery. kind=drawing: con
 
 def schemas(publish_enabled):
     ts = _schemas(publish_enabled)
+    if config.MAPS_ENABLED:                                  # only the human places, moves or removes things (STYLE.md)
+        ts = [t for t in ts if t["function"]["name"] not in ("arrange", "build", "landscape")]
+        for t in ts:
+            if t["function"]["name"] == "gift":
+                pr = t["function"]["parameters"]["properties"].get("action")
+                if pr and "enum" in pr:
+                    pr["enum"] = [e for e in pr["enum"] if e in ("look", "keep")]
+                t["function"]["description"] = "Look at a gift from your human, or keep it safe. (Only your human sets things out in the world.)"
     if config.BUILDING_ENABLED:
         return ts
     out_ = []
@@ -838,6 +846,8 @@ async def gift(ctx, a):
     if action == "keep":
         db.x("UPDATE gifts SET status='kept' WHERE id=?", g["id"])
         return out(True, f"You decided to keep \"{g['name']}\" safe in your box for now.", 0.4, "ThumbsUp", subject="gift", cat="socialize", caption=f"Keeping the gift: {g['name']}")
+    if config.MAPS_ENABLED:
+        return out(True, "Only your human sets things out in the world. You can look at the gift or keep it; you could also wish for a place to show it.", 0.0, "Idle", noop=True)
     if action not in ("place", "display"):
         return out(False, "action must be look, place, display or keep.")
     if g["obj_id"] and db.one("SELECT 1 FROM objects WHERE id=?", g["obj_id"]):

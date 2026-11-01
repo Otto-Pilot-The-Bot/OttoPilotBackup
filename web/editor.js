@@ -84,12 +84,14 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <label class="row"><input type="checkbox" data-p="walkable" ${s.walkable ? 'checked' : ''}> walkable (no collision)</label>
         <label>tags <input data-p="tags" type="text" value="${esc((s.tags || []).join(', '))}" placeholder="bench, seat, park"></label>
         ${s.panel ? `<div class="grid2"><label>art w <input data-p="pw" type="number" step="0.1" value="${s.panel.w}"></label><label>art h <input data-p="ph" type="number" step="0.1" value="${s.panel.h}"></label><label>height y <input data-p="y" type="number" step="0.1" value="${s.y}"></label></div><div class="dim small">Flat panels show Otto's newest pictures.</div>` : ''}</div>` : ''}
+      ${giftPics().length ? `<div class="sec"><b>Pictures you gave Otto</b> <span class="dim small">(flat panels)</span><div class="row">${giftPics().map((g) => `<button data-a="gift" data-id="${g.id}" title="Put this picture on a flat panel">🖼 ${esc(g.name)}</button>`).join('')}</div></div>` : ''}
       <div class="sec"><b>Models</b>${pick ? ` <span class="dim small">placing: ${esc(pick.name)}</span>` : ''}
         <div class="row"><select id="pKit"><optgroup label="Core">${kl.core.map(opt).join('')}</optgroup><optgroup label="Supporting">${kl.sup.map(opt).join('')}</optgroup><optgroup label="Other kits (ask before using)">${kl.rest.map(opt).join('')}</optgroup></select></div>
         <div class="row"><input id="pQ" type="text" placeholder="search…" value="${esc(q)}"><select id="pCat"><option value="">all</option>${cats.map((c) => `<option ${c === cat ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
         <div class="pal" id="pPal"></div></div>`;
     paintPalette();
   }
+  function giftPics() { return (window.__last?.()?.gifts || []).filter((g) => g.kind === 'picture').slice(0, 8); }
   function listRows() {
     const ql = q.toLowerCase();
     return (byKit.get(kit) || []).filter((r) => (!cat || r.cat === cat) && (!ql || (r.name + ' ' + r.tags.join(' ')).toLowerCase().includes(ql)));
@@ -121,6 +123,13 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (a === 'tool') { tool = b.dataset.k; if (tool !== 'place') pick = null; applyTool(); render(); }
     else if (a === 'tile') { tile = b.dataset.k; render(); }
     else if (a === 'pick') { pick = rows.find((r) => r.id === +b.dataset.id); tool = 'place'; sel = null; MV.select(null); applyTool(); render(); }
+    else if (a === 'gift') {
+      const g = giftPics().find((x) => x.id === +b.dataset.id); if (!g) return; commit();
+      const id = nextId(), asp = g.w && g.h ? g.w / g.h : 1.3, h = 1.6;
+      doc.objects.push({ id, asset: null, kit: 'flat', name: g.name.slice(0, 40), x: 0, z: 0, rot: 0, scale: 1, fw: +(h * asp).toFixed(1), fd: 0.2, tags: ['art', 'gift'], door: null, walkable: true, y: 1.6,
+        panel: { w: +(h * asp).toFixed(2), h, art_id: null, gift_id: g.id, caption: g.name.slice(0, 80) } });
+      sel = id; refresh(); toast('Panel placed at the middle of the map: drag it where you want it.');
+    }
     else if (a === 'more') { limit += 48; paintPalette(); }
     else if (a === 'del') delSel();
     else if (a === 'dup') { const s = objOf(sel); if (s) { commit(); const c = clone(s); c.id = nextId(); c.x += 2; c.z += 2; doc.objects.push(c); sel = c.id; refresh(); } }

@@ -474,7 +474,7 @@ function applyLook(name) {
   REAL.setTufts?.(false);
   UI.mapLook?.(MV.look);
 }
-window.__setFollow = (v) => { follow = v; }; window.__traffic = TRAFFIC; window.__startRide = (r) => startRide(r); window.__applyLook = applyLook; window.__MV = MV;
+window.__setFollow = (v) => { follow = v; }; window.__traffic = TRAFFIC; window.__last = () => last; window.__startRide = (r) => startRide(r); window.__applyLook = applyLook; window.__MV = MV;
 art.onChange(updateGallery);
 const send = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
 
@@ -497,6 +497,16 @@ function connect() {
   ws.onclose = () => { UI.setConn(false, wasConnected ? (last?.short_name || 'The robot') + ' has stopped or the connection dropped. Restart with ./run.sh — reconnecting…' : 'Connecting…'); setTimeout(connect, 2500); };
 }
 
+function updateInsideFade() {
+  const m = last; if (!m) return; const s = m.state;
+  let insideObj = (s.inside && m.places && m.places[s.inside] && m.places[s.inside].object) || null;             // walls and roof fade while he is inside (entered, or just standing within the building)
+    if (!insideObj && MV.doc && m.places) for (const pl of Object.values(m.places)) {
+      const o = pl.enter && pl.object && MV.doc.objects.find((x) => x.id === pl.object); if (!o) continue;
+      const c = Math.cos((o.rot * Math.PI) / 180), sn = Math.sin((o.rot * Math.PI) / 180), dx = s.x - o.x, dz = s.z - o.z, lx = dx * c - dz * sn, lz = dx * sn + dz * c;
+      if (Math.abs(lx) < (o.fw * o.scale) / 2 - 0.3 && Math.abs(lz) < (o.fd * o.scale) / 2 - 0.3) { insideObj = o.id; break; }
+    }
+    if (insideObj !== fadedNow) { if (fadedNow) MV.fade(fadedNow, false); if (insideObj) MV.fade(insideObj, true); fadedNow = insideObj; }
+}
 function onMap(m) {
   mapActive = !!m.doc;
   if (m.doc) {
@@ -505,7 +515,7 @@ function onMap(m) {
     if (m.doc.n * m.doc.cell / 2 !== curHalf) { buildGround(m.doc.n * m.doc.cell / 2); if (!mapSeen) { mapSeen = true; resetCamera(); } }
     applyLook(MV.look);
   }
-  window.__mapMsg = m; EDITOR?.onMap?.(m);
+  window.__mapMsg = m; EDITOR?.onMap?.(m); updateInsideFade();
 }
 function applySnapshot(m, teleport) {
   const s = m.state;
@@ -524,8 +534,7 @@ function applySnapshot(m, teleport) {
     let L = 0, p = robotPos; for (const q of pathQ) { L += Math.hypot(q.x - p.x, q.z - p.z); p = q; } if (pathQ.length) { L += Math.hypot(targetPos.x - p.x, targetPos.z - p.z); walkSpeed = Math.max(1.3, Math.min(8, L / Math.max(2, m.interval * 0.75))); } }
   if (s.ride && s.ride.tick !== lastRideTick) { lastRideTick = s.ride.tick; if (!teleport) startRide(s.ride); }
   if (s.honk && s.honk.tick !== lastHonk) { lastHonk = s.honk.tick; if (!teleport) honk(); }
-  { const insideObj = (s.inside && m.places && m.places[s.inside] && m.places[s.inside].object) || null;             // walls and roof fade while he is inside
-    if (insideObj !== fadedNow) { if (fadedNow) MV.fade(fadedNow, false); if (insideObj) MV.fade(insideObj, true); fadedNow = insideObj; } }
+  updateInsideFade();
   snapHour = m.world.hour; snapAt = performance.now(); intervalMs = (m.effective_interval || m.interval) * 1000; paused = s.paused;
   if (teleport && robot) { robotPos.copy(targetPos); robot.position.copy(robotPos); }
   updateGallery();
@@ -568,7 +577,7 @@ const CAM = createCameraModes({
   getHalf: () => curHalf || HALF, getColliders: () => (window.__colliders || []),
   onChange: (m) => { if (m === 'walk') cancelPlace(); if (m !== 'overhead') EDITOR?.close(); },
 });
-window.__cam = CAM;
+window.__cam = CAM; window.__info = renderer.info;
 EDITOR = createEditor({ camera, controls, dom: renderer.domElement, MV, send, CAM, thumbDesign: (k, d, n) => thumbOfDesign(k, d, n), applyLook });
 window.__editor = EDITOR;
 { const q = new URLSearchParams(location.search), cm = q.get('cam');
@@ -611,6 +620,7 @@ function frame() {
   const tsec = now / 1000;
   fadeBuildings(dt);
   TRAFFIC.step(dt);
+  if (fadedNow && (frameN & 31) === 0) MV.fade(fadedNow, true);
   if (rideAnim) {                                                              // Otto rides along the road in a car; the real position is already the destination
     const R = rideAnim, tg = R.pts[R.i], dv = tmp.subVectors(tg, R.g.position), dl = dv.length();
     if (dl < 0.3) { R.i++; if (R.i >= R.pts.length) { scene.remove(R.g); rideAnim = null; if (robot) robot.visible = true; } }
