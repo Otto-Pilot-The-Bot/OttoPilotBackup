@@ -37,6 +37,7 @@ Every kit is from Kenney (https://kenney.nl). License is checked against the Lic
 | Modular Dungeon Kit | Kenney | CC0 | 39 |
 | Modular Space Kit | Kenney | CC0 | 40 |
 | Nature Kit | Kenney | CC0 | 329 |
+| Nature Kit (Classic) | Kenney | CC0 (License.txt checked) | 232 (converted from glTF+bin with tools/gltf_to_glb.py) |
 | Pirate Kit | Kenney | CC0 | 72 |
 | Platformer Kit | Kenney | CC0 | 153 |
 | Prototype Kit | Kenney | CC0 | 145 |
@@ -56,4 +57,3 @@ Every kit is from Kenney (https://kenney.nl). License is checked against the Lic
 
 ## Not imported (no .glb in the source)
 - Animated Characters Bundle, Animated Characters Protagonists, Animated Characters Retro, Animated Characters Survivors (FBX/BLEND only)
-- Nature Kit (Classic) (GLTF+BIN only)
