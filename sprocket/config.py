@@ -10,12 +10,12 @@ SHORT_NAME = os.environ.get("SPROCKET_SHORT_NAME", "Otto")  # what the UI and ca
 MODEL = os.environ.get("SPROCKET_MODEL", "gemma4:e4b")      # the one model setting
 FALLBACK_MODEL = os.environ.get("SPROCKET_FALLBACK", "qwen3:8b")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
-NUM_CTX = 4096
+NUM_CTX = int(os.environ.get("SPROCKET_NUM_CTX", 4096))   # a bigger value (8192) suits a computer with a lot of graphics memory
 THINK = False                 # thinking for small helper calls (summaries, reflections JSON, learning notes): keep OFF for speed
 THINK_MAIN = os.environ.get("SPROCKET_THINK", "low")   # thinking for the main decision step: False | "low" | "medium" | "high" | True
 THINK_TIMEOUT_NOTE = 60       # a decision slower than this many seconds is logged as slow (the loop and UI keep going either way)
 TEMPERATURE = 0.9
-KEEP_ALIVE = "3m"
+KEEP_ALIVE = os.environ.get("SPROCKET_KEEP_ALIVE", "3m")
 
 TICK_SECONDS = float(os.environ.get("SPROCKET_TICK", 20))   # start-to-start interval (default 20 s; adjustable in the You panel)
 REFLECT_EVERY = 10            # ticks between reflection calls
@@ -31,7 +31,10 @@ REACH = 3.0                        # distance needed to use something
 LOOK_REACH = 4.0                   # distance from the edge of an object needed to look closely at it (he walks closer first)
 MAX_STEP = 10.0                    # max distance walked per tick
 MAX_OBJECTS = 120
-HOST, PORT = "127.0.0.1", 8765     # localhost only
+HOST = os.environ.get("SPROCKET_HOST", "127.0.0.1")     # localhost only unless you set SPROCKET_HOST (e.g. a Tailscale address) to reach it from another computer
+PORT = int(os.environ.get("SPROCKET_PORT", 8765))
+TOKEN = os.environ.get("SPROCKET_TOKEN", "")            # required (16+ characters) whenever HOST is not localhost: every page, socket and upload needs it
+REMOTE = HOST not in ("127.0.0.1", "localhost", "::1") or os.environ.get("SPROCKET_REQUIRE_TOKEN") == "1"     # SPROCKET_REQUIRE_TOKEN=1 asks for the token even on this computer (for testing)
 
 # --- web reading (read_page) ---
 FETCH_TIMEOUT = 10             # seconds, total

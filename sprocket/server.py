@@ -4,6 +4,7 @@ import os
 import base64
 import sys
 import hashlib
+import hmac
 import html
 import json
 import re
@@ -44,8 +45,35 @@ async def serve(agent, runner, interval=None):
             push(map_msg())
     agent.listeners.append(_watch_map)
 
+    if config.REMOTE and len(config.TOKEN) < 16:
+        raise SystemExit("SPROCKET_HOST is set to a non-local address, so SPROCKET_TOKEN is required (at least 16 random characters). Nothing was started.")
+    AUTH_VAL = hashlib.sha256(("sprocket-auth:" + config.TOKEN).encode()).hexdigest()
+
+    def origin_ok(request, required=False):
+        """The page must be this very site: Origin equals the address it was loaded from (or, on this computer, localhost)."""
+        o = request.headers.get("Origin", "")
+        if not o:
+            return not required
+        if o in (f"http://{request.host}", f"https://{request.host}"):
+            return True
+        return (not config.REMOTE) and bool(re.match(rf"^https?://(127\.0\.0\.1|localhost):{config.PORT}$", o))
+
+    @web.middleware
+    async def auth(request, handler):
+        """Only when the server can be reached from other computers: a secret token (set once through ?token=..., then kept in a cookie)."""
+        if not config.REMOTE:
+            return await handler(request)
+        if hmac.compare_digest(request.cookies.get("sprocket_auth", "").encode(), AUTH_VAL.encode()):
+            return await handler(request)
+        t = request.query.get("token", "")
+        if t and hmac.compare_digest(t.encode(), config.TOKEN.encode()):
+            resp = web.HTTPFound(request.path)                      # the token leaves the address bar
+            resp.set_cookie("sprocket_auth", AUTH_VAL, httponly=True, samesite="Strict", max_age=60 * 60 * 24 * 30)
+            raise resp
+        return web.Response(status=401, text="Sign-in needed: open this address once with ?token=<your token> on the end.")
+
     async def ws_handler(request):
-        if request.headers.get("Origin") and not re.match(rf"^https?://(127\.0\.0\.1|localhost):{config.PORT}$", request.headers["Origin"]):
+        if not origin_ok(request):
             return web.Response(status=403)
         ws = web.WebSocketResponse(heartbeat=20)
         await ws.prepare(request)
@@ -446,10 +474,10 @@ async def serve(agent, runner, interval=None):
     index_html = (WEB / "index.html").read_text()
     m_ = re.search(r'<script type="importmap">(.*?)</script>', index_html, re.S)
     imap_hash = base64.b64encode(hashlib.sha256(m_.group(1).encode()).digest()).decode() if m_ else ""
-    origin = f"{config.HOST}:{config.PORT}"
-    CSP_PAGE = ("default-src 'none'; script-src 'self' 'sha256-%s'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
-                "connect-src 'self' blob: ws://%s ws://localhost:%d; frame-src 'self'; worker-src 'self' blob:; "
-                "base-uri 'none'; form-action 'none'; object-src 'none'" % (imap_hash, origin, config.PORT))
+    def csp_page(host):                                  # `host` is the address the page was loaded from (the socket must go to that same place)
+        return ("default-src 'none'; script-src 'self' 'sha256-%s'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                "connect-src 'self' blob: ws://%s%s; frame-src 'self'; worker-src 'self' blob:; "
+                "base-uri 'none'; form-action 'none'; object-src 'none'" % (imap_hash, host, "" if config.REMOTE else " ws://localhost:%d" % config.PORT))
     # The art sandbox: no network at all, may run blob workers (where drawing code lives), may post a PNG back to its parent.
     CSP_SANDBOX = "default-src 'none'; script-src 'self' blob:; worker-src blob:; img-src data: blob:; base-uri 'none'; form-action 'none'"
 
@@ -459,7 +487,7 @@ async def serve(agent, runner, interval=None):
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["Referrer-Policy"] = "no-referrer"
         if request.path in ("/", "/index.html"):
-            resp.headers["Content-Security-Policy"] = CSP_PAGE
+            resp.headers["Content-Security-Policy"] = csp_page(request.host)
             resp.headers["Cache-Control"] = "no-store"
         elif request.path == "/art-sandbox.html":
             resp.headers["Content-Security-Policy"] = CSP_SANDBOX
@@ -497,7 +525,7 @@ async def serve(agent, runner, interval=None):
     async def gift_upload(request):
         """Local-only upload. The page must be on this machine (Origin check + a custom header a foreign page cannot send)."""
         j = lambda ok, **k: web.json_response({"ok": ok, **k}, status=200 if ok else 400)
-        if not re.match(rf"^https?://(127\.0\.0\.1|localhost):{config.PORT}$", request.headers.get("Origin", "")) or request.headers.get("X-Gift-Upload") != "1":
+        if not origin_ok(request, True) or request.headers.get("X-Gift-Upload") != "1":
             return web.json_response({"ok": False, "error": "Uploads are only accepted from this page."}, status=403)
         if request.content_length and request.content_length > giftlib.MAX_MODEL + 2_000_000:
             return j(False, error="That file is too big.")
@@ -535,7 +563,7 @@ async def serve(agent, runner, interval=None):
     async def index(_):
         return web.FileResponse(WEB / "index.html")
 
-    app = web.Application(middlewares=[security_headers])
+    app = web.Application(middlewares=[auth, security_headers])
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/asset/{id}", asset_file)
