@@ -53,6 +53,7 @@ class Agent:
         self._last_reflect_tick = self.state.get("last_reflect", 0)
         world.set_half(self.state.get("world_half") or config.WORLD_HALF)
         self.asset_summary = assets.scan(db, log)          # (re)index model packs; unchanged files are skipped
+        self.load_map()
         self._migrate()
         self._spread_builds()
         self._migrate_layout()
@@ -983,6 +984,7 @@ class Agent:
         s["battery"] = max(0.0, s["battery"] - b)
 
     async def _execute(self, name, args, thought):
+        self.state["path"] = []                          # set again by whatever walks this tick
         s, db = self.state, self.db
         x0, z0 = s["x"], s["z"]
         fn = tools.REGISTRY.get(name)
@@ -1243,8 +1245,28 @@ class Agent:
                 "status": getattr(self, "site_status", None), "notice": s.get("site_notice"),
                 "author": f"{config.GIT_AUTHOR_NAME}", "dryrun_folder": "site_dryrun/"}
 
+    def load_map(self, name=None):
+        """Make a saved map the live one (grid, places). The starter map is generated the first time."""
+        if not config.MAPS_ENABLED:
+            return
+        from . import maps, starter
+        name = name or self.db.get("active_map") or "starter"
+        try:
+            doc = maps.load(name)
+        except Exception:
+            doc = starter.ensure(self.db); name = "starter"
+        maps.activate(doc)
+        self.db.put("active_map", name)
+        s = self.state
+        if s.get("x") is not None and not maps.walkable(s["x"], s["z"]):
+            hp = world.PLACES.get("home") or {"x": 0, "z": 0}
+            s["x"], s["z"] = hp["x"], hp["z"]; s["inside"] = None
+        self.map_rev = getattr(self, "map_rev", 0) + 1
+
     def snapshot(self):
         d = self._snapshot_base()
+        d["map"] = {"name": (self.db.get("active_map") or ""), "rev": getattr(self, "map_rev", 0)}
+        d["state"]["path"] = self.state.get("path") or []
         d["site"] = self.site_info()
         d["state"]["publish_mode"] = self.state.get("publish_mode", config.PUBLISH_MODE_DEFAULT)
         db, s = self.db, self.state

@@ -81,6 +81,7 @@ SPACING_MARGIN = 0.8            # extra space kept between footprints
 
 # --- assets ---
 ASSET_DIRS = ("assets/kenney",)      # assets/_unused is never indexed
+MAPS_ENABLED = True                      # data-driven maps (sprocket/maps.py) replace the fixed place table
 KIT_ENABLED = False                      # the old procedural building/prop generators (web/kit/gens.js): off, see STYLE.md
 ASSET_MAX_BYTES = 25_000_000
 ASSET_MAX_TRIS = 12_000
@@ -187,8 +188,8 @@ COLLECT_WEIGHT, COLLECT_FIND_BONUS = 0.12, 0.15   # how much he feels like colle
 # Otto is ROBOT_HEIGHT tall. Values are filled in after measuring each kit against him (see tools/measure_kits.py).
 WORLD_CELL = 4.0           # one map cell is 4 m: city road tiles, modular space pieces and station modules all line up on it
 KIT_SCALE = {"City Kit - Roads": 4.0, "City Kit - Commercial": 4.0, "City Kit - Suburban": 4.0, "City Kit - Industrial": 4.0, "Road Pack": 4.0,
-             "Car Kit": 3.0, "Modular Space Kit": 1.0, "Space Station Kit": 4.0, "Space Kit": 2.0, "Nature Kit": 3.0, "Furniture Kit": 2.0, "Train Kit": 2.0}
-NAME_SCALE = [("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
+             "Car Kit": 1.3, "Modular Space Kit": 1.0, "Space Station Kit": 4.0, "Space Kit": 2.0, "Nature Kit": 3.0, "Furniture Kit": 2.2, "Train Kit": 2.0}
+NAME_SCALE = [("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
 
 
 def kit_scale(kit, name):

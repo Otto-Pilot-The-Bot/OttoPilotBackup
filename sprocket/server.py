@@ -11,7 +11,7 @@ import time
 
 from aiohttp import web, WSMsgType
 
-from . import assets as assetlib, config, design, gifts as giftlib, kit, layout, world
+from . import assets as assetlib, maps as maplib, starter as starterlib, config, design, gifts as giftlib, kit, layout, world
 
 WEB = config.ROOT / "web"
 
@@ -43,6 +43,8 @@ async def serve(agent, runner, interval=None):
         await ws.prepare(request)
         clients.add(ws)
         await ws.send_str(json.dumps(agent.snapshot()))
+        if config.MAPS_ENABLED:
+            await ws.send_str(json.dumps(map_msg()))
         async for m in ws:
             if m.type != WSMsgType.TEXT:
                 continue
@@ -53,8 +55,48 @@ async def serve(agent, runner, interval=None):
         clients.discard(ws)
         return ws
 
+    def map_msg():
+        """The live map for the page (each model object gets its current asset id so the page can fetch /asset/<id>)."""
+        doc = maplib.ACTIVE["doc"]
+        if not doc:
+            return {"type": "map", "doc": None, "maps": maplib.list_maps()}
+        ids = {r["file"]: r for r in agent.db.q("SELECT id,file,fit FROM assets WHERE usable=1")}
+        d = dict(doc, objects=[dict(o, aid=(ids.get(o["asset"]) or {"id": None})["id"], fit=(ids.get(o["asset"]) or {"fit": 1.0})["fit"]) for o in doc["objects"]])
+        nav = ["".join("1" if c else "0" for c in row) for row in maplib.ACTIVE["blocked"]]
+        return {"type": "map", "doc": d, "nav": nav, "maps": maplib.list_maps(), "active": agent.db.get("active_map"), "rev": getattr(agent, "map_rev", 0)}
+
+    def map_handle(t, m, ws):
+        """Map editing. HUMAN ONLY: these messages come from the page's Plan editor; no model tool can reach maplib's writers."""
+        db = agent.db
+        try:
+            if t == "get_map":
+                if ws is not None:
+                    asyncio.ensure_future(_send(ws, json.dumps(map_msg())))
+                return
+            if t == "map_load":
+                maplib.load(str(m.get("name", "")))
+                agent.load_map(str(m.get("name"))); db.control(f"map loaded: {m.get('name')}")
+            elif t == "map_save":
+                doc = maplib.save(m.get("doc"), db)
+                if m.get("use", True):
+                    agent.load_map(doc["name"])
+                db.control(f"map saved: {doc['name']} ({len(doc['objects'])} objects)")
+                toast(f"Saved map '{doc['name']}'.")
+            elif t == "map_new":
+                nm = str(m.get("name", "")).strip()
+                doc = maplib.save(maplib.blank(nm, int(m.get("n", 20))), db)
+                agent.load_map(doc["name"]); db.control(f"map created: {nm}")
+            elif t == "map_starter":
+                doc = starterlib.ensure(db, force=True); agent.load_map(doc["name"]); db.control("starter map regenerated")
+                toast("Starter map regenerated.")
+            agent.save(); push(agent.snapshot()); push(map_msg())
+        except ValueError as e:
+            toast(str(e), False)
+
     def handle(m, ws=None):
         t, s, db = m.get("type"), agent.state, agent.db
+        if t in ("get_map", "map_load", "map_save", "map_new", "map_starter") and config.MAPS_ENABLED:
+            return map_handle(t, m, ws)
         if t == "set_pace":
             name = m.get("name")
             if name in config.PACE_PRESETS:
@@ -104,7 +146,7 @@ async def serve(agent, runner, interval=None):
             agent.save()
             push(agent.snapshot())
         elif t == "get_assets" and ws is not None:
-            rows = [dict(r, tags=json.loads(r["tags"])[:6]) for r in db.q("SELECT id,name,pack,tags,sx,sy,sz,fit,tris FROM assets WHERE usable=1 ORDER BY pack,name")]
+            rows = [dict(r, tags=json.loads(r["tags"])[:8]) for r in db.q("SELECT id,name,pack,tags,sx,sy,sz,fit,tris,file,cat,fw,fd,door_x,door_z FROM assets WHERE usable=1 ORDER BY pack,name")]
             asyncio.ensure_future(_send(ws, json.dumps({"type": "assets", "rows": rows, "kit": kit.spec_json() if config.KIT_ENABLED else {}, "zones": [{"key": k, "label": z["label"]} for k, z in layout.ZONES.items()]})))
         elif t == "design_preview" and ws is not None:
             try:

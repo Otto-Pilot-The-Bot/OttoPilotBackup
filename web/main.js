@@ -5,6 +5,8 @@ import * as UI from './ui.js';
 import { ArtStore } from './art.js';
 import { createRealism } from './realism.js';
 import { createCameraModes } from './camera.js';
+import { createMapView, LOOKS } from './mapview.js';
+import { createEditor } from './editor.js';
 import { buildDesign, animateDesign, mixers, glowMats, kitGlow } from './models.js';
 
 const HALF = 24;
@@ -19,17 +21,17 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9ec5e8);
 scene.fog = new THREE.Fog(0x9ec5e8, 55, 120);
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 220);
-const resetCamera = () => { camera.position.set(0, 30, 40); controls.target.set(0, 1, 0); };
+const resetCamera = () => { const h = Math.max(24, curHalf || 24); camera.position.set(0, h * 0.95 + 4, h * 1.15 + 8); controls.target.set(0, 1, 0); };
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.maxPolarAngle = Math.PI * 0.48; controls.minDistance = 5; controls.maxDistance = 70;
-resetCamera();
+resetCamera(); window.__camera = camera; window.__controls = controls;
 const hemi = new THREE.HemisphereLight(0xffffff, 0x6a7a55, 1.0); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff2d6, 2.2);
 sun.castShadow = true;
 Object.assign(sun.shadow.camera, { left: -38, right: 38, top: 38, bottom: -38 }); sun.shadow.mapSize.set(2048, 2048);
 scene.add(sun);
 const REAL = createRealism({ renderer, scene, camera, sun, hemi });          // realism pass (web/realism.js); ?plain=1 turns it off
-let ground, groundParts = [], curHalf = 0;
+var ground, groundParts = [], curHalf = 0;
 function buildGround(half) {
   for (const o of groundParts) { scene.remove(o); o.geometry?.dispose?.(); }
   groundParts = []; curHalf = half;
@@ -317,7 +319,7 @@ async function pumpThumbs() {
   while (thumbQueue.length) {
     const { key, o } = thumbQueue.shift();
     try { thumbCache.set(key, await renderThumb(o)); } catch (e) { thumbCache.set(key, ''); }
-    UI.refreshSoon();
+    UI.refreshSoon(); EDITOR?.thumbsReady();
   }
   thumbBusy = false;
 }
@@ -458,6 +460,16 @@ function setMood(m) {
 // ------------------------------------------------------------------ websocket
 let ws, last = null, placesBuilt = false, snapHour = 8, snapAt = 0, intervalMs = 12000, paused = false, follow = true, placing = null, wasConnected = false;
 const art = new ArtStore((o) => send(o));
+let EDITOR = null;
+const MV = createMapView({ scene, art });
+let forcedHour = null, mapActive = false, mapSeen = false;
+function applyLook(name) {
+  const L = MV.setLook(name); forcedHour = L.hour; window.__look = MV.look;
+  for (const o of groundParts) o.visible = !L.hideGrass;
+  REAL.setTufts?.(false);
+  UI.mapLook?.(MV.look);
+}
+window.__setFollow = (v) => { follow = v; }; window.__applyLook = applyLook; window.__MV = MV;
 art.onChange(updateGallery);
 const send = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
 
@@ -467,10 +479,11 @@ function connect() {
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.type === 'snapshot') { const first = !last; last = m; applySnapshot(m, first); }
+    else if (m.type === 'map') onMap(m);
     else if (m.type === 'action') onAction(m);
     else if (m.type === 'status') UI.status(m.text);
     else if (m.type === 'wish_result') UI.wishResult(m);
-    else if (m.type === 'assets') UI.assetsData(m);
+    else if (m.type === 'assets') { UI.assetsData(m); EDITOR?.assetsData(m); }
     else if (m.type === 'design_preview') UI.designPreview(m);
     else if (m.type === 'toast') UI.toast(m.text, m.ok === false ? 5000 : 2500);
     else if (m.type === 'log') UI.setLog(m.rows);
@@ -479,9 +492,19 @@ function connect() {
   ws.onclose = () => { UI.setConn(false, wasConnected ? (last?.short_name || 'The robot') + ' has stopped or the connection dropped. Restart with ./run.sh — reconnecting…' : 'Connecting…'); setTimeout(connect, 2500); };
 }
 
+function onMap(m) {
+  mapActive = !!m.doc;
+  if (m.doc) {
+    MV.setDoc(m.doc, m.nav);
+    const q = new URLSearchParams(location.search).get('look'); applyLook(q || MV.look);
+    if (m.doc.n * m.doc.cell / 2 !== curHalf) { buildGround(m.doc.n * m.doc.cell / 2); if (!mapSeen) { mapSeen = true; resetCamera(); } }
+    applyLook(MV.look);
+  }
+  window.__mapMsg = m; EDITOR?.onMap?.(m);
+}
 function applySnapshot(m, teleport) {
   const s = m.state;
-  if (!placesBuilt) { buildPlaces(m.places); placesBuilt = true; }
+  if (!placesBuilt) { if (!(m.map && m.map.name)) buildPlaces(m.places); placesBuilt = true; }
   if (m.world_half && m.world_half !== curHalf) buildGround(m.world_half);
   insideKey = s.inside || null;
   UI.update(m);
@@ -523,9 +546,11 @@ const CAM = createCameraModes({
   camera, controls, dom: renderer.domElement,
   getRobot: () => ({ pos: robotPos, yaw: robot ? robot.rotation.y : 0 }),
   getHalf: () => curHalf || HALF, getColliders: () => (window.__colliders || []),
-  onChange: (m) => { if (m === 'walk') cancelPlace(); },
+  onChange: (m) => { if (m === 'walk') cancelPlace(); if (m !== 'overhead') EDITOR?.close(); },
 });
 window.__cam = CAM;
+EDITOR = createEditor({ camera, controls, dom: renderer.domElement, MV, send, CAM, thumbDesign: (k, d, n) => thumbOfDesign(k, d, n), applyLook });
+window.__editor = EDITOR;
 { const q = new URLSearchParams(location.search), cm = q.get('cam');
   if (cm) setTimeout(() => { CAM.setMode(cm); const at = (q.get('at') || '').split(',').map(Number); if (at.length === 2 && cm === 'walk') CAM.pose(at[0], at[1], +q.get('yaw') || 0, +q.get('pitch') || 0); }, 2500); }
 UI.init({ send, art, startPlace, cancelPlace, setFollow: (v) => { follow = v; }, resetCamera, thumb: thumbOf, thumbArt: thumbOfArt, thumbDesign: thumbOfDesign, setLabelMode: (m) => { labelMode = m; } });
@@ -538,7 +563,7 @@ function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.1), now = performance.now();
   // world clock: glides between ticks (10 world minutes per tick)
-  const hour = new URLSearchParams(location.search).get('hour') ? +new URLSearchParams(location.search).get('hour') : (snapHour + (paused ? 0 : Math.min(1, (now - snapAt) / intervalMs)) * (10 / 60)) % 24;
+  const hour = new URLSearchParams(location.search).get('hour') ? +new URLSearchParams(location.search).get('hour') : forcedHour != null ? forcedHour : (snapHour + (paused ? 0 : Math.min(1, (now - snapAt) / intervalMs)) * (10 / 60)) % 24;
   applyTime(hour); REAL.update(hour, nightness, dt, now / 1000);
   const hh = Math.floor(hour), mm = Math.floor((hour % 1) * 60), lbl = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   if (lbl !== lastClock && last) { lastClock = lbl; UI.setClock({ label: lbl, day: last.world.day, phase: hour >= 5 && hour < 7.5 ? 'dawn' : hour >= 7.5 && hour < 18 ? 'day' : hour >= 18 && hour < 20 ? 'dusk' : 'night' }); }

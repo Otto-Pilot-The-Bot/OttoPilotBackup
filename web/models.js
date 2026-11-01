@@ -36,7 +36,13 @@ function template(id, fit, url) {
       holder.add(scene);
       const b2 = new THREE.Box3().setFromObject(holder), c = b2.getCenter(new THREE.Vector3());
       scene.position.set(-c.x, -b2.min.y, -c.z);                                  // sits on the ground, centred
-      scene.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      scene.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = true; o.receiveShadow = true;
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) {   // Kenney files leave metallic/roughness at the glTF default (fully metal), which renders black without a reflection probe; use them matte as authored
+          if (m && m.isMeshStandardMaterial && !m.metalnessMap && m.metalness >= 0.99 && m.roughness >= 0.99) m.metalness = 0;
+        }
+      });
       return { holder, clips: g.animations || [] };
     }));
   }

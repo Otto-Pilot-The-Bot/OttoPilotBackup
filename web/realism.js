@@ -98,7 +98,8 @@ export function createRealism({ renderer, scene, camera, sun, hemi }) {
        float sw = uv.y * uv.y; vec4 ip = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
        transformed.x += sin(uWind * 1.6 + ip.x * 0.55 + ip.z * 0.35) * 0.09 * sw + sin(uWind * 3.1 + ip.z) * 0.025 * sw;`);
   };
-  let tufts = null, farPlane = null;
+  let tufts = null, farPlane = null, tuftsOn = true;
+  R.setTufts = (v) => { tuftsOn = v; if (tufts) tufts.visible = v; };      // off when a map's flat tiles (roads, plaza) lie on the ground
 
   R.buildGround = (half, ground) => {
     const size = half * 2 + 8, rep = size / 7;
@@ -118,7 +119,7 @@ export function createRealism({ renderer, scene, camera, sun, hemi }) {
       const s = 0.6 + rr() * 0.9; sc.set(s, s * (0.7 + rr() * 0.7), s); m.compose(p, q, sc); tufts.setMatrixAt(i, m);
       col.setHSL(0.24 + rr() * 0.06, 0.35 + rr() * 0.2, 0.42 + rr() * 0.16); tufts.setColorAt(i, col);
     }
-    scene.add(tufts);
+    tufts.visible = tuftsOn; scene.add(tufts);
   };
 
   // ---- sky-based environment light (rebuilt a few times a day)

@@ -58,8 +58,22 @@ def dist(ax, az, bx, bz):
     return math.hypot(ax - bx, az - bz)
 
 
+LAST_PATH = []          # waypoints walked by the last step_toward (the page walks them in order, so he follows roads and goes around things)
+
+
 def step_toward(x, z, tx, tz, step=config.MAX_STEP, stop=config.REACH * 0.6):
     """Walk toward a target but stop `stop` short of it. Returns (nx, nz, arrived)."""
+    global LAST_PATH
+    from . import maps
+    if config.MAPS_ENABLED and maps.ACTIVE["doc"] is not None:
+        d = dist(x, z, tx, tz)
+        if d <= config.REACH:
+            LAST_PATH = [(x, z)]
+            return x, z, True
+        nx, nz, way, end = maps.walk(x, z, tx, tz, step)
+        LAST_PATH = way
+        return round(nx, 2), round(nz, 2), end or dist(nx, nz, tx, tz) <= config.REACH
+    LAST_PATH = [(x, z), (x + (tx - x) * min(1, step / max(dist(x, z, tx, tz), 0.01)), z + (tz - z) * min(1, step / max(dist(x, z, tx, tz), 0.01)))]
     d = dist(x, z, tx, tz)
     if d <= config.REACH:
         return x, z, True
