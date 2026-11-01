@@ -40,7 +40,7 @@ function template(id, fit, url) {
         if (!o.isMesh) return;
         o.castShadow = true; o.receiveShadow = true;
         for (const m of Array.isArray(o.material) ? o.material : [o.material]) {   // Kenney files leave metallic/roughness at the glTF default (fully metal), which renders black without a reflection probe; use them matte as authored
-          if (m && m.isMeshStandardMaterial && !m.metalnessMap && m.metalness >= 0.99 && m.roughness >= 0.99) m.metalness = 0;
+          if (m && m.isMeshStandardMaterial && !m.metalnessMap && m.metalness > 0.3) m.metalness = m.roughness >= 0.99 ? 0 : 0.3;   // metal with no reflections to show renders black; keep the base colours as authored
         }
       });
       return { holder, clips: g.animations || [] };
