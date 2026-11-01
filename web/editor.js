@@ -81,6 +81,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <label>turn ° <input data-p="rot" type="number" step="15" value="${s.rot}"></label><label>scale <input data-p="scale" type="number" step="0.1" min="0.2" max="6" value="${s.scale}"></label>
         <label>footprint w <input data-p="fw" type="number" step="0.1" value="${s.fw}"></label><label>footprint d <input data-p="fd" type="number" step="0.1" value="${s.fd}"></label>
         <label>door x <input data-p="dx" type="number" step="0.5" value="${s.door ? s.door[0] : ''}" placeholder="none"></label><label>door z <input data-p="dz" type="number" step="0.5" value="${s.door ? s.door[1] : ''}" placeholder="none"></label></div>
+        <label>Otto's… <select data-p="placekey"><option value="">(nothing special)</option>${[['home', 'home'], ['clothing_store', 'shop'], ['gallery', 'gallery'], ['fuel_station', 'charging station'], ['plaza', 'plaza'], ['park', 'park'], ['pond', 'pond']].map(([k, l]) => `<option value="${k}" ${doc.places?.[k]?.object === s.id ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label class="row"><input type="checkbox" data-p="walkable" ${s.walkable ? 'checked' : ''}> walkable (no collision)</label>
         <label>tags <input data-p="tags" type="text" value="${esc((s.tags || []).join(', '))}" placeholder="bench, seat, park"></label>
         ${s.panel ? `<div class="grid2"><label>art w <input data-p="pw" type="number" step="0.1" value="${s.panel.w}"></label><label>art h <input data-p="ph" type="number" step="0.1" value="${s.panel.h}"></label><label>height y <input data-p="y" type="number" step="0.1" value="${s.y}"></label></div><div class="dim small">Flat panels show Otto's newest pictures.</div>` : ''}</div>` : ''}
@@ -154,6 +155,11 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     if (p === 'x' || p === 'z' || p === 'rot' || p === 'scale' || p === 'fw' || p === 'fd' || p === 'y') { if (Number.isFinite(n)) s[p] = p === 'scale' ? Math.max(0.2, Math.min(6, n)) : n; }
     else if (p === 'dx' || p === 'dz') { const cur = s.door || [0, 0]; if (t.value === '') s.door = null; else { cur[p === 'dx' ? 0 : 1] = n; s.door = cur; } }
     else if (p === 'walkable') s.walkable = t.checked;
+    else if (p === 'placekey') {
+      doc.places = doc.places || {}; for (const k of Object.keys(doc.places)) if (doc.places[k].object === s.id) delete doc.places[k];
+      if (t.value) { const L = { home: 'home', clothing_store: 'shop', gallery: 'gallery', fuel_station: 'charging station', plaza: 'plaza', park: 'park', pond: 'pond' }[t.value];
+        doc.places[t.value] = { label: L, object: s.id, aliases: [L], enter: !!s.door && ['home', 'clothing_store', 'gallery'].includes(t.value) }; }
+    }
     else if (p === 'name') s.name = t.value.slice(0, 60) || s.name;
     else if (p === 'tags') s.tags = t.value.split(',').map((x) => x.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')).filter(Boolean).slice(0, 12);
     else if (p === 'pw' && s.panel) s.panel.w = Math.max(0.3, n); else if (p === 'ph' && s.panel) s.panel.h = Math.max(0.3, n);
