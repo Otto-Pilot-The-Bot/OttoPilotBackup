@@ -192,6 +192,8 @@ async def serve(agent, runner, interval=None):
                      "system", "{}", txt, 0, s["mood"], 0)
                 db.thought(s["tick"], "system", txt)
                 push(agent.snapshot())
+        elif t == "game_mode":
+            asyncio.ensure_future(runner.set_sleeping(bool(m.get("on"))))
         elif t == "pause":
             runner.set_paused(True)
         elif t == "resume":

@@ -19,6 +19,8 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
 
   // ---------------------------------------------------------------- DOM
   const btn = document.createElement('button'); btn.id = 'planBtn'; btn.textContent = '🗺️ Plan'; btn.title = 'Open the map editor (only you can use it)'; document.body.appendChild(btn);
+  const gbtn = document.createElement('button'); gbtn.id = 'gameBtn'; gbtn.textContent = '🎮 Game mode'; gbtn.title = 'Pause Otto and free the graphics memory (for gaming or recording)'; document.body.appendChild(gbtn);
+  gbtn.addEventListener('click', () => send({ type: 'game_mode', on: !window.__sleeping }));
   const el = document.createElement('aside'); el.id = 'plan'; el.hidden = true; document.body.appendChild(el);
   const ghost = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-1, 0.12, -1), new THREE.Vector3(1, 0.12, -1), new THREE.Vector3(1, 0.12, 1), new THREE.Vector3(-1, 0.12, 1)]),
     new THREE.LineBasicMaterial({ color: 0x00e5ff, depthTest: false })); ghost.visible = false; ghost.renderOrder = 40; MV.root.add(ghost);

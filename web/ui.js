@@ -345,7 +345,7 @@ const PANELS = [
   }, update() {} },
 
   { id: 'you', icon: '🕹️', label: 'You', title: 'You', build(el) {
-    el.innerHTML = `<button class="btn primary wide" id="pauseBtn"></button>
+    el.innerHTML = `<button class="btn primary wide" id="pauseBtn"></button><button class="btn wide" id="gameBtn2" style="margin-top:6px"></button><div class="small dim" id="gameNote"></div>
       <h3>How fast he thinks</h3><input type="range" id="speed" min="3" max="60" step="1"><div class="small dim" id="speedLbl"></div>
       <h3>Pace</h3><div class="tabs" id="paceBtns" style="margin-bottom:2px"></div><div class="small dim" id="paceNote"></div>
       <h3>Web pages</h3><label class="switch"><input type="checkbox" id="pubChk"><span>Let him draft web pages.<br><span class="small dim">Pages he writes wait for your approval (see <b>My site</b>). Nothing goes online unless you approve it.</span></span></label>
@@ -353,6 +353,7 @@ const PANELS = [
       <h3>Emergency</h3><button class="btn danger wide" id="killBtn">Kill switch — stop ${short}</button>
       <p class="small dim">You can also press Ctrl-C in the terminal or create a file named KILL in the project folder. His state is saved.</p>`;
     $('#pauseBtn', el).onclick = () => api.send({ type: snap.state.paused ? 'resume' : 'pause' });
+    $('#gameBtn2', el).onclick = () => api.send({ type: 'game_mode', on: !snap.state.sleeping });
     const sp = $('#speed', el);
     sp.oninput = () => { draggingSpeed = true; $('#speedLbl', el).textContent = `Thinks every ${sp.value}s`; };
     sp.onchange = () => { draggingSpeed = false; api.send({ type: 'set_interval', seconds: +sp.value }); };
@@ -366,6 +367,8 @@ const PANELS = [
   }, update(el, s) {
     const p = s.state.paused;
     $('#pauseBtn', el).textContent = p ? `▶ Resume ${short}` : `⏸ Pause ${short}`;
+    $('#gameBtn2', el).textContent = s.state.sleeping ? `🎮 Game mode is ON — wake ${short} up` : '🎮 Game mode (pause + free the graphics memory)';
+    $('#gameNote', el).textContent = s.state.sleeping ? `${short} is asleep and his brain is unloaded from memory. Nothing calls the model until you wake him.` : 'Pauses him and unloads his brain from memory so a game or OBS gets all of it. The world page stays up.';
     if (!draggingSpeed) { $('#speed', el).value = Math.round(s.interval); $('#speedLbl', el).textContent = `Thinks every ${Math.round(s.interval)}s`; }
     $('#pubChk', el).checked = s.state.publish_enabled;
     $('#paceBtns', el).innerHTML = Object.entries(s.pace_presets || {}).map(([k, v]) => `<button data-pace="${k}" class="${s.state.pace === k ? 'on' : ''}">${({ calm: '🌿 Calm', normal: '🙂 Normal', lively: '⚡ Lively' })[k] || k} · ${v.interval}s</button>`).join('');
@@ -463,7 +466,7 @@ export function update(s) {
   const first = !snap; snap = s; skew = s.server_time - Date.now() / 1000;
   $('#name').textContent = s.name; short = s.short_name || short; document.title = `${s.name}'s World`;
   const m = s.state.mood;
-  $('#moodEmoji').textContent = MOOD[m] || '🤖'; $('#moodChip').textContent = m + (s.state.inside ? ` · inside the ${s.places[s.state.inside].label}` : '');
+  $('#moodEmoji').textContent = MOOD[m] || '🤖'; $('#moodChip').textContent = (s.state.sleeping ? '😴 asleep · game mode' : m) + (s.state.inside ? ` · inside the ${s.places[s.state.inside].label}` : '');
   document.querySelectorAll('.m').forEach((el) => {
     const k = el.dataset.k, v = s.state[k], good = el.dataset.good === 'true';
     el.querySelector('b').style.width = Math.max(2, v) + '%'; el.title = `${el.title.split(' ')[0]} ${Math.round(v)}/100`;
@@ -471,7 +474,8 @@ export function update(s) {
   });
   const wxIcon = (w) => ({ clear: '☀️', 'clear and cold': '☀️', cloudy: '☁️', foggy: '🌫️', breezy: '🍃', 'falling leaves': '🍂', frosty: '❄️', 'light snow': '🌨️', snow: '❄️', thunderstorm: '⛈️' })[w] || (/rain|drizzle/.test(w || '') ? '🌧️' : '🌤️');
   $('#wx').textContent = `${wxIcon(s.weather)} ${s.weather} · ${s.season}`;
-  if (s.state.paused) setCaption('⏸', `Paused — ${short} is resting until you resume.`, true);
+  if (s.state.sleeping) setCaption('🎮', `Game mode — ${short} is asleep and his brain is unloaded. Wake him in the You panel or with the 🎮 button.`, true);
+  else if (s.state.paused) setCaption('⏸', `Paused — ${short} is resting until you resume.`, true);
   else if (first && s.state.last_say) setCaption('💭', s.state.last_say);
   refresh();
 }

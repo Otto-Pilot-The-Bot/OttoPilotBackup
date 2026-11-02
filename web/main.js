@@ -536,6 +536,7 @@ function onMap(m) {
 }
 function applySnapshot(m, teleport) {
   const s = m.state;
+  window.__sleeping = !!s.sleeping; { const g = document.getElementById('gameBtn'); if (g) { g.classList.toggle('on', !!s.sleeping); g.textContent = s.sleeping ? '🎮 Game mode ON · wake up' : '🎮 Game mode'; } }
   if (!placesBuilt) { if (!(m.map && m.map.name)) buildPlaces(m.places); placesBuilt = true; }
   if (m.world_half && m.world_half !== curHalf) buildGround(m.world_half);
   insideKey = s.inside || null;

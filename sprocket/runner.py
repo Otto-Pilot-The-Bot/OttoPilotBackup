@@ -29,7 +29,31 @@ class Runner:
     def paused(self):
         return self.agent.state["paused"]
 
+    async def set_sleeping(self, on):
+        """Game mode. On: pause him, let a thought that is already running finish, then unload every model so the graphics memory is free
+        and nothing can call the model. Off: wake him up (the model loads again on his next thought)."""
+        ag = self.agent
+        if on:
+            ag.state["sleeping"] = True
+            self.set_paused(True)
+            ag.db.control("game mode on")
+            if self.current and not self.current.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(self.current), 90)
+                except Exception:
+                    pass
+            left = await ag.unload_models()
+            self.log(f"[{config.NAME}] game mode: asleep" + (f" (still loaded: {', '.join(left)})" if left else ", models unloaded"))
+        else:
+            ag.state["sleeping"] = False
+            ag.db.control("game mode off")
+            self.set_paused(False)
+        ag.save()
+        ag._emit("snapshot", {})
+
     def set_paused(self, v):
+        if not v:
+            self.agent.state["sleeping"] = False                 # pressing Resume also wakes him from game mode
         self.agent.state["paused"] = bool(v)
         self.agent.db.control("pause" if v else "resume")
         self.agent.save()

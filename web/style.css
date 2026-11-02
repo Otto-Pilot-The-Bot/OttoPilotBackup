@@ -142,3 +142,6 @@ body[data-cam=walk] .panel, body[data-cam=walk] #tip { pointer-events: none; }
 body.planning #camBar { left: calc(50% + 160px); }
 
 #plan .warnbox { background: #5a2a22; border: 1px solid #b3443c; border-radius: 8px; padding: 6px 8px; margin: 6px 0; font-size: 12.5px; }
+
+#gameBtn { position: fixed; left: 104px; bottom: 14px; z-index: 31; background: #2b2f3a; color: #eee; border: 1px solid #444b5c; border-radius: 9px; padding: 8px 12px; font: 14px system-ui; cursor: pointer; }
+#gameBtn.on { background: #f0a030; color: #2a1800; border-color: #f0a030; font-weight: 700; }

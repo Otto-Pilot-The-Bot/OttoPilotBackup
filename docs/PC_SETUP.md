@@ -35,3 +35,9 @@ Create an empty file called `KILL` in the project folder on the PC (`type nul > 
 ## Going back to the Mac
 Stop the PC server, copy `data/` back to the Mac (the database and maps are the only things that change), and start the Mac as before.
 Never run both at once: the database has to have a single writer.
+
+## Game mode (gaming or recording with OBS)
+Press the **🎮 Game mode** button (bottom left of the page, next to Plan; also in the You panel). It pauses Otto, lets any thought already
+running finish, then tells Ollama to unload his models so the graphics memory is free. While it is on, nothing in the program can call the model.
+Press it again (or **Resume**) to wake him; the model reloads on his next thought. The server and page stay up (they use almost nothing).
+To stop the server completely too, create an empty file named `KILL` in the project folder (`type nul > KILL`); start it again with `run.bat`.

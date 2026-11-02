@@ -190,7 +190,7 @@ class Agent:
     @staticmethod
     def _fresh_state():
         return {"tick": 0, "x": 0.0, "z": 0.0, "energy": 90.0, "battery": 90.0, "boredom": 20.0, "mood": "curious",
-                "mood_valence": 0.3, "paused": False, "publish_enabled": config.PUBLISH_ENABLED_DEFAULT,
+                "mood_valence": 0.3, "paused": False, "sleeping": False, "publish_enabled": config.PUBLISH_ENABLED_DEFAULT,
                 "last_search": None, "last_reflect": 0, "last_anim": "Idle", "last_say": "", "created": time.time(),
                 "creativity": 85.0, "interval": None, "inspiration": None, "inside": None, "world_half": config.WORLD_HALF,
                 "focus": None, "pace": "normal", "streak": 0, "busy": None, "beat": None, "reflect_due": None, "last_reflect_beat": -99, "neg_streak": 0, "last_project_tick": -999, "last_art_tick": -999, "last_style_tick": 0, "new_gift": None,
@@ -285,6 +285,27 @@ class Agent:
 
     _learn = learn
 
+    async def unload_models(self):
+        """Ask Ollama to drop every model this program uses out of memory (graphics memory too). Returns the names still loaded afterwards."""
+        names = []
+        for m in (self.model, config.MODEL, config.FALLBACK_MODEL):
+            if m and m not in names:
+                names.append(m)
+        for m in names:
+            try:
+                await asyncio.wait_for(self.client.chat(model=m, messages=[], keep_alive=0), 20)
+            except Exception as e:
+                self.log(f"  unload {m}: {type(e).__name__}")
+        try:
+            await asyncio.wait_for(self.client.embed(model=config.EMBED_MODEL, input="", keep_alive=0), 20)
+        except Exception as e:
+            self.log(f"  unload {config.EMBED_MODEL}: {type(e).__name__}")
+        try:
+            left = [m.model for m in (await asyncio.wait_for(self.client.ps(), 10)).models]
+        except Exception:
+            left = []
+        return left
+
     # ---- memory recall: local embeddings, only the few most relevant memories per tick ----
     async def check_embed(self):
         """Is the embedding model installed? If not we fall back to 'most important recent memories' and say so."""
@@ -303,6 +324,8 @@ class Agent:
         return ok
 
     async def _embed(self, texts):
+        if self.state.get("sleeping"):
+            raise RuntimeError("asleep (game mode)")
         r = await self.client.embed(model=config.EMBED_MODEL, input=texts)
         out = []
         for v in r.embeddings:
@@ -859,6 +882,8 @@ class Agent:
     # ---- model ---------------------------------------------------------
     async def _chat(self, messages, tool_list=None, fmt=None, think=None):
         """think=None -> helper default (off). The main decision passes config.THINK_MAIN. Falls back if a model rejects a thinking level."""
+        if self.state.get("sleeping"):
+            raise RuntimeError("asleep (game mode): the model is unloaded")
         think = config.THINK if think is None else think
         opts = {"num_ctx": config.NUM_CTX, "temperature": config.TEMPERATURE}
         for model in [self.model] + ([config.FALLBACK_MODEL] if self.model == config.MODEL else []):
@@ -1231,7 +1256,7 @@ class Agent:
         for a in art:
             a["colors"] = json.loads(a["colors"] or "[]")
         return {"type": "snapshot", "name": NAME, "short_name": SHORT, "model": self.model, "interval": iv,
-                "state": {k: s[k] for k in ("tick", "x", "z", "energy", "battery", "boredom", "creativity", "mood", "paused",
+                "state": {k: s[k] for k in ("tick", "x", "z", "energy", "battery", "boredom", "creativity", "mood", "paused", "sleeping",
                                             "publish_enabled", "last_anim", "last_say", "pace")},
                 "bank": self.bank_view() if config.BANK_ENABLED else None,
                 "think": str(config.THINK_MAIN), "pace_presets": config.PACE_PRESETS,
