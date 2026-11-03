@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS wishes(id INTEGER PRIMARY KEY, ts REAL, tick INT, ite
   status TEXT DEFAULT 'open', hidden INT DEFAULT 0, resolved_ts REAL, obj_id INT, notified INT DEFAULT 0);
 CREATE TABLE IF NOT EXISTS prints(id INTEGER PRIMARY KEY, ts REAL, tick INT, title TEXT, prompt TEXT, status TEXT, file TEXT, preview TEXT, tris INT, size TEXT,
   cost_cents INT, error TEXT, obj_id INT, approved_ts REAL);
+CREATE TABLE IF NOT EXISTS art_lessons(id INTEGER PRIMARY KEY, ts REAL, tick INT, title TEXT, lesson TEXT, gain INT DEFAULT 0);
 CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY, ts REAL, tick INT, title TEXT UNIQUE, body TEXT);
 CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY, ts REAL, what TEXT);
 """
@@ -69,7 +70,7 @@ class DB:
                                 ("pages", "approved_ts", "REAL"), ("pages", "published_ts", "REAL"), ("pages", "commit_sha", "TEXT"),
                                 ("pages", "url", "TEXT"), ("pages", "mode", "TEXT"), ("pages", "submitted_tick", "INT"), ("actions", "cat", "TEXT"), ("memories", "embedding", "BLOB"), ("interests", "last_tick", "INT"), ("projects", "reason", "TEXT"),
                                 ("projects", "review", "TEXT"), ("projects", "review_due", "INT"),
-                                ("art", "score", "INT"), ("art", "looks", "TEXT"), ("art", "source", "TEXT"), ("assets", "ox", "REAL"), ("assets", "oy", "REAL"), ("assets", "oz", "REAL"), ("assets", "fw", "REAL"), ("assets", "fd", "REAL"),
+                                ("art", "score", "INT"), ("art", "first_score", "INT"), ("art", "rounds", "INT"), ("art", "looks", "TEXT"), ("art", "source", "TEXT"), ("assets", "ox", "REAL"), ("assets", "oy", "REAL"), ("assets", "oz", "REAL"), ("assets", "fw", "REAL"), ("assets", "fd", "REAL"),
                                 ("assets", "door_x", "REAL"), ("assets", "door_z", "REAL"), ("assets", "cat", "TEXT")):
             if col not in [r["name"] for r in self.c.execute(f"PRAGMA table_info({table})")]:
                 self.c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")

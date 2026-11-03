@@ -981,6 +981,11 @@ class Agent:
             where = (f"your {len(panels)} art panel(s) in the gallery show your newest pictures" if panels else "there is no art wall in your world yet, so you could wish for a gallery wall or art panels")
             pub = " You can also write a page about it for your own website (publish_page); your human approves it before it goes online." if s.get("publish_enabled") else ""
             L.append(f"YOUR ART: you have {n_art} piece(s); {where}. Any drawing, painting or pixel art you make_art goes there to be seen" + (", so make something you would like to show." if n_art < 3 else ".") + pub)
+        if config.ART_LEARN:
+            from . import artlook as _al
+            nt = _al.noticed(db)
+            if nt:
+                L.append("YOUR DRAWING:" + nt)
         cat = self._focus()
         L.append(f"TODAY YOU FEEL LIKE: {self.FOCUS_TEXT[cat]}. (An inclination, not an order.)")
         sug = self.poi_suggestion(cat, prow)

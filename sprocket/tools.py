@@ -1816,7 +1816,7 @@ async def make_art(ctx, a):
         return out(False, "Give your artwork a title.")
     if not str(a.get("content") or "").strip() and str(a.get("kind")).lower() == "drawing" and artlook.available():
         return out(True, "You look at what is in front of you and rough it out as a starting sketch:\n" + artlook.view_sketch(ctx) +
-                   "\nIt is only a start. Make your own version (add detail, change the colours, take things away) and call make_art again with your content.", 0.05, "Idle", cat="observe")
+                   "\nIt is only a start. Make your own version (add detail, change the colours, take things away) and call make_art again with your content." + artlook.noticed(db), 0.05, "Idle", cat="observe")
     if s["tick"] - s.get("last_art_tick", -999) < config.MIN_TICKS_BETWEEN_ART:
         return out(True, "You just made a piece and want to let it breathe. Look around, learn something, or take a walk before the next one.", 0.0, "Idle", noop=True)
     if str(a.get("kind")).lower() == "sculpture" and not config.BUILDING_ENABLED:
@@ -1831,7 +1831,9 @@ async def make_art(ctx, a):
     if db.one("SELECT COUNT(*) n FROM art")["n"] >= 300:
         return out(False, "The gallery is full.")
     statement = str(a.get("statement", "")).strip()[:240]
-    score = looks = None
+    score = looks = first_score = rounds = None
+    learned = ""
+    first = None
     svg = artlook.svg_of(kind, mode, content)
     if svg and config.ART_REVIEW and artlook.available():
         plain = artlook.plain_check(svg) if kind == "drawing" else ""
@@ -1839,9 +1841,14 @@ async def make_art(ctx, a):
             s["last_art_tick"] = s["tick"] - config.MIN_TICKS_BETWEEN_ART // 2      # a rejected sketch still takes a little time: no instant retries
             return out(False, f"You step back: {plain}. Try again, or do something else for a while.", -0.1)
         cr = None
+        first = None
+        rounds = 0
         for rnd in range(config.ART_REVISIONS + 1):                          # he looks at what he drew; if it does not read, he tries again
             png = artlook.render(svg)
             cr = await artlook.critique(ctx, title, statement, png) if png else None
+            if cr and first is None:
+                first = (png, cr["sees"], cr["match"])
+            rounds = rnd
             if not cr or cr["match"] >= 7 or rnd == config.ART_REVISIONS or kind != "drawing":
                 break
             new = await artlook.redraw(ctx, title, statement, svg, cr, png)
@@ -1851,10 +1858,21 @@ async def make_art(ctx, a):
             colors = list(dict.fromkeys(world.to_hex(c) for c in re.findall(r"#[0-9a-fA-F]{6}", new) if world.to_hex(c)))[:6]
         if cr:
             score, looks = cr["match"], cr["sees"]
+            learned = ""
+            if kind == "drawing" and config.ART_LEARN:                         # he thinks about how it went and keeps a note for next time
+                try:
+                    old = artlook.earlier_like(db, title)
+                    rf = await artlook.reflect(ctx, title, statement, first, (png, cr["sees"], cr["match"]), rounds, old)
+                    if rf:
+                        artlook.save_lesson(db, s["tick"], title, rf[0], rf[1])
+                        db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"A note to myself about drawing: {rf[0]}"[:220], 2)
+                        learned = " " + rf[2]
+                except Exception as e:
+                    ctx.log(f"  art lesson failed: {type(e).__name__}")
             if score < config.ART_MIN_MATCH:
                 db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"My drawing \"{title}\" only looked like: {looks}. I put it aside."[:200], 2)
                 s["last_art_tick"] = s["tick"]
-                return out(True, f"You made \"{title}\" but looking at it you only see: {looks}. It does not look like what you meant, so you put it aside. Try again with a simpler, bolder idea.",
+                return out(True, f"You made \"{title}\" but looking at it you only see: {looks}. It does not look like what you meant, so you put it aside.{learned} Try again with a simpler, bolder idea.",
                            -0.3, "No", subject="making art")
     insp = ctx.inspiration()
     source = None
@@ -1864,8 +1882,8 @@ async def make_art(ctx, a):
             source, mode, content = content, "image", img
         except Exception as e:
             ctx.log(f"  marker style failed: {type(e).__name__}")
-    aid = db.x("INSERT INTO art(ts,tick,title,kind,mode,content,statement,inspiration,colors,score,looks,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", time.time(), s["tick"], title,
-               kind, mode, content, statement, insp or "", json.dumps(colors), score, looks, source)
+    aid = db.x("INSERT INTO art(ts,tick,title,kind,mode,content,statement,inspiration,colors,score,looks,source,first_score,rounds) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", time.time(), s["tick"], title,
+               kind, mode, content, statement, insp or "", json.dumps(colors), score, looks, source, first[2] if first else None, rounds if first else None)
     if kind == "sculpture":
         cx, cz, _ = layout.resolve_area("gallery", s, ctx.objects())
         (sx, sz), _ = ctx.place_near(cx, cz, layout.KIND_RADIUS["sculpture"], group="sculpture")
@@ -1884,7 +1902,7 @@ async def make_art(ctx, a):
     _boost(ctx, "creativity", 38)
     db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"I made art called \"{title}\". {statement}"[:200], 3)
     where = "It now stands in the world in front of the gallery." if kind == "sculpture" else "It is now hanging in the gallery."
-    seen = f" Looking at it, you see: {looks}." if looks else ""
+    seen = (f" Looking at it, you see: {looks}." if looks else "") + learned
     if score is not None and score >= config.ART_SALE_MIN_SCORE and config.BANK_ENABLED:             # good work sells: this is how money comes in
         from . import bank
         cents = config.ART_SALE_GREAT_CENTS if score >= config.ART_SALE_GREAT_SCORE else config.ART_SALE_GOOD_CENTS

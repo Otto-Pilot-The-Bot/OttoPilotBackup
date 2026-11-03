@@ -289,6 +289,7 @@ CUP_SIPS = 3
 ERRANDS_ENABLED = True            # when he has used nothing in town for ERRAND_AFTER ticks, the engine walks him to the nearest venue (only move_to is on offer until he arrives)
 ERRAND_AFTER = 40
 ERRAND_COOLDOWN = 60              # ticks before the next errand may start
+ART_LEARN = True                  # after a drawing he writes himself a short note about what he learned (kept in art_lessons, shown to him when he draws)
 ART_SALE_MIN_SCORE = 5            # a drawing rated at least this (0-10) can be bought by a gallery visitor
 ART_SALE_GOOD_CENTS = 1000        # a 5-7 sells for $10
 ART_SALE_GREAT_SCORE = 8
