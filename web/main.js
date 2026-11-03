@@ -24,11 +24,11 @@ renderer.shadowMap.enabled = true;
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9ec5e8);
-scene.fog = new THREE.Fog(0x9ec5e8, 55, 120);
-const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 220);
+scene.fog = new THREE.Fog(0x9ec5e8, 90, 200);
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 520);
 const resetCamera = () => { const h = Math.max(24, curHalf || 24); camera.position.set(0, h * 0.95 + 4, h * 1.15 + 8); controls.target.set(0, 1, 0); };
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.maxPolarAngle = Math.PI * 0.48; controls.minDistance = 5; controls.maxDistance = 70;
+controls.maxPolarAngle = Math.PI * 0.48; controls.minDistance = 5; controls.maxDistance = 130;
 resetCamera(); window.__camera = camera; window.__controls = controls;
 const hemi = new THREE.HemisphereLight(0xffffff, 0x6a7a55, 1.0); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff2d6, 2.2);
@@ -54,7 +54,7 @@ function buildGround(half) {
   if (REAL.on) { REAL.buildGround(half, ground); border.geometry.dispose(); grid.geometry.dispose(); }
   for (const o of groundParts) { o.visible = !window.__terrainOn; scene.add(o); }          // once a map is loaded its own terrain mesh is the ground
   Object.assign(sun.shadow.camera, { left: -half - 14, right: half + 14, top: half + 14, bottom: -half - 14 }); sun.shadow.camera.updateProjectionMatrix();
-  controls.maxDistance = 70 + (half - 24) * 1.6; scene.fog.far = 120 + (half - 24) * 2.2;
+  controls.maxDistance = 130 + (half - 24) * 2.4; scene.fog.far = 200 + (half - 24) * 3.2;
 }
 buildGround(24);
 
@@ -562,7 +562,7 @@ function onMap(m) {
   window.__mapMsg = m; EDITOR?.onMap?.(m); updateInsideFade();
 }
 function applySnapshot(m, teleport) {
-  const s = m.state;
+  const s = m.state; IDLE.fast = !!s.buzz;
   window.__sleeping = !!s.sleeping; { const g = document.getElementById('gameBtn'); if (g) { g.classList.toggle('on', !!s.sleeping); g.textContent = s.sleeping ? '🎮 Game mode ON · wake up' : '🎮 Game mode'; } }
   if (!placesBuilt) { if (!(m.map && m.map.name)) buildPlaces(m.places); placesBuilt = true; }
   if (m.world_half && m.world_half !== curHalf) buildGround(m.world_half);

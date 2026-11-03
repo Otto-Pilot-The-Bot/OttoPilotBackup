@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 
 const EYE = 1.55;                 // Otto is 1.7 m tall; his eyes are about here
-const WALK = 3.2, RUN = 6.5, RADIUS = 0.45;
+const WALK = 5.0, RUN = 11.0, RADIUS = 0.45;
 
 export function createCameraModes({ camera, controls, dom, getRobot, getHalf, getColliders, onChange, getGround = () => 0 }) {
   let mode = 'overhead', detached = false;

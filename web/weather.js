@@ -63,7 +63,7 @@ function makePoints(count, { size, leaf }) {
   const m = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, fog: false, defines: leaf ? { LEAF: '' } : {},
     uniforms: { t: { value: 0 }, amount: { value: 0 }, W: { value: 60 }, center: { value: new THREE.Vector3() }, wind: { value: new THREE.Vector2(0.12, 0.04) }, pxScale: { value: 600 }, size: { value: size } },
-    vertexShader: `attribute vec4 seed; uniform float t, amount, pxScale, size, W; uniform vec3 center; uniform vec2 wind; varying float vA; varying vec3 vC;
+    vertexShader: `attribute vec4 seed; uniform float t, amount, pxScale, size, W; uniform vec3 center; uniform vec2 wind; varying float vA; varying vec3 vC; varying float vRot, vFlip;
       const float H = 28.0;
       void main(){
         #ifdef LEAF
@@ -76,23 +76,43 @@ function makePoints(count, { size, leaf }) {
         vec2 rel = mod(seed.xz * W + sway + wind * t * (1.0 + fall) - center.xz + W * 0.5, W) - W * 0.5;
         vec4 mv = viewMatrix * vec4(center.x + rel.x, y, center.z + rel.y, 1.0);
         gl_Position = projectionMatrix * mv;
-        gl_PointSize = max(2.0, size * (0.6 + seed.w * 0.8) * pxScale / max(0.5, -mv.z));
+        #ifdef LEAF
+          gl_PointSize = clamp(size * (0.6 + seed.w * 0.8) * pxScale / max(0.5, -mv.z), 9.0, 90.0);        // big enough to read as a leaf
+        #else
+          gl_PointSize = max(2.0, size * (0.6 + seed.w * 0.8) * pxScale / max(0.5, -mv.z));
+        #endif
         float edge = 1.0 - smoothstep(0.5, 1.0, length(rel) / (W * 0.5));
         vA = step(fract(seed.w * 7.31), amount) * edge * smoothstep(1.5, 4.0, -mv.z);
+        vRot = 0.0; vFlip = 1.0;
         #ifdef LEAF
+          vRot = seed.z * 6.2832 + t * (0.4 + seed.x * 1.2);
+          vFlip = 0.3 + 0.7 * abs(cos(t * (0.9 + seed.y * 1.4) + seed.w * 6.2832));
           vC = mix(vec3(0.85, 0.5, 0.17), vec3(0.62, 0.26, 0.1), fract(seed.z * 5.1)) + vec3(0.1, 0.12, -0.05) * fract(seed.x * 3.3);
         #else
           vC = vec3(0.97, 0.98, 1.0);
         #endif
       }`,
-    fragmentShader: `varying float vA; varying vec3 vC;
+    fragmentShader: `varying float vA; varying vec3 vC; varying float vRot, vFlip;
       void main(){ if (vA < 0.01) discard; vec2 c = gl_PointCoord - 0.5;
         #ifdef LEAF
-          float a = smoothstep(0.5, 0.3, length(c * vec2(1.0, 1.9)));
+          float cs = cos(vRot), sn = sin(vRot);
+          vec2 q = vec2(cs * c.x + sn * c.y, -sn * c.x + cs * c.y) * 1.45;               // along the leaf, then across it; tumbling squashes it sideways
+          q.y /= vFlip;
+          float u = q.x + 0.5;                                                              // 0 at the stem end, 1 at the tip
+          float hw = 0.34 * pow(max(sin(3.14159 * clamp(u, 0.0, 1.0)), 0.0), 0.75) * (1.15 - 0.45 * u);     // broad leaf narrowing to a point
+          float blade = (u > 0.0 && u < 1.0) ? smoothstep(hw + 0.045, hw - 0.01, abs(q.y)) : 0.0;
+          float stem = (u > -0.14 && u <= 0.0) ? smoothstep(0.05, 0.015, abs(q.y)) : 0.0;
+          float a = max(blade, stem);
+          float rib = smoothstep(0.035, 0.0, abs(q.y)) * step(0.0, u) * step(u, 0.9);      // a darker midrib
+          vec3 col = vC * (1.0 - 0.28 * rib);
         #else
           float a = smoothstep(0.5, 0.15, length(c));
         #endif
-        gl_FragColor = vec4(vC, a * vA * 0.9); }`,
+        #ifdef LEAF
+          gl_FragColor = vec4(col, a * vA * 0.95); }
+        #else
+          gl_FragColor = vec4(vC, a * vA * 0.9); }
+        #endif`,
   });
   const o = new THREE.Points(g, m); o.frustumCulled = false; o.renderOrder = 5; o.visible = false; return o;
 }
@@ -100,7 +120,7 @@ function makePoints(count, { size, leaf }) {
 export function createWeather({ scene, camera, renderer, sun, hemi, REAL, getCenter }) {
   const q = new URLSearchParams(location.search).get('wx');
   const W = { enabled: q !== '0', name: q && q !== '0' ? q : 'clear', forced: !!q && q !== '0' };
-  const rain = makeRain(5500), snow = makePoints(4500, { size: 0.16, leaf: false }), leaves = makePoints(500, { size: 0.4, leaf: true });
+  const rain = makeRain(5500), snow = makePoints(4500, { size: 0.16, leaf: false }), leaves = makePoints(500, { size: 0.7, leaf: true });
   for (const o of [rain, snow, leaves]) scene.add(o);
   const cur = { rain: 0, snow: 0, leaves: 0, dim: 0, fog: 1, skyAmt: 0, skyCol: new THREE.Color(GREY), wind: 0.1, bolt: 0 };
   const tg = { ...cur, skyCol: new THREE.Color(GREY) };

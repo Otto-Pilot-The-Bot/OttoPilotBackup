@@ -122,6 +122,9 @@ def _schemas(publish_enabled):
         *([_fn("print3d", "The machines in the 3D print farm turn a short description into a small figurine (play money, takes a few minutes; your human looks each one over before it appears on the tray). "
                "description: the object in plain words, like 'a small brass lighthouse with a red lamp'. title: optional short name.",
                {"description": {"type": "string"}, "title": {"type": "string"}}, ["description"])] if config.PRINT_ENABLED else []),
+        _fn("drink", "Take a sip from the cup you are holding.", {}, []),
+        *([_fn("order", "Order a drink at the cafe counter (play money). drink: coffee, latte, espresso, hot chocolate or tea. tip: optional extra dollars for the barista. You carry the cup and sip it with the drink tool.",
+               {"drink": {"type": "string", "enum": list(config.CAFE_MENU)}, "tip": {"type": "string", "description": "optional tip in dollars, e.g. 1 or 0.50"}}, ["drink"])] if config.CAFE_ENABLED and config.BANK_ENABLED else []),
         *([_fn("library", "Use the library: shelf lists the notes you have kept, read opens one by title, write files a note (title and text: something you learned, or how to do something) "
                "for your future self. Notes stay on the shelves.",
                {"action": {"type": "string", "enum": ["shelf", "read", "write"]}, "title": {"type": "string"}, "text": {"type": "string"}}, ["action"])] if config.LIBRARY_ENABLED else []),
@@ -349,10 +352,11 @@ def eat(ctx, a):
     if r:
         r["caption"] = f"Walking to the {src['label']} to refuel"
         return r
-    was = s["battery"]
+    was, e0 = s["battery"], s["energy"]
     s["battery"] = min(100.0, was + restore)
+    s["energy"] = min(100.0, e0 + (config.SNACK_ENERGY if restore == config.SNACK_RESTORE else config.EAT_ENERGY))
     v = _outcome_valence(ctx, "fuel", 0.5 + (0.5 if was < config.LOW_HINT else 0))
-    return out(True, f"You refueled: battery {was:.0f} -> {s['battery']:.0f}. {_feel_text(v)}", v, "ThumbsUp", subject="fuel station")
+    return out(True, f"You ate and refueled: battery {was:.0f} -> {s['battery']:.0f}, energy {e0:.0f} -> {s['energy']:.0f}. {_feel_text(v)}", v, "ThumbsUp", subject="fuel station")
 
 
 def rest(ctx, a):
@@ -716,6 +720,92 @@ def print3d(ctx, a):
     asyncio.ensure_future(printfarm.run(db, pid, refund, ctx.log))
     return out(True, f"You set up a print of \"{title}\" ({bank.fmt(cost)}). The machine starts working; it takes a few minutes. Your human looks over each print before it comes out onto the tray.",
                0.6, "Yes", subject="3d printing", caption=f"Printing: {title}")
+
+
+def _cup_asset(db):
+    """The model for the cup in his hand: the first usable, light, cup-sized model by name."""
+    for nm in config.CAFE_CUP_NAMES:
+        for r in db.q("SELECT id,fit,sx,sy,sz,tris,size_bytes FROM assets WHERE lower(name)=? AND usable=1", nm):
+            if max(r["sx"], r["sy"], r["sz"]) <= 2.0 and (r["tris"] or 0) <= 30000 and (r["size_bytes"] or 0) <= 6_000_000:
+                return r
+    return None
+
+
+def order(ctx, a):
+    from . import bank
+    s, db = ctx.state, ctx.db
+    if not config.CAFE_ENABLED:
+        return out(False, "The cafe is closed.", noop=True)
+    o = _tagged_spot(s, "cafe")
+    if not o:
+        return out(False, "There is no cafe in your world yet. Your human decides where things go.")
+    name = str(a.get("drink") or "").strip().lower()
+    menu = ", ".join(f"{k} {bank.fmt(v[0])}" for k, v in config.CAFE_MENU.items())
+    if name not in config.CAFE_MENU:
+        return out(False, f"The menu: {menu}. Order one with drink=<name>; a tip (in dollars) is optional.")
+    h0 = s.get("holding")
+    if h0 and h0.get("sips") == 0 and "drink" in (h0.get("tags") or []):          # an empty cup goes back to the counter
+        s["holding"] = None
+    if s.get("holding"):
+        return out(False, f"Your hands are full: put away the {s['holding']['name']} first.")
+    price, caf = config.CAFE_MENU[name]
+    try:
+        tip = bank.parse_amount(a.get("tip")) if str(a.get("tip") or "").strip() not in ("", "0", "0.0") else 0
+    except bank.BankError as e:
+        return out(False, str(e))
+    tip = min(tip, config.CAFE_TIP_MAX_CENTS)
+    b = bank.balances(db)
+    if b["wallet"] < price:
+        return out(False, f"A {name} costs {bank.fmt(price)} and you only have {bank.fmt(b['wallet'])} in your pocket.")
+    tip = min(tip, b["wallet"] - price)
+    cup = _cup_asset(db)
+    if not cup:
+        return out(False, "The cafe has run out of cups.")
+    r = _reach(ctx, o, "cafe")
+    if r:
+        return r
+    try:
+        bank.post(db, bank.WALLET, bank.MINT, price, "cafe", f"Cafe: {name}", actor="otto", tick=s["tick"], idem=f"otto:{s['tick']}:cafe")
+        if tip:
+            bank.post(db, bank.WALLET, bank.MINT, tip, "tip", f"Tip at the cafe", actor="otto", tick=s["tick"], idem=f"otto:{s['tick']}:cafetip")
+    except bank.BankError as e:
+        return out(False, str(e))
+    s["holding"] = {"name": name.title(), "aid": cup["id"], "fit": cup["fit"], "scale": 1.0, "tags": ["holdable", "drink", "cup"] + (["coffee"] if caf else []),
+                    "from": None, "sips": config.CUP_SIPS, "caffeine": caf}
+    v = 0.6
+    thanks = ""
+    if tip:
+        v = 1.0
+        thanks = f" You leave a {bank.fmt(tip)} tip; the barista beams and says thank you."
+        if tip >= 200:
+            db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"Left a generous {bank.fmt(tip)} tip at the cafe and made the barista's day.", 2)
+    return out(True, f"You order a {name} ({bank.fmt(price)}). It comes in a warm cup that you carry.{thanks} Use the drink tool to sip it.", v, "ThumbsUp", subject="the cafe", caption=f"Ordered a {name}")
+
+
+def drink(ctx, a):
+    s = ctx.state
+    h = s.get("holding")
+    if not h or "drink" not in (h.get("tags") or []):
+        return out(False, "You are not holding anything to drink.")
+    left = h.get("sips", config.CUP_SIPS)
+    if left <= 0:
+        return out(True, "The cup is empty. Put it away, or fetch a fresh one.", 0.0, "Idle", noop=True)
+    h["sips"] = left - 1
+    if not h.get("caffeine", True):                                               # tea and hot chocolate: warm and cosy, no buzz
+        s["energy"] = min(100.0, s["energy"] + 4); s["boredom"] = max(0.0, s["boredom"] - 4)
+        word = "the last sip" if h["sips"] == 0 else "a sip"
+        return out(True, f"You drink {word} of your {h['name'].lower()}. It is warm and comforting.", 0.6, "ThumbsUp", subject=h["name"].lower(), caption=f"Drinking {h['name'].lower()}", cat="rest")
+    b = s.get("buzz") or {"until": s["tick"], "sips": 0}
+    b["sips"] += 1
+    b["until"] = min(s["tick"] + config.BUZZ_MAX_TICKS, max(b["until"], s["tick"]) + config.BUZZ_TICKS)
+    s["buzz"] = b
+    if h.get("caffeine", True):
+        for k, d in config.BUZZ_SIP.items():
+            s[k] = max(0.0, min(100.0, s.get(k, 50) + d))
+        s.pop("crash", None)
+    word = "the last sip" if h["sips"] == 0 else "a sip"
+    jit = " Your hands tremble a little: that is a lot of coffee." if b["sips"] >= 3 else ""
+    return out(True, f"You drink {word} of your {h['name'].lower()}. Warmth, then a bright rush: you feel awake and quick.{jit}", 0.8, "Yes", subject="coffee", caption=f"Drinking {h['name'].lower()}", cat="rest")
 
 
 def library_tool(ctx, a):
@@ -1698,7 +1788,7 @@ def publish_page(ctx, a):
 
 
 from . import affordances as _aff
-REGISTRY = {"bank": bank_tool, "gamble": gamble, "print3d": print3d, "library": library_tool, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
+REGISTRY = {"bank": bank_tool, "gamble": gamble, "print3d": print3d, "library": library_tool, "drink": drink, "order": order, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
             "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')

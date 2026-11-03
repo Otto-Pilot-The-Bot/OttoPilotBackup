@@ -218,7 +218,7 @@ const PANELS = [
     $('#wHist', el).innerHTML = done.length ? `<h3>Answered</h3>` + done.map((w) => `<div class="act"><span class="ico">${w.status === 'granted' ? '✅' : '🕊️'}</span><span class="x2"><b>${esc(w.item)}</b> <span class="dim">${w.status === 'granted' ? 'granted' : 'not now'}${w.asset_name ? ' · ' + esc(w.asset_name) : ''}</span></span><span class="small dim">${ago(w.resolved_ts || w.ts)}</span><button class="btn" style="padding:0 8px;font-size:11px" data-w="hide" data-id="${w.id}">Hide</button></div>`).join('') : '';
   } },
 
-  { id: 'assets', icon: '🧰', label: 'Assets', title: 'Asset library (yours)', build(el) {
+  { id: 'assets', icon: '🧰', label: 'Assets', title: 'Asset library (yours)', hidden: true /* buildings are placed from the Plan tab now */, build(el) {
     if (!A.asked || A.count !== (snap.assets_total || {}).n) { A.asked = true; A.count = (snap.assets_total || {}).n; api.send({ type: 'get_assets' }); }
     el.innerHTML = '<div id="aBody"></div>';
     const send = (kind) => {
@@ -447,7 +447,7 @@ function openArt(id) {
 
 export function init(a) {
   api = a; art = a.art;
-  $('#menu').innerHTML = PANELS.map((p) => `<button class="mb" data-id="${p.id}" aria-label="${esc(p.label)}"><span class="lbl">${esc(p.label)}</span><span class="ic">${p.icon}</span></button>`).join('');
+  $('#menu').innerHTML = PANELS.filter((p) => !p.hidden).map((p) => `<button class="mb" data-id="${p.id}" aria-label="${esc(p.label)}"><span class="lbl">${esc(p.label)}</span><span class="ic">${p.icon}</span></button>`).join('');
   $('#menu').onclick = (e) => { const b = e.target.closest('.mb'); if (!b) return; openId === b.dataset.id ? closePanel() : openPanel(b.dataset.id); };
   $('#panelClose').onclick = closePanel;
   $('#lbClose').onclick = () => { $('#lightbox').hidden = true; };

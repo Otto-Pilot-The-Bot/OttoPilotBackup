@@ -72,6 +72,8 @@ REST_RESTORE_HOME = 100.0       # resting at the home pad refills energy complet
 REST_BATTERY_TRICKLE_HOME = 25.0   # ...and trickle-charges the battery
 REST_RESTORE_AWAY = 35.0        # resting elsewhere helps, but less
 EAT_RESTORE = 90.0              # refuelling at the fuel station refills almost everything
+EAT_ENERGY = 15.0               # food also wakes him up (he may become a duck: eating is how he gets energy)
+SNACK_ENERGY = 10.0
 FULL_THRESHOLD = 90.0           # above this, eating/resting does nothing ("already full")
 LOW_HINT = 30.0                 # below this the prompt gently suggests looking after the need
 VERY_LOW = 12.0                 # below this the hint becomes more direct
@@ -224,11 +226,11 @@ KIT_SCALE = {
     "Otto Props": 2.4,
     "Modular Space Kit": 1.0, "Modular Cave Kit": 1.0, "Modular Dungeon Kit": 1.0, "Coaster Kit": 1.0, "Toy Car Kit": 1.0, "Weapon Pack": 1.0, "Brick Kit": 1.0, "Marble Kit": 1.0,
 }
-NAME_SCALE = [("Meshy Buildings", r"^ottos casino", 5.0), ("Meshy Buildings", r"^casino", 7.0), ("Meshy Buildings", r"^ottos bank", 4.2), ("Meshy Buildings", r"^bookshelf", 0.6), ("Meshy Buildings", r"camera", 0.1), ("Meshy Buildings", r"^ottos house", 3.7), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
+NAME_SCALE = [("Meshy Buildings", r"^ottos casino", 5.0), ("Meshy Buildings", r"^casino", 0.55), ("Meshy Buildings", r"^ottos bank", 4.2), ("Meshy Buildings", r"^bookshelf", 0.6), ("Meshy Buildings", r"camera", 0.1), ("Meshy Buildings", r"^ottos house", 3.7), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
 
 
 # Per-model brightness (1.0 = as authored). Lifts a model whose texture is very dark; it multiplies the texture, it does not tint or change hues.
-NAME_BRIGHT = [("Meshy Buildings", r"^ottos house", 1.7), ("Meshy Buildings", r"^(ottos )?casino", 2.2), ("Meshy Buildings", r"^ottos bank", 1.2)]
+NAME_BRIGHT = [("Meshy Buildings", r"^ottos house", 1.7), ("Meshy Buildings", r"^ottos casino", 2.2), ("Meshy Buildings", r"^cafe", 1.6), ("Meshy Buildings", r"^ottos bank", 1.2)]
 
 
 # Per-model category/tags that the file name alone cannot tell us: (pack, name regex, category or None, tags to add, tags to remove)
@@ -237,6 +239,8 @@ NAME_TAGS = [("Meshy Buildings", r"^(ottos )?(bank|casino)", "building", ["build
              ("Meshy Buildings", r"^(ottos )?casino", "building", ["casino"], []),
              ("Meshy Buildings", r"print", "building", ["building", "printfarm"], ["prop"]),
              ("Meshy Buildings", r"librar", "building", ["building", "library"], ["prop"]),
+             ("Meshy Buildings", r"^(cafe|coffee ?shop)", "building", ["building", "cafe", "shop"], ["prop"]),
+             ("Meshy Buildings", r"(cup|mug)", "prop", ["cup", "holdable", "drink", "coffee"], ["building"]),
              ("Meshy Buildings", r"^bookshelf", "prop", ["shelf", "furniture", "books"], ["holdable", "building", "book"]),
              ("Meshy Buildings", r"camera", "prop", ["camera", "holdable", "tool"], ["building"])]
 
@@ -269,6 +273,19 @@ CASINO_ENABLED = True              # the gamble tool: slots, roulette, blackjack
 CASINO_MAX_BET_CENTS = 1500        # no single bet above this, and never more than a quarter of his pocket cash
 CASINO_LOSS_LIMIT_CENTS = 3000     # the floor manager stops him once he has lost this much within CASINO_LOSS_TICKS
 CASINO_LOSS_TICKS = 200
+
+# COFFEE: a drink in a cup he carries wakes him up for a while, then lets him down
+BUZZ_TICKS = 30                   # how long one sip's buzz lasts (more sips add time, up to the cap)
+BUZZ_MAX_TICKS = 70
+BUZZ_SPEED = 1.35                 # he walks this much faster while buzzing
+BUZZ_SIP = {"energy": 12, "boredom": -8, "creativity": 10}
+CRASH_PER_SIP = 9                 # energy lost when the buzz ends, per sip taken
+CRASH_TICKS = 15
+CUP_SIPS = 3
+CAFE_ENABLED = True
+CAFE_MENU = {"coffee": (350, True), "latte": (450, True), "espresso": (300, True), "hot chocolate": (400, False), "tea": (300, False)}   # name: (price in cents, has caffeine)
+CAFE_TIP_MAX_CENTS = 500
+CAFE_CUP_NAMES = ("coffee cup", "cup-coffee", "mug", "cup")   # the model of the cup in his hand, first usable small one wins (a held item is shrunk to hand size)
 
 # THE PRINT FARM (a building the human places; its tool only shows up when he is near it). Prints wait for the human's approval before they exist in the world.
 PRINT_ENABLED = True

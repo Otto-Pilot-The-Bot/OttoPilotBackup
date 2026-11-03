@@ -61,9 +61,13 @@ def dist(ax, az, bx, bz):
 LAST_PATH = []          # waypoints walked by the last step_toward (the page walks them in order, so he follows roads and goes around things)
 
 
+SPEED_MUL = 1.0                    # the agent sets this each tick (a coffee buzz makes him quicker)
+
+
 def step_toward(x, z, tx, tz, step=config.MAX_STEP, stop=config.REACH * 0.6):
     """Walk toward a target but stop `stop` short of it. Returns (nx, nz, arrived)."""
     global LAST_PATH
+    step = step * SPEED_MUL
     from . import maps
     if config.MAPS_ENABLED and maps.ACTIVE["doc"] is not None:
         d = dist(x, z, tx, tz)

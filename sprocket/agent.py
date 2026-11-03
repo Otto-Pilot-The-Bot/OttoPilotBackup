@@ -865,6 +865,16 @@ class Agent:
             b = _bank.balances(db)
             L.append(f"THE CASINO is right here (play money): games slots, roulette, blackjack, dice. Use the gamble tool (game, bet in dollars, choice). Your pocket cash is {_bank.fmt(b['wallet'])}; "
                      f"one bet is at most {_bank.fmt(min(config.CASINO_MAX_BET_CENTS, b['wallet'] // 4))}. The house always has an edge, so play for fun, stop when you like, and bet only what you can happily lose.")
+        if s.get("buzz"):
+            L.append(f"YOU ARE BUZZING FROM COFFEE (about {max(0, s['buzz']['until'] - s['tick'])} more ticks): you feel quick, bright and a bit fidgety. Your thoughts race a little; you walk faster.")
+        elif s.get("crash"):
+            L.append("SUGAR CRASH: the coffee has worn off and your energy has dropped; you feel flat, heavy and a little grumpy. Eat something or rest to feel better.")
+        if (s.get("holding") or {}).get("tags") and "drink" in s["holding"]["tags"]:
+            L.append(f"You are holding a warm {s['holding']['name'].lower()} ({s['holding'].get('sips', config.CUP_SIPS)} sips left). The drink tool takes a sip.")
+        if tools.near_building(s, "cafe", 14) and config.CAFE_ENABLED and config.BANK_ENABLED:
+            from . import bank as _bk
+            L.append("A CAFE is right here: the smell of coffee. Use the order tool (play money; pocket cash " + _bk.fmt(_bk.balances(db)["wallet"]) + "). Menu: "
+                     + ", ".join(f"{k} {_bk.fmt(v[0])}" for k, v in config.CAFE_MENU.items()) + ". A tip for the barista is a kind thing to leave.")
         if tools.near_building(s, "printfarm", 14):
             from . import printfarm as _pf
             L.append("A 3D PRINT FARM is right here: rows of machines humming. " + _pf.status_line(db))
@@ -980,6 +990,15 @@ class Agent:
         s["battery"] = max(0, s["battery"] - config.BATTERY_BASE_DRAIN)
         s["boredom"] = min(100, s["boredom"] + config.BOREDOM_RISE)
         s["creativity"] = max(0, s["creativity"] - config.CREATIVITY_DECAY)
+        b = s.get("buzz")
+        if b and s["tick"] >= b["until"]:                                          # the coffee wears off
+            s["energy"] = max(0, s["energy"] - config.CRASH_PER_SIP * b["sips"])
+            s["mood_valence"] = max(-1.0, s.get("mood_valence", 0.0) - 0.2)
+            s["crash"] = {"until": s["tick"] + config.CRASH_TICKS}
+            s["buzz"] = None
+        elif s.get("crash") and s["tick"] >= s["crash"]["until"]:
+            s["crash"] = None
+        world.SPEED_MUL = config.BUZZ_SPEED if s.get("buzz") else 1.0
         db.x("UPDATE projects SET status='shelved' WHERE status='active' AND last_tick < ?", s["tick"] - 80)
         self.decay_interests()
         self.attraction_tick()
@@ -1057,9 +1076,11 @@ class Agent:
             self._emit("snapshot", {})
             return
         tl = tools.schemas(s["publish_enabled"])
-        for nm, tag in (("print3d", "printfarm"), ("library", "library")):                  # the tools of a special building only exist for him while he is near it
+        for nm, tag in (("print3d", "printfarm"), ("library", "library"), ("order", "cafe")):                  # the tools of a special building only exist for him while he is near it
             if not tools.near_building(s, tag):
                 tl = [x for x in tl if x["function"]["name"] != nm]
+        if "drink" not in ((s.get("holding") or {}).get("tags") or []):
+            tl = [x for x in tl if x["function"]["name"] != "drink"]
         beat = s.pop("beat", None)
         s["beat_kind"] = beat["kind"] if beat else None
         if beat:
@@ -1411,7 +1432,7 @@ class Agent:
         d = self._snapshot_base()
         d["map"] = {"name": (self.db.get("active_map") or ""), "rev": getattr(self, "map_rev", 0)}
         d["state"]["path"] = self.state.get("path") or []
-        d["state"]["ride"] = self.state.get("ride"); d["state"]["honk"] = self.state.get("honk")
+        d["state"]["buzz"] = bool(self.state.get("buzz")); d["state"]["ride"] = self.state.get("ride"); d["state"]["honk"] = self.state.get("honk")
         h = self.state.get("holding"); d["state"]["holding"] = {"aid": h["aid"], "fit": h["fit"], "name": h["name"], "scale": h.get("scale", 1.0)} if h else None
         d["site"] = self.site_info()
         d["state"]["publish_mode"] = self.state.get("publish_mode", config.PUBLISH_MODE_DEFAULT)

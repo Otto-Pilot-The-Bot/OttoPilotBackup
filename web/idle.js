@@ -7,7 +7,7 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 /** getRobot() -> THREE.Object3D | null; getHead() -> bone | null; canFidget() -> bool (standing still, nothing else playing);
  *  emote(name) plays a one-shot or looping clip; getMood() -> string; getNeeds() -> { energy, battery, boredom }; getPoints() -> [{x,z}] things worth looking at. */
 export function createIdle({ getRobot, getHead, canFidget, emote, getMood, getNeeds, getPoints }) {
-  const I = { enabled: true, can: canFidget };
+  const I = { enabled: true, fast: false, can: canFidget };
   let timer = 4 + Math.random() * 4, turn = null, head = { yaw: 0, pitch: 0, ty: 0, tp: 0, until: 0 }, applied = { y: 0, x: 0 }, sat = false, idleFor = 0;
 
   I.lookUp = (secs = 4) => { head.tp = -0.55; head.ty = (Math.random() - 0.5) * 0.4; head.until = performance.now() + secs * 1000; };     // watching the sky: the head tips back
@@ -19,7 +19,7 @@ export function createIdle({ getRobot, getHead, canFidget, emote, getMood, getNe
     if (!canFidget()) { timer = 3 + Math.random() * 5; idleFor = 0; if (sat) sat = false; turn = null; return; }
     idleFor += dt;
     if (turn) { r.rotation.y += shortest(turn.to - r.rotation.y) * Math.min(1, dt * 3.2); if (Math.abs(shortest(turn.to - r.rotation.y)) < 0.04) turn = null; }
-    timer -= dt;
+    timer -= dt * (I.fast ? 2.4 : 1);                                       // a coffee buzz makes him fidgety
     if (timer > 0) return;
     const mood = getMood(), n = getNeeds(), pts = getPoints();
     timer = 5 + Math.random() * 9;
