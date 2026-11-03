@@ -124,8 +124,8 @@ def _schemas(publish_enabled):
                "description: the object in plain words, like 'a small brass lighthouse with a red lamp'. title: optional short name.",
                {"description": {"type": "string"}, "title": {"type": "string"}}, ["description"])] if config.PRINT_ENABLED else []),
         _fn("drink", "Take a sip from the cup you are holding.", {}, []),
-        *([_fn("order", "Order a drink at the cafe counter (play money). drink: coffee, latte, espresso, hot chocolate or tea. tip: optional extra dollars for the barista. You carry the cup and sip it with the drink tool.",
-               {"drink": {"type": "string", "enum": list(config.CAFE_MENU)}, "tip": {"type": "string", "description": "optional tip in dollars, e.g. 1 or 0.50"}}, ["drink"])] if config.CAFE_ENABLED and config.BANK_ENABLED else []),
+        *([_fn("order", "Order a drink at the cafe counter (play money). drink: coffee, latte, espresso, hot chocolate or tea, or food: bagel (eat it with the eat tool). tip: optional extra dollars for the barista. You carry the cup and sip it with the drink tool.",
+               {"drink": {"type": "string", "enum": list(config.CAFE_MENU) + list(config.CAFE_FOOD)}, "tip": {"type": "string", "description": "optional tip in dollars, e.g. 1 or 0.50"}}, ["drink"])] if config.CAFE_ENABLED and config.BANK_ENABLED else []),
         *([_fn("library", "Use the library: shelf lists the notes you have kept, read opens one by title, write files a note (title and text: something you learned, or how to do something) "
                "for your future self. Notes stay on the shelves.",
                {"action": {"type": "string", "enum": ["shelf", "read", "write"]}, "title": {"type": "string"}, "text": {"type": "string"}}, ["action"])] if config.LIBRARY_ENABLED else []),
@@ -343,6 +343,21 @@ def _walk_caption(ctx, tgt):
 
 def eat(ctx, a):
     s = ctx.state
+    h = s.get("holding")
+    if h and "food" in (h.get("tags") or []):                                      # a bite of what he is holding
+        fd = config.CAFE_FOOD.get(h.get("food"), {})
+        left = h.get("bites", 1)
+        n = max(1, fd.get("bites", 1))
+        e0, b0 = s["energy"], s["battery"]
+        s["energy"] = min(100.0, e0 + fd.get("energy", 8) / n); s["battery"] = min(100.0, b0 + fd.get("battery", 10) / n)
+        s["boredom"] = max(0.0, s["boredom"] + fd.get("boredom", -3) / n)
+        h["bites"] = left - 1
+        done = h["bites"] <= 0
+        if done:
+            s["holding"] = None
+        v = 0.9 if done else 0.7
+        return out(True, f"You take a bite of the {h['name'].lower()}" + (" and finish it. Delicious; nothing left but crumbs." if done else f". It is tasty ({h['bites']} bite{'s' if h['bites'] != 1 else ''} left).")
+                   + f" Energy {e0:.0f} -> {s['energy']:.0f}, battery {b0:.0f} -> {s['battery']:.0f}.", v, "ThumbsUp", subject=h["name"].lower(), caption=f"Eating {h['name'].lower()}", cat="rest")
     if s["battery"] >= config.FULL_THRESHOLD:
         return out(True, f"Your battery is already full ({s['battery']:.0f}%). Nothing to refuel right now.", 0.0, "Idle", noop=True)
     src, restore = _place("fuel_station"), config.EAT_RESTORE
@@ -741,15 +756,16 @@ def order(ctx, a):
     if not o:
         return out(False, "There is no cafe in your world yet. Your human decides where things go.")
     name = str(a.get("drink") or "").strip().lower()
-    menu = ", ".join(f"{k} {bank.fmt(v[0])}" for k, v in config.CAFE_MENU.items())
-    if name not in config.CAFE_MENU:
+    food = config.CAFE_FOOD.get(name)
+    menu = ", ".join([f"{k} {bank.fmt(v[0])}" for k, v in config.CAFE_MENU.items()] + [f"{k} {bank.fmt(v['price'])}" for k, v in config.CAFE_FOOD.items()])
+    if name not in config.CAFE_MENU and not food:
         return out(False, f"The menu: {menu}. Order one with drink=<name>; a tip (in dollars) is optional.")
     h0 = s.get("holding")
     if h0 and h0.get("sips") == 0 and "drink" in (h0.get("tags") or []):          # an empty cup goes back to the counter
         s["holding"] = None
     if s.get("holding"):
         return out(False, f"Your hands are full: put away the {s['holding']['name']} first.")
-    price, caf = config.CAFE_MENU[name]
+    price, caf = (food["price"], False) if food else config.CAFE_MENU[name]
     try:
         tip = bank.parse_amount(a.get("tip")) if str(a.get("tip") or "").strip() not in ("", "0", "0.0") else 0
     except bank.BankError as e:
@@ -759,7 +775,12 @@ def order(ctx, a):
     if b["wallet"] < price:
         return out(False, f"A {name} costs {bank.fmt(price)} and you only have {bank.fmt(b['wallet'])} in your pocket.")
     tip = min(tip, b["wallet"] - price)
-    cup = _cup_asset(db)
+    if food:
+        cup = db.one("SELECT id,fit FROM assets WHERE lower(name)=? AND usable=1", food["asset"])
+        if not cup:
+            return out(False, f"The cafe has run out of {name}s.")
+    else:
+        cup = _cup_asset(db)
     if not cup:
         return out(False, "The cafe has run out of cups.")
     r = _reach(ctx, o, "cafe")
@@ -771,8 +792,11 @@ def order(ctx, a):
             bank.post(db, bank.WALLET, bank.MINT, tip, "tip", f"Tip at the cafe", actor="otto", tick=s["tick"], idem=f"otto:{s['tick']}:cafetip")
     except bank.BankError as e:
         return out(False, str(e))
-    s["holding"] = {"name": name.title(), "aid": cup["id"], "fit": cup["fit"], "scale": 1.0, "tags": ["holdable", "drink", "cup"] + (["coffee"] if caf else []),
-                    "from": None, "sips": config.CUP_SIPS, "caffeine": caf}
+    if food:
+        s["holding"] = {"name": name.title(), "aid": cup["id"], "fit": cup["fit"], "scale": 1.0, "tags": ["holdable", "food"], "from": None, "bites": food["bites"], "food": name}
+    else:
+        s["holding"] = {"name": name.title(), "aid": cup["id"], "fit": cup["fit"], "scale": 1.0, "tags": ["holdable", "drink", "cup"] + (["coffee"] if caf else []),
+                        "from": None, "sips": config.CUP_SIPS, "caffeine": caf}
     v = 0.6
     thanks = ""
     if tip:
@@ -780,6 +804,8 @@ def order(ctx, a):
         thanks = f" You leave a {bank.fmt(tip)} tip; the barista beams and says thank you."
         if tip >= 200:
             db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"Left a generous {bank.fmt(tip)} tip at the cafe and made the barista's day.", 2)
+    if food:
+        return out(True, f"You order a {name} ({bank.fmt(price)}). It is handed over fresh and you carry it.{thanks} Use the eat tool to take a bite.", v, "ThumbsUp", subject="the cafe", caption=f"Ordered a {name}")
     return out(True, f"You order a {name} ({bank.fmt(price)}). It comes in a warm cup that you carry.{thanks} Use the drink tool to sip it.", v, "ThumbsUp", subject="the cafe", caption=f"Ordered a {name}")
 
 

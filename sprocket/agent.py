@@ -937,12 +937,14 @@ class Agent:
             L.append(f"YOU ARE BUZZING FROM COFFEE (about {max(0, s['buzz']['until'] - s['tick'])} more ticks): you feel quick, bright and a bit fidgety. Your thoughts race a little; you walk faster.")
         elif s.get("crash"):
             L.append("SUGAR CRASH: the coffee has worn off and your energy has dropped; you feel flat, heavy and a little grumpy. Eat something or rest to feel better.")
+        if (s.get("holding") or {}).get("tags") and "food" in s["holding"]["tags"]:
+            L.append(f"You are holding a fresh {s['holding']['name'].lower()} ({s['holding'].get('bites', 1)} bite(s) left). The eat tool takes a bite.")
         if (s.get("holding") or {}).get("tags") and "drink" in s["holding"]["tags"]:
             L.append(f"You are holding a warm {s['holding']['name'].lower()} ({s['holding'].get('sips', config.CUP_SIPS)} sips left). The drink tool takes a sip.")
         if tools.near_building(s, "cafe", 14) and config.CAFE_ENABLED and config.BANK_ENABLED:
             from . import bank as _bk
             L.append("A CAFE is right here: the smell of coffee. Use the order tool (play money; pocket cash " + _bk.fmt(_bk.balances(db)["wallet"]) + "). Menu: "
-                     + ", ".join(f"{k} {_bk.fmt(v[0])}" for k, v in config.CAFE_MENU.items()) + ". A tip for the barista is a kind thing to leave.")
+                     + ", ".join([f"{k} {_bk.fmt(v[0])}" for k, v in config.CAFE_MENU.items()] + [f"{k} {_bk.fmt(v['price'])}" for k, v in config.CAFE_FOOD.items()]) + ". A tip for the barista is a kind thing to leave.")
         if tools.near_building(s, "printfarm", 14):
             from . import printfarm as _pf
             L.append("A 3D PRINT FARM is right here: rows of machines humming. " + _pf.status_line(db))

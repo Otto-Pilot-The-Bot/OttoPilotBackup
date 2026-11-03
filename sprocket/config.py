@@ -241,6 +241,7 @@ NAME_TAGS = [("Meshy Buildings", r"^(ottos )?(bank|casino)", "building", ["build
              ("Meshy Buildings", r"print", "building", ["building", "printfarm"], ["prop"]),
              ("Meshy Buildings", r"librar", "building", ["building", "library"], ["prop"]),
              ("Meshy Buildings", r"^(cafe|coffee ?shop)", "building", ["building", "cafe", "shop"], ["prop"]),
+             ("Meshy Buildings", r"^bagel", "prop", ["food", "holdable", "bagel"], ["building"]),
              ("Meshy Buildings", r"^(movie|cinema)", "building", ["building", "cinema", "shop"], ["prop"]),
              ("Meshy Buildings", r"^internet", "building", ["building", "internetcafe", "shop", "computer"], ["prop", "cafe"]),
              ("Meshy Buildings", r"(cup|mug)", "prop", ["cup", "holdable", "drink", "coffee"], ["building"]),
@@ -292,6 +293,7 @@ ART_SALE_MIN_SCORE = 7            # a drawing rated at least this (0-10) can be 
 ART_SALE_CENTS_PER_POINT = 100    # the sale is (score - 5) x this: a 7 sells for $2, a 10 for $5
 CAFE_ENABLED = True
 CAFE_MENU = {"coffee": (350, True), "latte": (450, True), "espresso": (300, True), "hot chocolate": (400, False), "tea": (300, False)}   # name: (price in cents, has caffeine)
+CAFE_FOOD = {"bagel": {"price": 75, "asset": "bagel", "bites": 3, "energy": 9, "battery": 12, "boredom": -3}}   # food: eaten in bites with the eat tool; energy and battery are the totals over all bites
 CAFE_TIP_MAX_CENTS = 500
 CAFE_CUP_NAMES = ("coffee cup", "cup-coffee", "mug", "cup")   # the model of the cup in his hand, first usable small one wins (a held item is shrunk to hand size)
 
