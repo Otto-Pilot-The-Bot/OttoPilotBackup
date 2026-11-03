@@ -130,7 +130,7 @@ def clean(doc, db):
         if not row:
             p = o["panel"]
             out["panel"] = {"w": round(_num(p.get("w"), 0.3, 6, 1.4), 2), "h": round(_num(p.get("h"), 0.3, 6, 1.0), 2), "art_id": int(_num(p.get("art_id"), 0, 10**9, 0)) or None, "gift_id": int(_num(p.get("gift_id"), 0, 10**9, 0)) or None,
-                            "caption": str(p.get("caption", ""))[:80]}
+                            "caption": str(p.get("caption", ""))[:80], "style": "graffiti" if p.get("style") == "graffiti" else "frame"}
             out["y"] = round(_num(o.get("y"), 0, 6, 1.2), 2)
         objs.append(out)
     places = {}

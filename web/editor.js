@@ -15,7 +15,7 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 
 export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign, applyLook }) {
   let open = false, doc = null, rows = [], byKit = new Map(), maps = [], active = '', dirty = false;
-  let pickName = '', pickRot = 0, pickY = 0, autoY = true, ghostY = 0, ceil = 0;
+  let pickName = '', pickRot = 0, pickY = 0, autoY = true, ghostY = 0, ceil = 0, graffitiNew = false;
   let tool = 'select', sel = null, pick = null, tile = 'r', snap = 1, rsnap = 15, kit = 'Meshy Buildings', kitPicked = false, q = '', cat = '', limit = 48, drag = null, painting = false, tMode = 'raise', tRad = 8, tFlat = 0, lastTerr = 0;
   const undo = [], redo = [];
   const ndc = new THREE.Vector2(), ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
@@ -109,8 +109,8 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <div class="row"><button data-a="newint">➕ New interior for this</button><button data-a="editint" ${s.interior ? '' : 'disabled'}>✏️ Edit its inside</button></div>` : ''}
         <label class="row"><input type="checkbox" data-p="walkable" ${s.walkable ? 'checked' : ''}> walkable (no collision)</label>
         <label>tags <input data-p="tags" type="text" value="${esc((s.tags || []).join(', '))}" placeholder="bench, seat, park"></label>
-        ${s.panel ? `<div class="grid2"><label>art w <input data-p="pw" type="number" step="0.1" value="${s.panel.w}"></label><label>art h <input data-p="ph" type="number" step="0.1" value="${s.panel.h}"></label></div><div class="dim small">Flat panels show Otto's newest pictures.</div>` : ''}</div>` : ''}
-      ${giftPics().length ? `<div class="sec"><b>Pictures you gave Otto</b> <span class="dim small">(flat panels)</span><div class="row">${giftPics().map((g) => `<button data-a="gift" data-id="${g.id}" title="Put this picture on a flat panel">🖼 ${esc(g.name)}</button>`).join('')}</div></div>` : ''}
+        ${s.panel ? `<div class="grid2"><label>art w <input data-p="pw" type="number" step="0.1" value="${s.panel.w}"></label><label>art h <input data-p="ph" type="number" step="0.1" value="${s.panel.h}"></label></div><label>look <select data-p="pstyle"><option value="frame" ${s.panel.style !== 'graffiti' ? 'selected' : ''}>framed picture</option><option value="graffiti" ${s.panel.style === 'graffiti' ? 'selected' : ''}>graffiti on the wall (no frame)</option></select></label><div class="dim small">Flat panels show Otto's newest pictures.</div>` : ''}</div>` : ''}
+      ${giftPics().length ? `<div class="sec"><b>Pictures you gave Otto</b> <span class="dim small">(flat panels)</span><div class="row"><label><input type="checkbox" id="pGraf" ${graffitiNew ? 'checked' : ''}> new ones as graffiti (no frame)</label></div><div class="row">${giftPics().map((g) => `<button data-a="gift" data-id="${g.id}" title="Put this picture on a flat panel">🖼 ${esc(g.name)}</button>`).join('')}</div></div>` : ''}
       <div class="sec"><b>Models</b>${pick ? ` <span class="dim small">placing: ${esc(pick.name)}</span>` : ''}
         ${tool === 'place' && pick ? `<div class="row"><label>Name it <input id="pName" type="text" maxlength="60" placeholder="${esc(pick.name)} (e.g. Otto's computer)" value="${esc(pickName)}" style="width:190px"></label></div><div class="row"><span>Turn before placing</span><button data-a="prot" data-d="-1" title="Turn left (Shift+R)">⟲</button><b>${pickRot}°</b><button data-a="prot" data-d="1" title="Turn right (R)">⟳</button></div>
         <div class="row"><label><input type="checkbox" id="pAuto" ${autoY ? 'checked' : ''}> sit on top of whatever is under the cursor (roofs, shelves)</label></div>
@@ -164,7 +164,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
       const g = giftPics().find((x) => x.id === +b.dataset.id); if (!g) return; commit();
       const id = nextId(), asp = g.w && g.h ? g.w / g.h : 1.3, h = 1.6;
       doc.objects.push({ id, asset: null, kit: 'flat', name: g.name.slice(0, 40), x: 0, z: 0, rot: 0, scale: 1, fw: +(h * asp).toFixed(1), fd: 0.2, tags: ['art', 'gift'], door: null, walkable: true, y: 1.6,
-        panel: { w: +(h * asp).toFixed(2), h, art_id: null, gift_id: g.id, caption: g.name.slice(0, 80) } });
+        panel: { w: +(h * asp).toFixed(2), h, art_id: null, gift_id: g.id, caption: g.name.slice(0, 80), style: graffitiNew ? 'graffiti' : 'frame' } });
       sel = id; refresh(); toast('Panel placed at the middle of the map: drag it where you want it.');
     }
     else if (a === 'prot') { pickRot = (((pickRot + (+b.dataset.d) * rsnap) % 360) + 360) % 360; render(); }
@@ -182,6 +182,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (t.id === 'pKit') { kit = t.value; kitPicked = true; cat = ''; limit = 48; render(); }
     else if (t.id === 'pCat') { cat = t.value; limit = 48; paintPalette(); }
     else if (t.id === 'pAuto') { autoY = t.checked; render(); }
+    else if (t.id === 'pGraf') { graffitiNew = t.checked; }
     else if (t.id === 'pCeil') { ceil = Math.max(0, Math.min(30, +t.value || 0)); }
     else if (t.id === 'pY') { pickY = Math.max(0, Math.min(30, +t.value || 0)); }
     else if (t.id === 'pFoot') { MV.setOverlay('foot', t.checked); }
@@ -208,7 +209,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (p === 'interior') { if (t.value) s.interior = t.value; else delete s.interior; }
     else if (p === 'name') s.name = t.value.slice(0, 60) || s.name;
     else if (p === 'tags') s.tags = t.value.split(',').map((x) => x.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')).filter(Boolean).slice(0, 12);
-    else if (p === 'pw' && s.panel) s.panel.w = Math.max(0.3, n); else if (p === 'ph' && s.panel) s.panel.h = Math.max(0.3, n);
+    else if (p === 'pstyle' && s.panel) s.panel.style = t.value === 'graffiti' ? 'graffiti' : 'frame'; else if (p === 'pw' && s.panel) s.panel.w = Math.max(0.3, n); else if (p === 'ph' && s.panel) s.panel.h = Math.max(0.3, n);
     refresh();
   }
   function turn(dir) { const s = objOf(sel); if (!s) return; commit(); s.rot = (((s.rot + dir * rsnap) % 360) + 360) % 360; refresh(); }

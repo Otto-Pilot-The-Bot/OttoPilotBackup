@@ -20,7 +20,7 @@ export function createMapView({ scene, art, onReady }) {
   const MV = { doc: null, nav: null, look: 'B', colliders: [], root, objG, meshes, overlays: { foot: false, walk: false }, selected: null };
   let panelMats = [];
 
-  const sig = (o) => JSON.stringify([o.asset, o.aid, o.fit, o.scale, o.panel && [o.panel.w, o.panel.h, o.panel.art_id, o.panel.gift_id]]);   // what needs a rebuild; moving/turning does not
+  const sig = (o) => JSON.stringify([o.asset, o.aid, o.fit, o.scale, o.panel && [o.panel.w, o.panel.h, o.panel.art_id, o.panel.gift_id, o.panel.style]]);   // what needs a rebuild; moving/turning does not
 
   MV.setDoc = (doc, nav) => { MV.doc = doc; if (nav) MV.nav = nav; MV.rebuildGround(); MV.sync(); MV.rebuildOverlays(); MV.updateColliders(); };
 
@@ -42,8 +42,16 @@ export function createMapView({ scene, art, onReady }) {
   };
 
   // ------------- objects
+  // graffiti: no frame; the picture is painted straight onto the wall with soft, uneven edges (an alpha map), so it reads as spray paint instead of a poster
+  const softEdge = (() => { let t = null; return () => { if (t) return t; const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, 128, 128);
+    x.filter = 'blur(5px)'; x.fillStyle = '#fff'; x.beginPath(); x.roundRect(9, 9, 110, 110, 14); x.fill(); t = new THREE.CanvasTexture(c); return t; }; })();
   function makeArtPanel(o) {
     const g = new THREE.Group(), w = o.panel.w, h = o.panel.h;
+    if (o.panel.style === 'graffiti') {
+      const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, alphaMap: softEdge(), alphaTest: 0.02, polygonOffset: true, polygonOffsetFactor: -2 });
+      panelMats.push({ mat, o });
+      const pic = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.08, h * 1.08), mat); pic.position.z = 0.012; g.add(pic); g.userData.pic = pic; return g;
+    }
     const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.16, h + 0.16, 0.08), new THREE.MeshStandardMaterial({ color: 0x2c2a30, roughness: 0.6 }));
     const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }); panelMats.push({ mat, o });
     const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); pic.position.z = 0.045;
