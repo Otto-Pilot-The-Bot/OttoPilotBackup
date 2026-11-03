@@ -1,13 +1,14 @@
 """The tools. Nothing else exists: no shell, no file access, no writes outside the DB.
 Costs of actions are NOT charged here; the agent charges them from config.py (one place for all balance numbers)."""
 import asyncio
+import zlib
 import json
 import random
 import re
 import time
 from urllib.parse import urlsplit
 
-from . import artcheck, artlook, assets, config, design, gifts, kit, layout, pois, sanitize, scriptlang, web, world
+from . import artcheck, artlook, assets, sketchstyle, config, design, gifts, kit, layout, pois, sanitize, scriptlang, web, world
 from .world import dist
 
 FEELING_ENUM = list(world.FEELINGS)
@@ -1740,8 +1741,15 @@ async def make_art(ctx, a):
                 return out(True, f"You made \"{title}\" but looking at it you only see: {looks}. It does not look like what you meant, so you put it aside. Try again with a simpler, bolder idea.",
                            -0.3, "No", subject="making art")
     insp = ctx.inspiration()
-    aid = db.x("INSERT INTO art(ts,tick,title,kind,mode,content,statement,inspiration,colors,score,looks) VALUES(?,?,?,?,?,?,?,?,?,?,?)", time.time(), s["tick"], title,
-               kind, mode, content, statement, insp or "", json.dumps(colors), score, looks)
+    source = None
+    if kind == "drawing" and mode == "svg" and config.ART_MARKER_STYLE:                 # he chose the picture; the engine draws it in the house marker style
+        try:
+            img = sketchstyle.to_data_url(sketchstyle.render(content, size=512, seed=zlib.crc32(title.encode())))
+            source, mode, content = content, "image", img
+        except Exception as e:
+            ctx.log(f"  marker style failed: {type(e).__name__}")
+    aid = db.x("INSERT INTO art(ts,tick,title,kind,mode,content,statement,inspiration,colors,score,looks,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", time.time(), s["tick"], title,
+               kind, mode, content, statement, insp or "", json.dumps(colors), score, looks, source)
     if kind == "sculpture":
         cx, cz, _ = layout.resolve_area("gallery", s, ctx.objects())
         (sx, sz), _ = ctx.place_near(cx, cz, layout.KIND_RADIUS["sculpture"], group="sculpture")

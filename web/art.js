@@ -43,6 +43,8 @@ async function draw(piece) {
     const d = JSON.parse(piece.content), cell = Math.floor(SIZE / Math.max(d.w, d.h));
     const ox = Math.floor((SIZE - cell * d.w) / 2), oy = Math.floor((SIZE - cell * d.h) / 2);
     d.rows.forEach((row, y) => [...row].forEach((ch, x) => { const col = d.palette[ch]; if (col && /^#[0-9a-f]{6}$/i.test(col)) { g.fillStyle = col; g.fillRect(ox + x * cell, oy + y * cell, cell, cell); } }));
+  } else if (piece.mode === 'image') {                   // a picture the engine already drew in marker style
+    g.drawImage(await loadImg(piece.content), 0, 0, SIZE, SIZE);
   } else if (piece.mode === 'svg') {
     g.drawImage(await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(piece.content)), 0, 0, SIZE, SIZE);
   } else if (piece.mode === 'js') {

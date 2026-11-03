@@ -55,6 +55,8 @@ def art_section(db, min_score):
         try:
             if r["kind"] == "pixel":
                 svg = pixel_svg(r["content"])
+            elif r["mode"] == "image" and str(r["content"]).startswith("data:image/jpeg;base64,"):      # already drawn by the server in marker style
+                svg = f'<img alt="" src="{r["content"]}" style="width:100%;height:auto;display:block;border-radius:6px">'
             elif r["mode"] == "svg":
                 svg = artcheck.sanitize_svg(r["content"])       # re-sanitised: the DB copy is never trusted
             else:
