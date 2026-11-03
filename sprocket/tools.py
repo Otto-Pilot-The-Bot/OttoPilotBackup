@@ -1761,6 +1761,14 @@ async def make_art(ctx, a):
     db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"I made art called \"{title}\". {statement}"[:200], 3)
     where = "It now stands in the world in front of the gallery." if kind == "sculpture" else "It is now hanging in the gallery."
     seen = f" Looking at it, you see: {looks}." if looks else ""
+    if score is not None and score >= config.ART_SALE_MIN_SCORE and config.BANK_ENABLED:             # good work sells: this is how money comes in
+        from . import bank
+        cents = (score - 5) * config.ART_SALE_CENTS_PER_POINT
+        try:
+            nb = bank.post(db, bank.MINT, bank.WALLET, cents, "sale", f"Sold: {title}", actor="system", tick=s["tick"], idem=f"art:{aid}:sale")
+            seen += f" A gallery visitor buys it for {bank.fmt(cents)}! Your pocket cash is now {bank.fmt(bank.balances(db)['wallet'])}."
+        except bank.BankError:
+            pass
     return out(True, f"You made \"{title}\" ({kind}). {where}{seen} {_feel_text(v)}", v, "Dance" if v > 1.2 else "ThumbsUp",
                subject="making art", changed_objects=True, art=True, mood="proud" if v > 1.2 else None)
 

@@ -870,8 +870,17 @@ class Agent:
             from . import bank as _bank, tools as _t
             b = _bank.balances(db)
             spot = _t.bank_spot(s)
+            total = b["wallet"] + b["account"]
             L.append(f"MONEY (US dollars): cash in pocket {_bank.fmt(b['wallet'])}, bank account {_bank.fmt(b['account'])}."
-                     + (" There is a bank in your world: the bank tool deposits or withdraws (it walks you there first)." if spot else " (No bank has been placed in your world yet.)"))
+                     + (" There is a bank in your world: the bank tool deposits or withdraws (it walks you there first)." if spot else " (No bank has been placed in your world yet.)")
+                     + " Things cost money: a drink at the cafe " + _bank.fmt(min(v[0] for v in config.CAFE_MENU.values())) + "-" + _bank.fmt(max(v[0] for v in config.CAFE_MENU.values()))
+                     + f", a 3D print {_bank.fmt(config.PRINT_COST_CENTS)}, casino bets. You earn money when a visitor buys one of your good drawings (rated {config.ART_SALE_MIN_SCORE}+ out of 10).")
+            if b["wallet"] == 0 and b["account"] > 0:
+                L.append("YOUR POCKET IS EMPTY: you cannot buy anything until you withdraw cash from your bank account.")
+            if total == 0:
+                L.append("YOU HAVE NO MONEY AT ALL. You cannot buy a drink or food, play at the casino or print anything. The only way to get money is to make a really good drawing that a visitor buys, so make art you are proud of, and be careful with every dollar once you have some.")
+            elif total < 600:
+                L.append(f"YOU ARE ALMOST OUT OF MONEY ({_bank.fmt(total)} left). Once it hits zero you cannot buy anything, so spend it only on what matters.")
         prow = self.poi_rows()
         here = sorted([p for p in prow if world.dist(s["x"], s["z"], p["x"], p["z"]) <= pois.TRIGGER], key=lambda p: world.dist(s["x"], s["z"], p["x"], p["z"]))
         if here:
