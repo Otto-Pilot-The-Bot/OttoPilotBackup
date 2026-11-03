@@ -3,6 +3,7 @@
 Each entry in ACTIONS says which tags it applies to, what it costs or gives (needs, mood), a plain caption with the reason, and what is written to
 his journal and memory. The registry only reads the live map; it can never place, move or remove anything (only the human can, in the Plan editor).
 """
+import re
 import math
 import time
 
@@ -69,6 +70,12 @@ def find(ref):
     if not ref:
         return None
     objs = objects()
+    m = re.match(r"^(\d+)(?:\s|$)", ref)                    # his prompt lists things as "#38 Cafe": the whole label works, not just the number or the name
+    if m:
+        hit = next((o for o in objs if o["id"] == int(m.group(1))), None)
+        if hit:
+            return hit
+        ref = ref[m.end():].strip() or ref
     if ref.isdigit():
         return next((o for o in objs if o["id"] == int(ref)), None)
     exact = [o for o in objs if o["name"].lower() == ref]
