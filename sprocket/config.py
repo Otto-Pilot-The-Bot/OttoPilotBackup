@@ -227,7 +227,7 @@ KIT_SCALE = {
     "Otto Props": 2.4,
     "Modular Space Kit": 1.0, "Modular Cave Kit": 1.0, "Modular Dungeon Kit": 1.0, "Coaster Kit": 1.0, "Toy Car Kit": 1.0, "Weapon Pack": 1.0, "Brick Kit": 1.0, "Marble Kit": 1.0,
 }
-NAME_SCALE = [("Meshy Buildings", r"^bank", 0.5), ("Meshy Buildings", r"^movie", 0.35), ("Meshy Buildings", r"^library", 0.6), ("Meshy Buildings", r"^ottos casino", 5.0), ("Meshy Buildings", r"^ottos bank", 4.2), ("Meshy Buildings", r"^bookshelf", 0.6), ("Meshy Buildings", r"camera", 0.1), ("Meshy Buildings", r"^ottos house", 0.5), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
+NAME_SCALE = [("Meshy Buildings", r"^hotel", 0.7), ("Meshy Buildings", r"^bank", 0.5), ("Meshy Buildings", r"^movie", 0.35), ("Meshy Buildings", r"^library", 0.6), ("Meshy Buildings", r"^ottos casino", 5.0), ("Meshy Buildings", r"^ottos bank", 4.2), ("Meshy Buildings", r"^bookshelf", 0.6), ("Meshy Buildings", r"camera", 0.1), ("Meshy Buildings", r"^ottos house", 0.5), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
 
 
 # Per-model brightness (1.0 = as authored). Lifts a model whose texture is very dark; it multiplies the texture, it does not tint or change hues.
@@ -291,6 +291,9 @@ ERRAND_AFTER = 40
 ERRAND_COOLDOWN = 60              # ticks before the next errand may start
 ART_SALE_MIN_SCORE = 7            # a drawing rated at least this (0-10) can be bought by a gallery visitor
 ART_SALE_CENTS_PER_POINT = 100    # the sale is (score - 5) x this: a 7 sells for $2, a 10 for $5
+CINEMA_ENABLED = True
+CINEMA_TICKET_CENTS = 150
+CINEMA_MIN_TICKS = 30             # between two films
 CAFE_ENABLED = True
 CAFE_MENU = {"coffee": (350, True), "latte": (450, True), "espresso": (300, True), "hot chocolate": (400, False), "tea": (300, False)}   # name: (price in cents, has caffeine)
 CAFE_FOOD = {"bagel": {"price": 75, "asset": "bagel", "bites": 3, "energy": 9, "battery": 12, "boredom": -3}}   # food: eaten in bites with the eat tool; energy and battery are the totals over all bites

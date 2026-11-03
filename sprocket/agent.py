@@ -587,7 +587,7 @@ class Agent:
         hid = db.one("SELECT id FROM hobbies WHERE name=?", name[:40])["id"]
         db.x("INSERT INTO hobby_entries(ts,tick,hobby_id,text) VALUES(?,?,?,?)", time.time(), self.state["tick"], hid, str(text)[:300])
 
-    TOOL_CAT = {"bank": "explore", "gamble": "explore", "move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
+    TOOL_CAT = {"bank": "explore", "gamble": "explore", "watch": "explore", "move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
                 "publish_page": "write", "make_art": "art", "make_music": "music", "landscape": "garden", "wish": "socialize", "arrange": "organize", "ponder": "reflect", "gift": "socialize", "tend": "garden", "collect": "collect", "observe": "observe",
                 "build": "build", "rest": "rest", "eat": "rest"}
 
@@ -612,12 +612,13 @@ class Agent:
 
     ERRANDS = (("cafe", "the cafe", "order a drink with the order tool (coffee wakes you up, tea is cosy)", "order", "CAFE_ENABLED", True),
                ("casino", "the casino", "play games with the gamble tool (play money)", "gamble", "CASINO_ENABLED", True),
+               ("cinema", "the movie theatre", "watch a film (tickets are cheap; a few films are on each day)", "watch", "CINEMA_ENABLED", True),
                ("library", "the library", "write down something you learned, or read your old notes", "library", "LIBRARY_ENABLED", False),
                ("printfarm", "the 3D print farm", "print a small figurine of something you imagine", "print3d", "PRINT_ENABLED", False))
 
     def town_idle(self):
         """True when he has used nothing in town (cafe, casino, library, print farm, bank, food) for a long while."""
-        return self.db.one("SELECT COUNT(*) n FROM actions WHERE tool IN ('order','gamble','library','print3d','bank','eat','drink') AND tick>?", self.state["tick"] - config.ERRAND_AFTER)["n"] == 0
+        return self.db.one("SELECT COUNT(*) n FROM actions WHERE tool IN ('order','gamble','library','print3d','bank','eat','drink','watch') AND tick>?", self.state["tick"] - config.ERRAND_AFTER)["n"] == 0
 
     def errand_step(self):
         """The engine walks him to town when he has stayed away too long: -> the errand dict while one is on (he then has only move_to until he arrives), else None."""
@@ -945,6 +946,9 @@ class Agent:
             from . import bank as _bk
             L.append("A CAFE is right here: the smell of coffee. Use the order tool (play money; pocket cash " + _bk.fmt(_bk.balances(db)["wallet"]) + "). Menu: "
                      + ", ".join([f"{k} {_bk.fmt(v[0])}" for k, v in config.CAFE_MENU.items()] + [f"{k} {_bk.fmt(v['price'])}" for k, v in config.CAFE_FOOD.items()]) + ". A tip for the barista is a kind thing to leave.")
+        if tools.near_building(s, "cinema", 14) and config.CINEMA_ENABLED and config.BANK_ENABLED:
+            from . import bank as _bk2, cinema as _cin
+            L.append("THE MOVIE THEATRE is right here. Now showing: " + _cin.programme(world.world_time(s["tick"])["day"], _bk2.fmt(config.CINEMA_TICKET_CENTS)) + " Use the watch tool (play money; pocket cash " + _bk2.fmt(_bk2.balances(db)["wallet"]) + ").")
         if tools.near_building(s, "printfarm", 14):
             from . import printfarm as _pf
             L.append("A 3D PRINT FARM is right here: rows of machines humming. " + _pf.status_line(db))
@@ -1149,7 +1153,7 @@ class Agent:
             self._emit("snapshot", {})
             return
         tl = tools.schemas(s["publish_enabled"])
-        for nm, tag in (("print3d", "printfarm"), ("library", "library"), ("order", "cafe")):                  # the tools of a special building only exist for him while he is near it
+        for nm, tag in (("print3d", "printfarm"), ("library", "library"), ("order", "cafe"), ("watch", "cinema")):                  # the tools of a special building only exist for him while he is near it
             if not tools.near_building(s, tag):
                 tl = [x for x in tl if x["function"]["name"] != nm]
         errand = self.errand_step()                                                          # long away from town: his only choice is to walk there

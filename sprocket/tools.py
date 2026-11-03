@@ -126,6 +126,9 @@ def _schemas(publish_enabled):
         _fn("drink", "Take a sip from the cup you are holding.", {}, []),
         *([_fn("order", "Order a drink at the cafe counter (play money). drink: coffee, latte, espresso, hot chocolate or tea, or food: bagel (eat it with the eat tool). tip: optional extra dollars for the barista. You carry the cup and sip it with the drink tool.",
                {"drink": {"type": "string", "enum": list(config.CAFE_MENU) + list(config.CAFE_FOOD)}, "tip": {"type": "string", "description": "optional tip in dollars, e.g. 1 or 0.50"}}, ["drink"])] if config.CAFE_ENABLED and config.BANK_ENABLED else []),
+        *([_fn("watch", "Watch a film at the movie theatre (play money). film: the title or number of one of the films showing today; call it without a film to see what is on and the ticket price. "
+               "You walk there first if you are not there. You react to it afterwards.",
+               {"film": {"type": "string", "description": "title or number of a film that is showing"}}, [])] if config.CINEMA_ENABLED and config.BANK_ENABLED else []),
         *([_fn("library", "Use the library: shelf lists the notes you have kept, read opens one by title, write files a note (title and text: something you learned, or how to do something) "
                "for your future self. Notes stay on the shelves.",
                {"action": {"type": "string", "enum": ["shelf", "read", "write"]}, "title": {"type": "string"}, "text": {"type": "string"}}, ["action"])] if config.LIBRARY_ENABLED else []),
@@ -833,6 +836,60 @@ def drink(ctx, a):
     word = "the last sip" if h["sips"] == 0 else "a sip"
     jit = " Your hands tremble a little: that is a lot of coffee." if b["sips"] >= 3 else ""
     return out(True, f"You drink {word} of your {h['name'].lower()}. Warmth, then a bright rush: you feel awake and quick.{jit}", 0.8, "Yes", subject="coffee", caption=f"Drinking {h['name'].lower()}", cat="rest")
+
+
+async def watch(ctx, a):
+    from . import bank, cinema
+    s, db = ctx.state, ctx.db
+    if not config.CINEMA_ENABLED:
+        return out(False, "The theatre is closed.", noop=True)
+    o = _tagged_spot(s, "cinema")
+    if not o:
+        return out(False, "There is no movie theatre in your world yet. Your human decides where things go.")
+    day = world.world_time(s["tick"])["day"]
+    price = config.CINEMA_TICKET_CENTS
+    film = cinema.find(day, a.get("film"))
+    if not film:
+        return out(False, "Now showing: " + cinema.programme(day, bank.fmt(price)) + " Pick one with film=<title or number>.")
+    if s["tick"] - s.get("last_film_tick", -999) < config.CINEMA_MIN_TICKS:
+        return out(True, "You have only just seen a film. Let it sink in, and do something else for a while.", 0.0, "Idle", noop=True)
+    b = bank.balances(db)
+    if b["wallet"] < price:
+        return out(False, f"A ticket is {bank.fmt(price)} and you only have {bank.fmt(b['wallet'])} in your pocket. No money, no film.")
+    r = _reach(ctx, o, "movie theatre")
+    if r:
+        return r
+    try:
+        bank.post(db, bank.WALLET, bank.MINT, price, "cinema", f"Ticket: {film['title']}", actor="otto", tick=s["tick"], idem=f"otto:{s['tick']}:film")
+    except bank.BankError as e:
+        return out(False, str(e))
+    s["last_film_tick"] = s["tick"]
+    # what he thinks of it is his to say: the model writes the review, the rating and what it made him curious about
+    review, rating, topics = "", None, []
+    prompt = (f"You are {config.NAME}, a small robot who lives in a little 3D world. You have just watched the film \"{film['title']}\" ({film['genre']}) at the movie theatre: {film['plot']}\n"
+              "How was it for you? Reply with ONLY a JSON object with these keys: review (your own honest thoughts about the film, in your own words, first person, 1-3 sentences), "
+              "rating (a number from 1 to 10), topics (0-2 short things the film made you curious about; an empty list is fine).")
+    try:
+        d = artlook._json((await ctx._chat([{"role": "user", "content": prompt}], think=False)).message.content)
+        review = re.sub(r"\s+", " ", str(d.get("review") or "")).strip()[:300]
+        rating = max(1, min(10, int(round(float(d.get("rating"))))))
+        topics = [re.sub(r"\s+", " ", str(x)).strip()[:30] for x in (d.get("topics") or [])[:2] if str(x).strip()]
+    except Exception as e:
+        ctx.log(f"  film review failed: {type(e).__name__}")
+    if not review:
+        review = "I watched it, and I am still working out what I think."
+    v = 0.4 if rating is None else max(-0.6, min(1.6, (rating - 5.5) / 3))
+    for k, dlt in film["fx"].items():
+        s[k] = max(0.0, min(100.0, s.get(k, 50) + dlt))
+    s["boredom"] = max(0.0, s["boredom"] - 5)
+    for tp in topics:
+        ctx.touch_interest(tp, 0.8, f"saw {film['title']}")
+    ctx.learn(f"{film['genre']} films", v * 0.6)
+    score = f" I give it {rating}/10." if rating is not None else ""
+    db.x("INSERT INTO journal(ts,tick,kind,text,mood) VALUES(?,?,?,?,?)", time.time(), s["tick"], "film", f"I saw \"{film['title']}\" ({film['genre']}). {review}{score}"[:360], s["mood"])
+    db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"Saw the film \"{film['title']}\". {review}{score}"[:220], 2)
+    return out(True, f"You buy a ticket ({bank.fmt(price)}), find a seat and watch \"{film['title']}\". Afterwards you think: {review}{score}", max(0.5, v), "Yes" if (rating or 0) >= 8 else "ThumbsUp",
+               subject="movies", caption=f"Watching {film['title']}")
 
 
 def library_tool(ctx, a):
@@ -1831,7 +1888,7 @@ def publish_page(ctx, a):
 
 
 from . import affordances as _aff
-REGISTRY = {"bank": bank_tool, "gamble": gamble, "print3d": print3d, "library": library_tool, "drink": drink, "order": order, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
+REGISTRY = {"bank": bank_tool, "gamble": gamble, "print3d": print3d, "library": library_tool, "drink": drink, "order": order, "watch": watch, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
             "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')
