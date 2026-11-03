@@ -1719,7 +1719,8 @@ async def make_art(ctx, a):
     if svg and config.ART_REVIEW and artlook.available():
         plain = artlook.plain_check(svg) if kind == "drawing" else ""
         if plain:
-            return out(False, f"You step back: {plain}. Try again.", -0.1)
+            s["last_art_tick"] = s["tick"] - config.MIN_TICKS_BETWEEN_ART // 2      # a rejected sketch still takes a little time: no instant retries
+            return out(False, f"You step back: {plain}. Try again, or do something else for a while.", -0.1)
         cr = None
         for rnd in range(config.ART_REVISIONS + 1):                          # he looks at what he drew; if it does not read, he tries again
             png = artlook.render(svg)

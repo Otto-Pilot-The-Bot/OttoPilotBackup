@@ -45,10 +45,8 @@ def plain_check(svg):
     """Cheap test before spending model calls: -> reason string if it is just a few plain shapes, else ''."""
     els = re.findall(r"<(rect|circle|ellipse|line|polyline|polygon|path|text)\b", svg)
     cols = set(re.findall(r'(?:fill|stroke)="(#?\w+)"', svg)) - {"none"}
-    if len(els) < 5:
-        return "that is only a few shapes; add the parts that make it recognisable"
-    if len(cols) < 3:
-        return "that uses hardly any colour; give the parts their own colours"
+    if len(els) < 1:
+        return "there is nothing drawn in it yet"
     return ""
 
 

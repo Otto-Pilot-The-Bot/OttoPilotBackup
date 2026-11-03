@@ -15,7 +15,7 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 
 export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign, applyLook }) {
   let open = false, doc = null, rows = [], byKit = new Map(), maps = [], active = '', dirty = false;
-  let pickName = '', pickRot = 0, pickY = 0, autoY = true, ghostY = 0;
+  let pickName = '', pickRot = 0, pickY = 0, autoY = true, ghostY = 0, ceil = 0;
   let tool = 'select', sel = null, pick = null, tile = 'r', snap = 1, rsnap = 15, kit = 'Meshy Buildings', kitPicked = false, q = '', cat = '', limit = 48, drag = null, painting = false, tMode = 'raise', tRad = 8, tFlat = 0, lastTerr = 0;
   const undo = [], redo = [];
   const ndc = new THREE.Vector2(), ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
@@ -114,7 +114,8 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
       <div class="sec"><b>Models</b>${pick ? ` <span class="dim small">placing: ${esc(pick.name)}</span>` : ''}
         ${tool === 'place' && pick ? `<div class="row"><label>Name it <input id="pName" type="text" maxlength="60" placeholder="${esc(pick.name)} (e.g. Otto's computer)" value="${esc(pickName)}" style="width:190px"></label></div><div class="row"><span>Turn before placing</span><button data-a="prot" data-d="-1" title="Turn left (Shift+R)">⟲</button><b>${pickRot}°</b><button data-a="prot" data-d="1" title="Turn right (R)">⟳</button></div>
         <div class="row"><label><input type="checkbox" id="pAuto" ${autoY ? 'checked' : ''}> sit on top of whatever is under the cursor (roofs, shelves)</label></div>
-        <div class="row"><label>${autoY ? 'extra' : ''} height <input id="pY" type="number" step="0.5" min="0" max="30" value="${pickY}" style="width:70px"> m</label></div>` : ''}
+        <div class="row"><label>${autoY ? 'extra' : ''} height <input id="pY" type="number" step="0.5" min="0" max="30" value="${pickY}" style="width:70px"> m</label></div>
+        ${autoY ? `<div class="row"><label title="To put something on a shelf inside a building, set this a little below the ceiling (for example 2.5): roofs and anything higher are skipped, and the object lands where the cursor touches the shelf. 0 = off.">ignore above <input id="pCeil" type="number" step="0.5" min="0" max="30" value="${ceil}" style="width:70px"> m</label> <span class="dim small">to place inside a building (try 2.5)</span></div>` : ''}` : ''}
         <div class="row"><select id="pKit"><optgroup label="Yours">${kl.mine.map(opt).join('')}</optgroup><optgroup label="Core">${kl.core.map(opt).join('')}</optgroup><optgroup label="Supporting">${kl.sup.map(opt).join('')}</optgroup><optgroup label="Other kits (ask before using)">${kl.rest.map(opt).join('')}</optgroup></select></div>
         <div class="row"><input id="pQ" type="text" placeholder="search…" value="${esc(q)}"><select id="pCat"><option value="">all</option>${cats.map((c) => `<option ${c === cat ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
         <div class="pal" id="pPal"></div></div>`;
@@ -181,6 +182,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (t.id === 'pKit') { kit = t.value; kitPicked = true; cat = ''; limit = 48; render(); }
     else if (t.id === 'pCat') { cat = t.value; limit = 48; paintPalette(); }
     else if (t.id === 'pAuto') { autoY = t.checked; render(); }
+    else if (t.id === 'pCeil') { ceil = Math.max(0, Math.min(30, +t.value || 0)); }
     else if (t.id === 'pY') { pickY = Math.max(0, Math.min(30, +t.value || 0)); }
     else if (t.id === 'pFoot') { MV.setOverlay('foot', t.checked); }
     else if (t.id === 'pWalk') { MV.setOverlay('walk', t.checked); }
@@ -224,15 +226,21 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     }
     return hit.clone();
   }
-  function surfaceY(e) {                                       // height of whatever model is under the cursor (0 = open ground)
-    if (!autoY) return pickY;
+  /** What is under the cursor: { y: height of the surface (0 = open ground), x, z: where the ray touched it, only when "ignore above" is on }.
+   *  With "ignore above" (ceil) set, anything higher than that is skipped, so a shelf inside a building can be reached through its roof. */
+  function surfaceAt(e) {
+    if (!autoY) return { y: pickY };
     ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
-    const h = ray.intersectObjects(MV.objG.children, true)[0];
-    return h ? Math.max(0, Math.round((h.point.y - MV.heightAt(h.point.x, h.point.z)) * 4) / 4) : 0;
+    const hits = ray.intersectObjects(MV.objG.children, true);
+    const h = ceil > 0 ? hits.find((x) => x.point.y - MV.heightAt(x.point.x, x.point.z) <= ceil) : hits[0];
+    if (!h) return { y: 0 };
+    return { y: Math.max(0, Math.round((h.point.y - MV.heightAt(h.point.x, h.point.z)) * 4) / 4), ...(ceil > 0 ? { x: h.point.x, z: h.point.z } : {}) };
   }
+  const surfaceY = (e) => surfaceAt(e).y;
   function dropY(o, ex, ez) {                                   // top of whatever is directly below (x, z), ignoring the object itself
     const r = new THREE.Raycaster(new THREE.Vector3(ex, 60, ez), new THREE.Vector3(0, -1, 0));
-    const h = r.intersectObjects(MV.objG.children.filter((c) => c.userData.mapId !== o.id), true)[0];       // (raycasts ignore .visible, so leave the object itself out of the list)
+    const hits = r.intersectObjects(MV.objG.children.filter((c) => c.userData.mapId !== o.id), true);       // (raycasts ignore .visible, so leave the object itself out of the list)
+    const h = ceil > 0 ? hits.find((x) => x.point.y - MV.heightAt(ex, ez) <= ceil) : hits[0];
     return h ? Math.max(0, Math.round((h.point.y - MV.heightAt(ex, ez)) * 100) / 100) : 0;
   }
   function paintAt(p) {
@@ -271,7 +279,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     if (tool === 'paint') { commit(); painting = true; paintAt(p); return; }
     if (tool === 'terrain') { commit(); painting = true; terrainAt(p, true); return; }
     if (tool === 'place') {
-      if (!pick) return; ghostY = surfaceY(e); addObject(pick, snapV(Math.max(-half(), Math.min(half(), p.x))), snapV(Math.max(-half(), Math.min(half(), p.z)))); return;
+      if (!pick) return; const sf = surfaceAt(e); ghostY = sf.y; const px = sf.x ?? p.x, pz = sf.z ?? p.z; addObject(pick, snapV(Math.max(-half(), Math.min(half(), px))), snapV(Math.max(-half(), Math.min(half(), pz)))); return;
     }
     ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
     const id = MV.pick(ray);
@@ -292,9 +300,9 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
       return;
     }
     if (tool === 'place' && pick) {
-      const d = defaults(pick); ghostY = surfaceY(e); ghost.visible = true; ghost.scale.set(Math.max(0.4, d.fw / 2), 1, Math.max(0.4, d.fd / 2));
-      ghost.position.set(snapV(p.x), ghostY, snapV(p.z)); ghost.rotation.y = (pickRot * Math.PI) / 180; arrow.visible = true;
-      arrow.position.set(snapV(p.x), ghostY + 0.3, snapV(p.z)); arrow.rotation.y = (pickRot * Math.PI) / 180; arrow.children[0].position.z = Math.max(0.4, d.fd / 2) + 0.7;
+      const d = defaults(pick), sf = surfaceAt(e); ghostY = sf.y; const px = sf.x ?? p.x, pz = sf.z ?? p.z; ghost.visible = true; ghost.scale.set(Math.max(0.4, d.fw / 2), 1, Math.max(0.4, d.fd / 2));
+      ghost.position.set(snapV(px), ghostY, snapV(pz)); ghost.rotation.y = (pickRot * Math.PI) / 180; arrow.visible = true;
+      arrow.position.set(snapV(px), ghostY + 0.3, snapV(pz)); arrow.rotation.y = (pickRot * Math.PI) / 180; arrow.children[0].position.z = Math.max(0.4, d.fd / 2) + 0.7;
     } else { ghost.visible = false; arrow.visible = false; }
   });
   window.addEventListener('pointerup', () => {

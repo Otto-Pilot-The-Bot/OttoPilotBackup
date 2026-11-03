@@ -610,6 +610,65 @@ class Agent:
         r = self.db.one("SELECT tick FROM actions WHERE tool='move_to' AND (lower(args) LIKE ? OR lower(result) LIKE ?) ORDER BY id DESC LIMIT 1", f"%{label.lower()}%", f"%arrived at the {label.lower()}%")
         return 9999 if not r else self.state["tick"] - r["tick"]
 
+    ERRANDS = (("cafe", "the cafe", "order a drink with the order tool (coffee wakes you up, tea is cosy)", "order", "CAFE_ENABLED", True),
+               ("casino", "the casino", "play games with the gamble tool (play money)", "gamble", "CASINO_ENABLED", True),
+               ("library", "the library", "write down something you learned, or read your old notes", "library", "LIBRARY_ENABLED", False),
+               ("printfarm", "the 3D print farm", "print a small figurine of something you imagine", "print3d", "PRINT_ENABLED", False))
+
+    def town_idle(self):
+        """True when he has used nothing in town (cafe, casino, library, print farm, bank, food) for a long while."""
+        return self.db.one("SELECT COUNT(*) n FROM actions WHERE tool IN ('order','gamble','library','print3d','bank','eat','drink') AND tick>?", self.state["tick"] - config.ERRAND_AFTER)["n"] == 0
+
+    def errand_step(self):
+        """The engine walks him to town when he has stayed away too long: -> the errand dict while one is on (he then has only move_to until he arrives), else None."""
+        from . import maps as _maps
+        s = self.state
+        er = s.get("errand")
+        if er:
+            o = next((x for x in (_maps.ACTIVE.get("doc") or {"objects": []})["objects"] if x["id"] == er["id"]), None) if config.MAPS_ENABLED else None
+            if not o or s["tick"] > er["until"] or tools.near_building(s, er["tag"], 16):
+                s["errand"] = None; s["errand_next"] = s["tick"] + config.ERRAND_COOLDOWN
+                return None
+            return er
+        if s["tick"] < s.get("errand_next", 0) or not config.ERRANDS_ENABLED or not self.town_idle():
+            return None
+        out_ = self.errand_options()
+        if not out_:
+            return None
+        d, tag, label, what, o = out_[0]
+        s["errand"] = {"id": o["id"], "tag": tag, "name": o["name"], "label": label, "what": what, "until": s["tick"] + 30}
+        return s["errand"]
+
+    def errand_options(self):
+        s = self.state
+        out_ = []
+        for tag, label, what, tool, flag, needs_bank in self.ERRANDS:
+            if not getattr(config, flag, False) or (needs_bank and not config.BANK_ENABLED):
+                continue
+            o = tools._tagged_spot(s, tag)
+            if not o:
+                continue
+            d = world.dist(s["x"], s["z"], o["x"], o["z"])
+            if tools.near_building(s, tag, 16):
+                continue                                                          # already there: its own line says what to do
+            r = self.db.one("SELECT tick FROM actions WHERE tool=? AND ok=1 ORDER BY id DESC LIMIT 1", tool)
+            if r and s["tick"] - r["tick"] < 60:
+                continue
+            out_.append((d, tag, label, what, o))
+        out_.sort(key=lambda t: t[0])
+        return out_
+
+    def errand_line(self):
+        """Things in town he has not done for a while, with distances, so the buildings the human placed actually pull him out of the sky and into the day."""
+        s = self.state
+        out_ = self.errand_options()
+        if not out_:
+            return ""
+        txt = [f"{label} ({d:.0f} m; walk there with move_to {o['name']}): {what}" for d, tag, label, what, o in out_]
+        if s.get("errand"):
+            return f"YOU ARE ON YOUR WAY TO {s['errand']['label'].upper()}: keep walking with move_to {s['errand']['name']}. When you get there you can {s['errand']['what']}."
+        return "THINGS TO DO IN TOWN (you have not done these lately): " + " | ".join(txt[:3]) + "."
+
     def ticks_since(self, cat):
         r = self.db.one("SELECT tick FROM actions WHERE cat=? ORDER BY id DESC LIMIT 1", cat)
         return None if not r else self.state["tick"] - r["tick"]
@@ -881,6 +940,9 @@ class Agent:
         if tools.near_building(s, "library", 14):
             titles = [r["title"] for r in db.q("SELECT title FROM notes ORDER BY id DESC LIMIT 5")]
             L.append("THE LIBRARY is right here: quiet shelves and reading desks." + (" Your notes include: " + "; ".join(titles) + "." if titles else " You have not kept any notes yet."))
+        errand = self.errand_line()
+        if errand:
+            L.append(errand)
         here = next((k for k, p in world.PLACES.items() if k in config.PLACE_IDEAS and world.dist(s["x"], s["z"], p["x"], p["z"]) < 7), None)
         if here:
             L.append(f"YOU ARE AT THE {world.PLACES[here]['label'].upper()}. Don't just stand and watch: " + config.PLACE_IDEAS[here])
@@ -1079,6 +1141,9 @@ class Agent:
         for nm, tag in (("print3d", "printfarm"), ("library", "library"), ("order", "cafe")):                  # the tools of a special building only exist for him while he is near it
             if not tools.near_building(s, tag):
                 tl = [x for x in tl if x["function"]["name"] != nm]
+        errand = self.errand_step()                                                          # long away from town: his only choice is to walk there
+        if errand:
+            tl = [x for x in tl if x["function"]["name"] == "move_to"]
         if "drink" not in ((s.get("holding") or {}).get("tags") or []):
             tl = [x for x in tl if x["function"]["name"] != "drink"]
         beat = s.pop("beat", None)
