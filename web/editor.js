@@ -15,7 +15,7 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 
 export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign, applyLook }) {
   let open = false, doc = null, rows = [], byKit = new Map(), maps = [], active = '', dirty = false;
-  let pickName = '', pickRot = 0, pickY = 0, autoY = true, ghostY = 0, ceil = 0, graffitiNew = false;
+  let pickName = '', pickRot = 0, pickY = 0, autoY = true, ghostY = 0, ceil = 0, graffitiNew = false, wallSnap = true;
   let tool = 'select', sel = null, pick = null, tile = 'r', snap = 1, rsnap = 15, kit = 'Meshy Buildings', kitPicked = false, q = '', cat = '', limit = 48, drag = null, painting = false, tMode = 'raise', tRad = 8, tFlat = 0, lastTerr = 0;
   const undo = [], redo = [];
   const ndc = new THREE.Vector2(), ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
@@ -110,7 +110,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <label class="row"><input type="checkbox" data-p="walkable" ${s.walkable ? 'checked' : ''}> walkable (no collision)</label>
         <label>tags <input data-p="tags" type="text" value="${esc((s.tags || []).join(', '))}" placeholder="bench, seat, park"></label>
         ${s.panel ? `<div class="grid2"><label>art w <input data-p="pw" type="number" step="0.1" value="${s.panel.w}"></label><label>art h <input data-p="ph" type="number" step="0.1" value="${s.panel.h}"></label></div><label>look <select data-p="pstyle"><option value="frame" ${s.panel.style !== 'graffiti' ? 'selected' : ''}>framed picture</option><option value="graffiti" ${s.panel.style === 'graffiti' ? 'selected' : ''}>graffiti on the wall (no frame)</option></select></label><div class="dim small">Flat panels show Otto's newest pictures.</div>` : ''}</div>` : ''}
-      ${giftPics().length ? `<div class="sec"><b>Pictures you gave Otto</b> <span class="dim small">(flat panels)</span><div class="row"><label><input type="checkbox" id="pGraf" ${graffitiNew ? 'checked' : ''}> new ones as graffiti (no frame)</label></div><div class="row">${giftPics().map((g) => `<button data-a="gift" data-id="${g.id}" title="Put this picture on a flat panel">🖼 ${esc(g.name)}</button>`).join('')}</div></div>` : ''}
+      ${giftPics().length ? `<div class="sec"><b>Pictures you gave Otto</b> <span class="dim small">(flat panels)</span><div class="row"><label><input type="checkbox" id="pGraf" ${graffitiNew ? 'checked' : ''}> new ones as graffiti (no frame)</label></div><div class="row"><label title="While you drag a picture, it hangs flat on any wall under the cursor, facing out"><input type="checkbox" id="pWall" ${wallSnap ? 'checked' : ''}> snap pictures to walls when dragging</label></div><div class="row">${giftPics().map((g) => `<button data-a="gift" data-id="${g.id}" title="Put this picture on a flat panel">🖼 ${esc(g.name)}</button>`).join('')}</div></div>` : ''}
       <div class="sec"><b>Models</b>${pick ? ` <span class="dim small">placing: ${esc(pick.name)}</span>` : ''}
         ${tool === 'place' && pick ? `<div class="row"><label>Name it <input id="pName" type="text" maxlength="60" placeholder="${esc(pick.name)} (e.g. Otto's computer)" value="${esc(pickName)}" style="width:190px"></label></div><div class="row"><span>Turn before placing</span><button data-a="prot" data-d="-1" title="Turn left (Shift+R)">⟲</button><b>${pickRot}°</b><button data-a="prot" data-d="1" title="Turn right (R)">⟳</button></div>
         <div class="row"><label><input type="checkbox" id="pAuto" ${autoY ? 'checked' : ''}> sit on top of whatever is under the cursor (roofs, shelves)</label></div>
@@ -183,6 +183,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (t.id === 'pCat') { cat = t.value; limit = 48; paintPalette(); }
     else if (t.id === 'pAuto') { autoY = t.checked; render(); }
     else if (t.id === 'pGraf') { graffitiNew = t.checked; }
+    else if (t.id === 'pWall') { wallSnap = t.checked; }
     else if (t.id === 'pCeil') { ceil = Math.max(0, Math.min(30, +t.value || 0)); }
     else if (t.id === 'pY') { pickY = Math.max(0, Math.min(30, +t.value || 0)); }
     else if (t.id === 'pFoot') { MV.setOverlay('foot', t.checked); }
@@ -232,13 +233,42 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
   function surfaceAt(e) {
     if (!autoY) return { y: pickY };
     ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
+    MV.objG.updateMatrixWorld(true);
     const hits = ray.intersectObjects(MV.objG.children, true);
     const h = ceil > 0 ? hits.find((x) => x.point.y - MV.heightAt(x.point.x, x.point.z) <= ceil) : hits[0];
     if (!h) return { y: 0 };
     return { y: Math.max(0, Math.round((h.point.y - MV.heightAt(h.point.x, h.point.z)) * 4) / 4), ...(ceil > 0 ? { x: h.point.x, z: h.point.z } : {}) };
   }
   const surfaceY = (e) => surfaceAt(e).y;
+  /** A wall under the cursor for a picture panel to hang on: -> { p: point on the wall, n: the way the wall faces (flat, toward the camera) } or null. Roofs, floors and other panels do not count. */
+  function wallHit(e, o) {
+    ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
+    const wallish = (q) => { const tg = q.tags || []; if (tg.includes('tree') || tg.includes('plant') || tg.includes('flower')) return false; return tg.includes('building') || tg.includes('shop') || tg.includes('structure') || q.fw * q.scale >= 3; };      // trees and small props are not walls
+    let best = null;                                                              // each building is tested on its own, so a hit always belongs to the building it was found in
+    for (const c of MV.objG.children) {
+      const q = objOf(c.userData.mapId); if (!q || q.id === o.id || q.panel || !wallish(q)) continue;
+      c.updateMatrixWorld(true);                                                  // world transforms can be stale until the next frame: raycasts need them fresh
+      const h = ray.intersectObject(c, true).find((x) => x.face);
+      if (h && (!best || h.distance < best.h.distance)) best = { h, id: q.id };
+    }
+    if (!best) return null;
+    const h = best.h, n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+    if (Math.abs(n.y) > 0.55) return null;                                      // a roof or a floor, not a wall
+    if (n.dot(ray.ray.direction) > 0) n.negate();                                  // always face the viewer
+    n.y = 0; n.normalize();
+    return { p: h.point, n, id: best.id };
+  }
+  /** Hangs a picture panel on the wall under the cursor: moves it to the wall, turns it to face out, sets its height. -> true when there was a wall. */
+  function snapToWall(o, e) {
+    const w = wallHit(e, o); if (!w) return false;
+    const off = o.panel.style === 'graffiti' ? 0.01 : 0.05, r2 = (v) => Math.round(v * 100) / 100;
+    o.x = r2(Math.max(-half(), Math.min(half(), w.p.x + w.n.x * off))); o.z = r2(Math.max(-half(), Math.min(half(), w.p.z + w.n.z * off)));
+    o.rot = Math.round((((Math.atan2(w.n.x, w.n.z) * 180) / Math.PI + 360) % 360) * 10) / 10;
+    o.y = Math.max(0.3, r2(w.p.y - MV.heightAt(o.x, o.z)));
+    return true;
+  }
   function dropY(o, ex, ez) {                                   // top of whatever is directly below (x, z), ignoring the object itself
+    MV.objG.updateMatrixWorld(true);
     const r = new THREE.Raycaster(new THREE.Vector3(ex, 60, ez), new THREE.Vector3(0, -1, 0));
     const hits = r.intersectObjects(MV.objG.children.filter((c) => c.userData.mapId !== o.id), true);       // (raycasts ignore .visible, so leave the object itself out of the list)
     const h = ceil > 0 ? hits.find((x) => x.point.y - MV.heightAt(ex, ez) <= ceil) : hits[0];
@@ -295,6 +325,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     if (painting) { if (tool === 'terrain') terrainAt(p, false); else paintAt(p); return; }
     if (drag) {
       const o = objOf(drag.id); if (!o) return;
+      if (o.panel && wallSnap && snapToWall(o, e)) { drag.moved = true; MV.sync(); MV.select(o.id); MV.updateColliders(); return; }       // pictures hang flat on whatever wall the cursor touches
       const nx = snapV(p.x + drag.dx), nz = snapV(p.z + drag.dz);
       if (nx !== o.x || nz !== o.z) { o.x = Math.max(-half(), Math.min(half(), nx)); o.z = Math.max(-half(), Math.min(half(), nz)); drag.moved = true;
         if (autoY && drag.auto && !o.panel) { const y = dropY(o, o.x, o.z); if (y > 0) o.y = y; else delete o.y; } MV.sync(); MV.select(o.id); MV.updateColliders(); }
@@ -354,5 +385,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
       if (kit !== FAV && !byKit.has(kit)) kit = byKit.has('Meshy Buildings') ? 'Meshy Buildings' : [...byKit.keys()][0]; if (open) render();
     },
     thumbsReady() { if (open) fillThumbs(); },
+    snapTest(id, cx, cy) { const o = objOf(id); if (!o) return null; const ok = snapToWall(o, { clientX: cx, clientY: cy }); if (ok) { MV.sync(); } return ok && { x: o.x, z: o.z, y: o.y, rot: o.rot }; },    // debugging: hang panel `id` on the wall at a screen point
+    wallAt(cx, cy) { const w = wallHit({ clientX: cx, clientY: cy }, { id: -1 }); return w && { id: w.id, name: (doc.objects.find((x) => x.id === w.id) || {}).name, p: w.p.toArray().map((v) => +v.toFixed(2)), n: w.n.toArray().map((v) => +v.toFixed(2)) }; },    // debugging: the wall under a screen point
   };
 }
