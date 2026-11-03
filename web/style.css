@@ -165,3 +165,9 @@ body.planning #camBar { left: calc(50% + 160px); top: calc(var(--topH) - 2px); f
 body.planning #lookBtn { left: 350px; bottom: 14px; }
 #adminBtn { position: fixed; left: 14px; bottom: 98px; z-index: 31; background: #2b2f3a; color: #eee; border: 1px solid #444b5c; border-radius: 9px; padding: 8px 12px; font: 14px system-ui; text-decoration: none; }
 body.planning #adminBtn { left: 450px; bottom: 14px; }
+
+/* plan editor: favorite star on a model tile */
+.card{position:relative}
+.card .fav{position:absolute;top:2px;right:5px;font-size:15px;line-height:1;color:#9aa;cursor:pointer;z-index:2}
+.card .fav.on{color:#f2b632}
+.card .fav:hover{color:#f2b632}

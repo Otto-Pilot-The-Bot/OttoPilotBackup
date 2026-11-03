@@ -92,7 +92,7 @@ ART_GALLERY_MATCH = 6            # the website only shows pieces he rated at lea
 FOCUS_TICKS = 10                # how long a "what I feel like doing" inclination lasts
 
 # --- layout engine ---
-WORLD_HALF_MAX = 48
+WORLD_HALF_MAX = 80
 WORLD_GROW_STEP = 6
 CROWD_LIMIT = 0.14              # fraction of ground covered before the buildable area grows
 SPACING_MARGIN = 0.8            # extra space kept between footprints
@@ -226,11 +226,11 @@ KIT_SCALE = {
     "Otto Props": 2.4,
     "Modular Space Kit": 1.0, "Modular Cave Kit": 1.0, "Modular Dungeon Kit": 1.0, "Coaster Kit": 1.0, "Toy Car Kit": 1.0, "Weapon Pack": 1.0, "Brick Kit": 1.0, "Marble Kit": 1.0,
 }
-NAME_SCALE = [("Meshy Buildings", r"^ottos casino", 5.0), ("Meshy Buildings", r"^casino", 0.55), ("Meshy Buildings", r"^ottos bank", 4.2), ("Meshy Buildings", r"^bookshelf", 0.6), ("Meshy Buildings", r"camera", 0.1), ("Meshy Buildings", r"^ottos house", 3.7), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
+NAME_SCALE = [("Meshy Buildings", r"^ottos casino", 5.0), ("Meshy Buildings", r"^ottos bank", 4.2), ("Meshy Buildings", r"^bookshelf", 0.6), ("Meshy Buildings", r"camera", 0.1), ("Meshy Buildings", r"^ottos house", 0.5), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
 
 
 # Per-model brightness (1.0 = as authored). Lifts a model whose texture is very dark; it multiplies the texture, it does not tint or change hues.
-NAME_BRIGHT = [("Meshy Buildings", r"^ottos house", 1.7), ("Meshy Buildings", r"^ottos casino", 2.2), ("Meshy Buildings", r"^cafe", 1.6), ("Meshy Buildings", r"^ottos bank", 1.2)]
+NAME_BRIGHT = [("Meshy Buildings", r"^ottos casino", 2.2), ("Meshy Buildings", r"^cafe", 1.6), ("Meshy Buildings", r"^ottos bank", 1.2)]
 
 
 # Per-model category/tags that the file name alone cannot tell us: (pack, name regex, category or None, tags to add, tags to remove)

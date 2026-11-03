@@ -6,6 +6,8 @@ import { LOOKS, TILE_NAMES } from './mapview.js';
 import { H_ZERO, H_STEP } from './terrain.js';
 
 const CORE = ['Space Kit', 'Modular Space Kit', 'Space Station Kit'];
+const MINE = ['Meshy Buildings', 'Trees', 'Printed'];                       // the models you made or bought: shown first
+const FAV = '★ Favorites';
 const SUPPORT = ['City Kit - Roads', 'Road Pack', 'Car Kit', 'Furniture Kit', 'Nature Kit', 'Food Kit', 'City Kit - Suburban', 'City Kit - Commercial'];
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -14,7 +16,7 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign, applyLook }) {
   let open = false, doc = null, rows = [], byKit = new Map(), maps = [], active = '', dirty = false;
   let pickName = '', pickRot = 0, pickY = 0, autoY = true, ghostY = 0;
-  let tool = 'select', sel = null, pick = null, tile = 'r', snap = 1, rsnap = 15, kit = 'Space Kit', q = '', cat = '', limit = 48, drag = null, painting = false, tMode = 'raise', tRad = 8, tFlat = 0, lastTerr = 0;
+  let tool = 'select', sel = null, pick = null, tile = 'r', snap = 1, rsnap = 15, kit = 'Meshy Buildings', kitPicked = false, q = '', cat = '', limit = 48, drag = null, painting = false, tMode = 'raise', tRad = 8, tFlat = 0, lastTerr = 0;
   const undo = [], redo = [];
   const ndc = new THREE.Vector2(), ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
 
@@ -58,16 +60,20 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
 
   // ---------------------------------------------------------------- panel
   const tileSw = { g: '#a8d08a', p: '#e9dfc6', r: '#5b6270', t: '#dccfa9', w: '#6db4d6', s: '#eedca8', d: '#b78f68' };
+  const favKey = 'otto_fav_models';
+  const favs = (() => { try { return new Set(JSON.parse(localStorage.getItem(favKey) || '[]')); } catch { return new Set(); } })();       // asset files, kept per browser
+  const saveFavs = () => { try { localStorage.setItem(favKey, JSON.stringify([...favs])); } catch { /* storage may be blocked */ } };
+  const kitRows = (k) => (k === FAV ? rows.filter((r) => favs.has(r.file)) : (byKit.get(k) || []));
   function kitList() {
-    const all = [...byKit.keys()].sort(); const core = CORE.filter((k) => byKit.has(k)), sup = SUPPORT.filter((k) => byKit.has(k)), rest = all.filter((k) => !core.includes(k) && !sup.includes(k));
-    return { core, sup, rest };
+    const all = [...byKit.keys()].sort(); const mine = [FAV, ...MINE.filter((k) => byKit.has(k))], core = CORE.filter((k) => byKit.has(k)), sup = SUPPORT.filter((k) => byKit.has(k)), rest = all.filter((k) => !core.includes(k) && !sup.includes(k) && !MINE.includes(k));
+    return { mine, core, sup, rest };
   }
   function render(full = true) {
     if (!open) return;
     if (!doc) { el.innerHTML = '<div class="ph"><b>Plan</b><button data-a="close">✕</button></div><p class="dim">Waiting for the map…</p>'; return; }
     const s = sel ? objOf(sel) : null, kl = kitList();
-    const opt = (k) => `<option ${k === kit ? 'selected' : ''} value="${esc(k)}">${esc(k)} (${byKit.get(k).length})</option>`;
-    const cats = [...new Set((byKit.get(kit) || []).map((r) => r.cat))].sort();
+    const opt = (k) => `<option ${k === kit ? 'selected' : ''} value="${esc(k)}">${esc(k)} (${kitRows(k).length})</option>`;
+    const cats = [...new Set(kitRows(kit).map((r) => r.cat))].sort();
     el.innerHTML = `
       <div class="ph"><b>🗺️ Plan editor</b><span class="dim small">only you can edit; Otto can only wish</span><button data-a="close" title="Close (Esc)">✕</button></div>
       ${editing ? `<div class="warnbox" style="background:#e4eefc;border-color:#a9c4ee">✏️ Editing <b>${esc(doc.name)}</b> (not where Otto is). Saving will not move him. <button data-a="backlive">Back to the live map</button></div>` : ''}
@@ -109,7 +115,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         ${tool === 'place' && pick ? `<div class="row"><label>Name it <input id="pName" type="text" maxlength="60" placeholder="${esc(pick.name)} (e.g. Otto's computer)" value="${esc(pickName)}" style="width:190px"></label></div><div class="row"><span>Turn before placing</span><button data-a="prot" data-d="-1" title="Turn left (Shift+R)">⟲</button><b>${pickRot}°</b><button data-a="prot" data-d="1" title="Turn right (R)">⟳</button></div>
         <div class="row"><label><input type="checkbox" id="pAuto" ${autoY ? 'checked' : ''}> sit on top of whatever is under the cursor (roofs, shelves)</label></div>
         <div class="row"><label>${autoY ? 'extra' : ''} height <input id="pY" type="number" step="0.5" min="0" max="30" value="${pickY}" style="width:70px"> m</label></div>` : ''}
-        <div class="row"><select id="pKit"><optgroup label="Core">${kl.core.map(opt).join('')}</optgroup><optgroup label="Supporting">${kl.sup.map(opt).join('')}</optgroup><optgroup label="Other kits (ask before using)">${kl.rest.map(opt).join('')}</optgroup></select></div>
+        <div class="row"><select id="pKit"><optgroup label="Yours">${kl.mine.map(opt).join('')}</optgroup><optgroup label="Core">${kl.core.map(opt).join('')}</optgroup><optgroup label="Supporting">${kl.sup.map(opt).join('')}</optgroup><optgroup label="Other kits (ask before using)">${kl.rest.map(opt).join('')}</optgroup></select></div>
         <div class="row"><input id="pQ" type="text" placeholder="search…" value="${esc(q)}"><select id="pCat"><option value="">all</option>${cats.map((c) => `<option ${c === cat ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
         <div class="pal" id="pPal"></div></div>`;
     paintPalette();
@@ -117,12 +123,12 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
   function giftPics() { return (window.__last?.()?.gifts || []).filter((g) => g.kind === 'picture').slice(0, 8); }
   function listRows() {
     const ql = q.toLowerCase();
-    return (byKit.get(kit) || []).filter((r) => (!cat || r.cat === cat) && (!ql || (r.name + ' ' + r.tags.join(' ')).toLowerCase().includes(ql)));
+    return kitRows(kit).filter((r) => (!cat || r.cat === cat) && (!ql || (r.name + ' ' + r.tags.join(' ')).toLowerCase().includes(ql)));
   }
   function paintPalette() {
     const host = $('#pPal'); if (!host) return;
     const list = listRows(), shown = list.slice(0, limit);
-    host.innerHTML = shown.map((r) => `<button class="card ${pick && pick.id === r.id ? 'on' : ''}" data-a="pick" data-id="${r.id}" title="${esc(r.name)} · ${esc(r.cat)} · ${r.fw}×${r.fd} m"><img alt="" data-k="a:${r.id}"><span>${esc(r.name)}</span></button>`).join('')
+    host.innerHTML = shown.map((r) => `<button class="card ${pick && pick.id === r.id ? 'on' : ''}" data-a="pick" data-id="${r.id}" title="${esc(r.name)} · ${esc(r.cat)} · ${r.fw}×${r.fd} m"><img alt="" data-k="a:${r.id}"><span>${esc(r.name)}</span><span class="fav ${favs.has(r.file) ? 'on' : ''}" data-a="fav" data-id="${r.id}" title="${favs.has(r.file) ? 'Remove from favorites' : 'Add to favorites'}">${favs.has(r.file) ? '★' : '☆'}</span></button>`).join('')
       + (list.length > shown.length ? `<button class="card more" data-a="more">+${list.length - shown.length} more</button>` : '') + (list.length ? '' : '<div class="dim">Nothing matches.</div>');
     fillThumbs();
   }
@@ -151,6 +157,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (a === 'tool') { tool = b.dataset.k; if (tool !== 'place') pick = null; applyTool(); render(); }
     else if (a === 'tile') { tile = b.dataset.k; render(); }
     else if (a === 'tmode') { tMode = b.dataset.k; render(); }
+    else if (a === 'fav') { const r = rows.find((x) => x.id === +b.dataset.id); if (r) { if (favs.has(r.file)) favs.delete(r.file); else favs.add(r.file); saveFavs(); render(); } }
     else if (a === 'pick') { pick = rows.find((r) => r.id === +b.dataset.id); tool = 'place'; sel = null; MV.select(null); applyTool(); render(); }
     else if (a === 'gift') {
       const g = giftPics().find((x) => x.id === +b.dataset.id); if (!g) return; commit();
@@ -171,7 +178,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     if (t.id === 'pMap') return;
     if (t.id === 'tRad') tRad = +t.value;
     else if (t.id === 'pSnap') snap = +t.value; else if (t.id === 'pRot') rsnap = +t.value;
-    else if (t.id === 'pKit') { kit = t.value; cat = ''; limit = 48; render(); }
+    else if (t.id === 'pKit') { kit = t.value; kitPicked = true; cat = ''; limit = 48; render(); }
     else if (t.id === 'pCat') { cat = t.value; limit = 48; paintPalette(); }
     else if (t.id === 'pAuto') { autoY = t.checked; render(); }
     else if (t.id === 'pY') { pickY = Math.max(0, Math.min(30, +t.value || 0)); }
@@ -335,7 +342,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     onMap(m) { maps = m.maps || maps; editing = !!m.edit; if (open) { const f = awaitingSave; awaitingSave = false; loadFromMsg(m, f); if (doc) { MV.doc = doc; MV.sync(); MV.updateColliders(); MV.rebuildOverlays(); MV.nav = m.nav; } render(); } },
     assetsData(m) {
       rows = m.rows || []; byKit = new Map(); for (const r of rows) { if (!byKit.has(r.pack)) byKit.set(r.pack, []); byKit.get(r.pack).push(r); }
-      if (!byKit.has(kit)) kit = [...byKit.keys()][0]; if (open) render();
+      if (kit !== FAV && !byKit.has(kit)) kit = byKit.has('Meshy Buildings') ? 'Meshy Buildings' : [...byKit.keys()][0]; if (open) render();
     },
     thumbsReady() { if (open) fillThumbs(); },
   };

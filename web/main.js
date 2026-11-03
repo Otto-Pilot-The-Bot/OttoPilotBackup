@@ -318,7 +318,7 @@ async function renderThumb(o) {
   if (g.userData.design) await Promise.race([g.userData.design.userData.ready, new Promise((r) => setTimeout(r, 5000))]);
   await new Promise((r) => setTimeout(r, 60));
   const box = new THREE.Box3().setFromObject(g), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
-  const R = Math.max(size.x, size.y, size.z, 0.8) * 0.5 * 1.25 / Math.tan(THREE.MathUtils.degToRad(16));
+  const R = Math.max(size.x, size.y, size.z, 0.05) * 0.5 * 1.25 / Math.tan(THREE.MathUtils.degToRad(16));
   thumbCam.position.set(c.x + R * 0.62, c.y + R * 0.42, c.z + R * 0.78); thumbCam.lookAt(c);
   thumbR.render(thumbScene, thumbCam);
   const url = thumbR.domElement.toDataURL('image/png');

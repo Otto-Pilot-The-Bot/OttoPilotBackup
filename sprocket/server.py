@@ -532,7 +532,7 @@ async def serve(agent, runner, interval=None):
         roots = [d.resolve() for d in assetlib.asset_dirs()]
         if path.suffix.lower() != ".glb" or not path.is_file() or not any(r in path.parents for r in roots):
             return web.Response(status=404)
-        return web.FileResponse(path, headers={"Content-Type": "model/gltf-binary", "Cache-Control": "max-age=3600"})
+        return web.FileResponse(path, headers={"Content-Type": "model/gltf-binary", "Cache-Control": "no-cache"})
 
     async def gift_file(request):
         """Serves a stored (already cleaned) gift by id, with a fixed content type. Nothing else is ever served from data/gifts."""

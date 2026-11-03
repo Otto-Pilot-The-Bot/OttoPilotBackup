@@ -212,7 +212,7 @@ def _pack_name(folder_name):
     return n.strip()
 
 
-INDEX_VERSION = 18         # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
+INDEX_VERSION = 20         # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
 
 
 def scan(db, log=print):

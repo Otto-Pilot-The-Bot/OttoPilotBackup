@@ -25,7 +25,7 @@ export { kitGlow };
 function pump() {
   while (active < MAX_PARALLEL && waiting.length) {
     const job = waiting.shift(); active++;
-    loader.load(job.url || `/asset/${job.id}`, (g) => { active--; job.res(g); pump(); }, undefined, (e) => { active--; job.rej(e); pump(); });
+    loader.load(job.url || `/asset/${job.id}?v=2`, (g) => { active--; job.res(g); pump(); }, undefined, (e) => { active--; job.rej(e); pump(); });
   }
 }
 function template(id, fit, url) {
