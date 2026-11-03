@@ -5,7 +5,7 @@ import * as THREE from 'three';
 const EYE = 1.55;                 // Otto is 1.7 m tall; his eyes are about here
 const WALK = 3.2, RUN = 6.5, RADIUS = 0.45;
 
-export function createCameraModes({ camera, controls, dom, getRobot, getHalf, getColliders, onChange }) {
+export function createCameraModes({ camera, controls, dom, getRobot, getHalf, getColliders, onChange, getGround = () => 0 }) {
   let mode = 'overhead', detached = false;
   const saved = { pos: new THREE.Vector3(), target: new THREE.Vector3() };
   const keys = new Set(), look = { yaw: 0, pitch: 0 }, me = new THREE.Vector3(0, EYE, 0);
@@ -59,15 +59,16 @@ export function createCameraModes({ camera, controls, dom, getRobot, getHalf, ge
   // ---------- follow
   function placeBehind(r, snap) {
     const d = 4.2;
-    tmp.set(r.pos.x - Math.sin(fyaw) * d, EYE + 0.15, r.pos.z - Math.cos(fyaw) * d);
+    tmp.set(r.pos.x - Math.sin(fyaw) * d, EYE + 0.15 + getGround(r.pos.x, r.pos.z), r.pos.z - Math.cos(fyaw) * d);
     const half = getHalf() + 3; tmp.x = Math.max(-half, Math.min(half, tmp.x)); tmp.z = Math.max(-half, Math.min(half, tmp.z));
     if (snap) fpos.copy(tmp); else fpos.lerp(tmp, 0.12);
-    ftarget.set(r.pos.x + Math.sin(fyaw) * 2.5, EYE - 0.1, r.pos.z + Math.cos(fyaw) * 2.5);
+    ftarget.set(r.pos.x + Math.sin(fyaw) * 2.5, EYE - 0.1 + getGround(r.pos.x, r.pos.z), r.pos.z + Math.cos(fyaw) * 2.5);
     camera.position.copy(fpos); camera.lookAt(ftarget);
   }
 
   // ---------- walk
   function applyWalkView() {
+    me.y = EYE + getGround(me.x, me.z);                          // eyes stay about 1.55 m above the hills and dips
     camera.position.copy(me);
     const cp = Math.cos(look.pitch);
     camera.lookAt(me.x + Math.sin(look.yaw) * cp, me.y + Math.sin(look.pitch), me.z + Math.cos(look.yaw) * cp);

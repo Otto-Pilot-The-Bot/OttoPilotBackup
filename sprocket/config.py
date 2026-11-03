@@ -18,7 +18,15 @@ TEMPERATURE = 0.9
 KEEP_ALIVE = os.environ.get("SPROCKET_KEEP_ALIVE", "3m")
 
 TICK_SECONDS = float(os.environ.get("SPROCKET_TICK", 20))   # start-to-start interval (default 20 s; adjustable in the You panel)
-REFLECT_EVERY = 10            # ticks between reflection calls
+REFLECT_EVERY = 24            # ticks between reflection calls
+# Things he can do with his hands (anything else counts as watching, thinking or writing). If none of his last five actions were these, his prompt tells him to do something.
+DOING_TOOLS = ("make_art", "make_music", "collect", "tend", "landscape", "arrange", "build", "read_page", "search_web", "wish", "gift", "design", "place_object")
+# Ideas shown to him while he stands at one of these places (keys of world.PLACES), so arriving leads to doing, not just looking.
+PLACE_IDEAS = {
+    "lake": "sketch the ripples with make_art, compose the sound of the water with make_music, tend or reshape the land by the water, or write what it makes you think of.",
+    "hill": "sketch the view with make_art, compose something wide and open with make_music, tend or reshape the land up here, or read about what you can see.",
+    "hill2": "sketch the view with make_art, compose something with make_music, tend or reshape the land here, or read about what you can see.",
+}
 REQUEST_TIMEOUT = 180         # seconds per model call (thinking mode can be slow)
 
 DB_PATH = Path(os.environ.get("SPROCKET_DB", ROOT / "data" / "sprocket.db"))
@@ -75,6 +83,10 @@ ASSUMED_MIX = {"move_units": 2.4, "build": 0.10, "make_art": 0.05, "light": 0.45
 # --- pacing: so he doesn't only build ---
 MIN_TICKS_BETWEEN_NEW_PROJECTS = 80
 MIN_TICKS_BETWEEN_ART = 14
+ART_REVIEW = True                # he looks at a picture of his drawing and may redraw it (needs resvg-py and a vision model)
+ART_REVISIONS = 2                # redraws per piece
+ART_MIN_MATCH = 5                # 0-10: below this after the redraws he puts the piece aside instead of hanging it
+ART_GALLERY_MATCH = 6            # the website only shows pieces he rated at least this
 FOCUS_TICKS = 10                # how long a "what I feel like doing" inclination lasts
 
 # --- layout engine ---
@@ -94,7 +106,14 @@ ROBOT_HEIGHT = 1.7                       # Otto's height in world units (the 3D 
 # Packs whose models look tiny next to Otto get a uniform scale-up (pieces of one pack keep fitting together).
 # Things with a known real-world size (longest side in world units; Otto is 1.7 tall). Matched on the lowercase file name; beats the pack scale.
 BLOCKED_SITE_HOURS = 6                   # how long he remembers a site that refused him
-MAX_GOALS = 5                    # active goals kept at once (near-duplicates are merged)
+MAX_GOALS = 3                    # active goals kept at once (near-duplicates are merged)
+GOAL_THEME_CAP = 1               # a new goal that shares a key word with this many active goals is the same theme and is not added (stops one obsession filling every slot)
+SKY_KEYS = ("sky", "cloud", "star", "weather", "moon", "sun", "rain", "snow", "fog", "wind", "storm")
+SKY_WINDOW, SKY_LIMIT = 24, 2    # after watching the sky this many times within this many ticks, observing steers him to something else for a while
+INTEREST_CAP = 5.0               # one interest can never grow past this (it was 10, which let a single topic crowd out everything else)
+MIN_INTERESTS = 6                # fewer than this and a random new thing catches his curiosity
+SEED_INTERESTS = ["birds", "bread baking", "old maps", "trains", "tide pools", "clocks", "pottery", "mushrooms", "bridges", "kites", "moss", "lighthouses", "beetles", "puddles",
+                  "bicycles", "weaving", "shadows", "echoes", "lanterns", "windmills", "cats", "gardens", "mosaics", "bells", "fireflies", "stones"]
 BUILD_WINDOW = (30, 3)           # at most 3 build actions (any stage) in any 30 ticks: builds are an occasional thing
 MAKER_PREF_CAP = 1.5             # building/creating/art tastes can never snowball above this
 
@@ -126,7 +145,7 @@ NOVELTY_AFTER = 25               # a category not done for this many ticks feels
 REPEAT_PENALTY = 0.18            # each repeat of the same category in the last 6 actions makes it less rewarding
 LATELY_WINDOW = 20               # the "lately you have mostly done..." line looks at this many actions
 INTEREST_DECAY_EVERY = 10        # ticks between fading passes
-INTEREST_DECAY = 0.95            # strength multiplier per pass for interests that were not touched
+INTEREST_DECAY = 0.9             # strength multiplier per pass for interests that were not touched
 INTEREST_MIN = 0.35              # below this an interest has faded away
 MAX_INTERESTS = 12
 MIN_TICKS_BETWEEN_TUNES = 10
@@ -156,7 +175,7 @@ BUSY_VERB = {"build": "working on", "make_art": "making", "read_page": "reading"
              "observe": "watching", "tend": "tending", "rest": "resting"}
 WALK_MAX_TICKS = 14             # a walk continues by itself for at most this many ticks
 BURST_MAX = 4                   # after this many busy actions in a row he takes a quiet breather
-REFLECT_GAP = 8                 # ticks between reflection beats after meaningful events
+REFLECT_GAP = 16                # ticks between reflection beats after meaningful events
 
 # =====================================================================================================
 # BUILDING IS OFF. Nothing is deleted: set BUILDING_ENABLED = True (or SPROCKET_BUILDING=1) to bring back build / landscape /
@@ -205,17 +224,19 @@ KIT_SCALE = {
     "Otto Props": 2.4,
     "Modular Space Kit": 1.0, "Modular Cave Kit": 1.0, "Modular Dungeon Kit": 1.0, "Coaster Kit": 1.0, "Toy Car Kit": 1.0, "Weapon Pack": 1.0, "Brick Kit": 1.0, "Marble Kit": 1.0,
 }
-NAME_SCALE = [("Meshy Buildings", r"^ottos casino", 5.0), ("Meshy Buildings", r"^ottos bank", 4.2), ("Meshy Buildings", r"^bookshelf", 0.6), ("Meshy Buildings", r"camera", 0.1), ("Meshy Buildings", r"^ottos house", 3.7), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
+NAME_SCALE = [("Meshy Buildings", r"^ottos casino", 5.0), ("Meshy Buildings", r"^casino", 7.0), ("Meshy Buildings", r"^ottos bank", 4.2), ("Meshy Buildings", r"^bookshelf", 0.6), ("Meshy Buildings", r"camera", 0.1), ("Meshy Buildings", r"^ottos house", 3.7), ("Otto Props", r"^charging pad", 0.03), ("Otto Props", r"^camera", 1.5), ("Otto Props", r"cabinet", 2.0), ("Space Station Kit", r"^(bed|chair|computer|container|display|table|skip|rocks|pipe)", 2.0), ("Space Kit", r"astronaut", 2.15), ("Space Kit", r"hangar|structure|pad|corridor|tunnel", 4.0)]            # [(kit, name regex, scale)] for individual pieces that are off even within their kit
 
 
 # Per-model brightness (1.0 = as authored). Lifts a model whose texture is very dark; it multiplies the texture, it does not tint or change hues.
-NAME_BRIGHT = [("Meshy Buildings", r"^ottos house", 1.7), ("Meshy Buildings", r"^ottos casino", 2.2), ("Meshy Buildings", r"^ottos bank", 1.2)]
+NAME_BRIGHT = [("Meshy Buildings", r"^ottos house", 1.7), ("Meshy Buildings", r"^(ottos )?casino", 2.2), ("Meshy Buildings", r"^ottos bank", 1.2)]
 
 
 # Per-model category/tags that the file name alone cannot tell us: (pack, name regex, category or None, tags to add, tags to remove)
-NAME_TAGS = [("Meshy Buildings", r"^ottos (bank|casino)", "building", ["building"], ["prop"]),
+NAME_TAGS = [("Meshy Buildings", r"^(ottos )?(bank|casino)", "building", ["building"], ["prop"]),
              ("Meshy Buildings", r"^ottos bank", "building", ["bank", "money"], []),
-             ("Meshy Buildings", r"^ottos casino", "building", ["casino"], []),
+             ("Meshy Buildings", r"^(ottos )?casino", "building", ["casino"], []),
+             ("Meshy Buildings", r"print", "building", ["building", "printfarm"], ["prop"]),
+             ("Meshy Buildings", r"librar", "building", ["building", "library"], ["prop"]),
              ("Meshy Buildings", r"^bookshelf", "prop", ["shelf", "furniture", "books"], ["holdable", "building", "book"]),
              ("Meshy Buildings", r"camera", "prop", ["camera", "holdable", "tool"], ["building"])]
 
@@ -244,4 +265,27 @@ BANK_ENABLED = True
 BANK_PROVIDER = "play"             # "play" = pretend money. "real" does nothing unless BANK_REAL_ENABLED is also turned on (it is not wired to anything).
 BANK_REAL_ENABLED = False
 BANK_START_CENTS = 5000            # Otto starts with $50.00 cash
+CASINO_ENABLED = True              # the gamble tool: slots, roulette, blackjack and dice at a casino building (play money only; refuses if real money is ever switched on)
+CASINO_MAX_BET_CENTS = 1500        # no single bet above this, and never more than a quarter of his pocket cash
+CASINO_LOSS_LIMIT_CENTS = 3000     # the floor manager stops him once he has lost this much within CASINO_LOSS_TICKS
+CASINO_LOSS_TICKS = 200
+
+# THE PRINT FARM (a building the human places; its tool only shows up when he is near it). Prints wait for the human's approval before they exist in the world.
+PRINT_ENABLED = True
+PRINT_PROVIDER = "tripo"          # "tripo" (key in TRIPO_API_KEY) or "test" (hands back a local model, for trying the pipeline)
+PRINT_MODEL = "v3.1-20260211"     # the service's model name
+PRINT_COST_CENTS = 800            # play money per print (refunded if it fails)
+PRINT_MAX_PER_DAY = 2             # prints started per rolling 24 h
+PRINT_MAX_ACTIVE = 1              # jobs running at once
+PRINT_MAX_WAITING = 3             # prints waiting for approval at once
+PRINT_MAX_TOTAL = 12              # figurines on the tray
+PRINT_PROMPT_MAX = 120
+PRINT_POLL_MAX = 100              # x 3 s: how long a job may take
+PRINT_MAX_BYTES = 60_000_000
+PRINT_MAX_TRIS = 800_000
+
+# THE LIBRARY (a building the human places): he keeps notes there
+LIBRARY_ENABLED = True
+LIBRARY_NOTE_MAX = 1200
+LIBRARY_MAX_NOTES = 200
 BANK_MAX_TXN_CENTS = 1_000_000     # no single move above $10,000.00

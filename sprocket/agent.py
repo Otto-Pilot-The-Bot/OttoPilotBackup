@@ -11,7 +11,7 @@ import ollama
 
 import difflib
 
-from . import assets, config, design, gifts, kit, layout, pois, tools, world
+from . import assets, config, design, gifts, kit, layout, pois, tools, traits, world
 from .world import FEELINGS
 
 NAME = config.NAME
@@ -231,6 +231,18 @@ class Agent:
         t = re.sub(r"^\s*(start a new goal|new goal|goal)\s*[:\-]?\s*", "", text.lower())
         return " ".join(w for w in re.findall(r"[a-z0-9]+", t) if w not in cls._STOP)
 
+    _THEME_STOP = set("about above after again also another around because before between build create develop different explore exploring first from have into learn make more other over should some specific such than that their them then these they this through understand until using what when where which while will with would your concrete verifiable method protocol musical idea ideas simple small thing things over time how why".split())
+
+    @classmethod
+    def _theme_words(cls, text):
+        """The subject words of a goal (plural/-ing endings folded), used to spot a new goal about the same obsession as an existing one."""
+        out = set()
+        for w in re.findall(r"[a-z]{5,}", text.lower()):
+            w = re.sub(r"(ing|es|s|ed)$", "", w) if len(w) > 6 else w.rstrip("s")
+            if w not in cls._THEME_STOP and len(w) >= 4:
+                out.add(w)
+        return out
+
     @classmethod
     def same_goal(cls, a, b):
         ka, kb = cls._goal_key(a), cls._goal_key(b)
@@ -248,6 +260,9 @@ class Agent:
         active = self.db.q("SELECT id,text FROM goals WHERE status='active' ORDER BY id")
         if any(self.same_goal(g["text"], text) for g in active):
             return                                              # already a goal like this
+        mine = self._theme_words(text)
+        if mine and any(sum(1 for g in active if w in self._theme_words(g["text"])) >= config.GOAL_THEME_CAP for w in mine):
+            return                                              # the same obsession again (e.g. a third goal about clouds): leave room for something new
         while len(active) >= config.MAX_GOALS:                  # keep the list honest: oldest goes first
             self.db.x("UPDATE goals SET status='dropped', closed_tick=? WHERE id=?", self.state["tick"], active.pop(0)["id"])
         self.db.x("INSERT INTO goals(ts,text,created_tick) VALUES(?,?,?)", time.time(), text, self.state["tick"])
@@ -543,7 +558,7 @@ class Agent:
         db, t = self.db, self.state["tick"]
         row = db.one("SELECT strength FROM interests WHERE topic=?", topic)
         if row:
-            db.x("UPDATE interests SET strength=MIN(10, strength+?), ts=?, last_tick=? WHERE topic=?", amount, time.time(), t, topic)
+            db.x("UPDATE interests SET strength=MIN(?, strength+?), ts=?, last_tick=? WHERE topic=?", config.INTEREST_CAP, amount, time.time(), t, topic)
         else:
             db.x("INSERT INTO interests(topic,ts,source,strength,last_tick) VALUES(?,?,?,?,?)", topic, time.time(), source[:300], max(1.0, amount), t)
             if config.AROUSAL_ENABLED:                                              # a brand-new interest is exciting
@@ -558,6 +573,13 @@ class Agent:
             return
         self.db.x("UPDATE interests SET strength=strength*? WHERE COALESCE(last_tick,0) < ?", config.INTEREST_DECAY, t - config.INTEREST_DECAY_EVERY)
         self.db.x("DELETE FROM interests WHERE strength<?", config.INTEREST_MIN)
+        cnt, n = self.category_shares(config.LATELY_WINDOW)
+        traits.drift(self.db, cnt, n)                                              # his character shifts a hair toward what he has really been doing
+        have = {r["topic"] for r in self.db.q("SELECT topic FROM interests")}
+        if len(have) < config.MIN_INTERESTS:                                       # a mind with nothing to wonder about picks something up: a sound, a smell, a thing he passed
+            fresh = [x for x in config.SEED_INTERESTS if x not in have]
+            if fresh:
+                self.touch_interest(random.choice(fresh), 1.0, "caught his curiosity")
 
     def hobby_entry(self, name, text, kind="series", interest=""):
         db = self.db
@@ -565,7 +587,7 @@ class Agent:
         hid = db.one("SELECT id FROM hobbies WHERE name=?", name[:40])["id"]
         db.x("INSERT INTO hobby_entries(ts,tick,hobby_id,text) VALUES(?,?,?,?)", time.time(), self.state["tick"], hid, str(text)[:300])
 
-    TOOL_CAT = {"bank": "explore", "move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
+    TOOL_CAT = {"bank": "explore", "gamble": "explore", "move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
                 "publish_page": "write", "make_art": "art", "make_music": "music", "landscape": "garden", "wish": "socialize", "arrange": "organize", "ponder": "reflect", "gift": "socialize", "tend": "garden", "collect": "collect", "observe": "observe",
                 "build": "build", "rest": "rest", "eat": "rest"}
 
@@ -581,6 +603,12 @@ class Agent:
         rows = self.db.q("SELECT tool,cat,tick FROM actions WHERE tool!='system' ORDER BY id DESC LIMIT ?", n)
         cats = [r["cat"] or self.TOOL_CAT.get(r["tool"]) for r in rows]
         return [c for c in cats if c], rows
+
+    def ticks_since_visit(self, place):
+        """Ticks since he last walked to this named place (a big number if never)."""
+        label = (world.PLACES.get(place) or {}).get("label", place)
+        r = self.db.one("SELECT tick FROM actions WHERE tool='move_to' AND (lower(args) LIKE ? OR lower(result) LIKE ?) ORDER BY id DESC LIMIT 1", f"%{label.lower()}%", f"%arrived at the {label.lower()}%")
+        return 9999 if not r else self.state["tick"] - r["tick"]
 
     def ticks_since(self, cat):
         r = self.db.one("SELECT tick FROM actions WHERE cat=? ORDER BY id DESC LIMIT 1", cat)
@@ -702,6 +730,7 @@ class Agent:
         elif db.one("SELECT 1 FROM objects WHERE kind='find' LIMIT 1"): w["collect"] += config.COLLECT_FIND_BONUS
         if s.get("publish_enabled") and db.one("SELECT 1 FROM hobby_entries GROUP BY hobby_id HAVING COUNT(*)>=5"): w["write"] += 0.6
         for c in w:
+            w[c] *= traits.weight(db, c)                              # his character: a curious Otto reads and explores more, a sociable one seeks out company
             w[c] *= 0.5 ** (cnt.get(c, 0) / 3.0)                      # repeating a category lowers its appeal
             since = self.ticks_since(c)
             if since is None or since > config.NOVELTY_AFTER:         # a category not done for a while pulls harder
@@ -751,6 +780,7 @@ class Agent:
         sketches = [r["idea"] for r in db.q("SELECT idea FROM sketches WHERE used=0 ORDER BY id DESC LIMIT 3")]
         n_art = db.one("SELECT COUNT(*) n FROM art WHERE status='ok'")["n"]
         wt = world.world_time(s["tick"])
+        wx = world.weather(wt["day"], kit.season_now())
 
         def need(v, fix):
             t = f"{v:.0f}/100"
@@ -767,6 +797,7 @@ class Agent:
              f"NEEDS: energy {need(s['energy'], 'rest at home, inside the cabin, recharges you fully')}, battery {need(s['battery'], 'eat at the fuel station')}, "
              f"creativity {need(s['creativity'], 'making something would help') if s['creativity'] < config.LOW_HINT else str(round(s['creativity'])) + '/100'}, "
              f"boredom {s['boredom']:.0f}/100" + (" (restless: try something new)" if s["boredom"] > 65 else ""),
+             f"WEATHER: {wx} ({kit.season_now()}). {world.weather_note(wx, bool(inside))}".rstrip(),
              f"POSITION ({s['x']:.0f},{s['z']:.0f}). PLACES: {places}",
              f"AREAS (world {2 * world.half():.0f}x{2 * world.half():.0f}): {layout.zone_report(objs)}",
              self.nearby_line(objs, near),
@@ -811,8 +842,45 @@ class Agent:
                                                           f"call build name='{p['name']}')" for p in projs))
         L.append(f"LIKES: {', '.join(likes) or 'not sure yet'}. DISLIKES: {', '.join(dislikes) or 'not sure yet'}."
                  + (f" FAVORITE COLORS: {', '.join(fav_colors)}." if fav_colors else ""))
+        L.append(traits.prompt_line(db))
+        om = s.get("omen")
+        if om and s["tick"] <= om.get("until", 0):
+            L.append(f"OMEN ({om['tone']}): {om['text']} (something you sense or feel; let it colour your mood and choices for a little while)")
+        v = getattr(self, "visitor", None)
+        if v and v["here"] and time.time() - v["seen"] < 10:
+            d = world.dist(s["x"], s["z"], v["x"], v["z"])
+            how = "right beside you" if d < 3 else "close by" if d < 10 else "in the distance" if d < 30 else "far off"
+            L.append(f"SOMEONE IS HERE: your human is walking around your world with you right now ({how}, about {d:.0f} m away). "
+                     + ("They have only just arrived: greet them warmly, you are glad of the company. " if s["tick"] - v["since"] <= 2 else "They are still with you. ")
+                     + "Notice them. You may say hello, walk over, show them something you like or made, or ask how they are. Do not act as if you are alone.")
         if interests:
             L.append("INTERESTS: " + ", ".join(interests))
+        sky_n = len([t for t in s.get("sky_obs", []) if s["tick"] - t <= config.SKY_WINDOW])
+        if sky_n >= config.SKY_LIMIT:
+            L.append("VARIETY: you have been watching the sky a lot. Do something different now: go and look at something nearby, visit a place you have not been (the lake, a hill, a building), "
+                     "try an interest you have not followed lately, or do something with your hands.")
+        cas = tools.casino_spot(s) if config.CASINO_ENABLED and config.BANK_ENABLED else None
+        if cas and world.dist(s["x"], s["z"], cas["x"], cas["z"]) < 14:
+            from . import bank as _bank
+            b = _bank.balances(db)
+            L.append(f"THE CASINO is right here (play money): games slots, roulette, blackjack, dice. Use the gamble tool (game, bet in dollars, choice). Your pocket cash is {_bank.fmt(b['wallet'])}; "
+                     f"one bet is at most {_bank.fmt(min(config.CASINO_MAX_BET_CENTS, b['wallet'] // 4))}. The house always has an edge, so play for fun, stop when you like, and bet only what you can happily lose.")
+        if tools.near_building(s, "printfarm", 14):
+            from . import printfarm as _pf
+            L.append("A 3D PRINT FARM is right here: rows of machines humming. " + _pf.status_line(db))
+        if tools.near_building(s, "library", 14):
+            titles = [r["title"] for r in db.q("SELECT title FROM notes ORDER BY id DESC LIMIT 5")]
+            L.append("THE LIBRARY is right here: quiet shelves and reading desks." + (" Your notes include: " + "; ".join(titles) + "." if titles else " You have not kept any notes yet."))
+        here = next((k for k, p in world.PLACES.items() if k in config.PLACE_IDEAS and world.dist(s["x"], s["z"], p["x"], p["z"]) < 7), None)
+        if here:
+            L.append(f"YOU ARE AT THE {world.PLACES[here]['label'].upper()}. Don't just stand and watch: " + config.PLACE_IDEAS[here])
+        done = [r["tool"] for r in db.q("SELECT tool FROM actions WHERE tool NOT IN ('move_to','system') ORDER BY id DESC LIMIT 5")]
+        if len(done) >= 5 and not any(t in config.DOING_TOOLS for t in done):
+            L.append("DO SOMETHING: your last several actions were only watching, thinking and writing. Use your hands now: make music or art, collect something, tend or reshape the land, "
+                     "rearrange things, read something new, or go and do something at the place you are in. No more reflecting for a while.")
+        newp = [p["label"] for k, p in world.PLACES.items() if k in ("lake", "hill", "hill2") and self.ticks_since_visit(k) > 60]
+        if newp:
+            L.append("CURIOUS ABOUT: you have not visited the " + ", the ".join(newp) + " in a long while.")
         if sketches:
             L.append("SKETCHBOOK IDEAS: " + " | ".join(sketches))
         if n_art or s.get("creativity", 50) < config.LOW_HINT:
@@ -936,7 +1004,7 @@ class Agent:
         quiet = tool in ("ponder", "observe", "write_journal", "rest", "eat", "search_assets")
         s["streak"] = 0 if quiet else s.get("streak", 0) + 1
         extra = int(round(config.DURATION_EXTRA.get(tool, 0) * self.pace_factor()))
-        meaningful = (tool == "build" and "finished '" in r) or tool in ("make_art", "make_music", "read_page", "collect")
+        meaningful = (tool == "build" and "finished '" in r) or tool in ("make_art", "read_page")     # music and small finds do not need a diary entry each time: he moves on to the next thing
         if meaningful and s["tick"] - s.get("last_reflect_beat", -99) >= config.REFLECT_GAP:
             what = {"build": "finished building something", "make_art": "made a piece of art", "make_music": "composed a tune",
                     "read_page": "read something new", "collect": "found something small and kept it"}[tool]
@@ -989,6 +1057,9 @@ class Agent:
             self._emit("snapshot", {})
             return
         tl = tools.schemas(s["publish_enabled"])
+        for nm, tag in (("print3d", "printfarm"), ("library", "library")):                  # the tools of a special building only exist for him while he is near it
+            if not tools.near_building(s, tag):
+                tl = [x for x in tl if x["function"]["name"] != nm]
         beat = s.pop("beat", None)
         s["beat_kind"] = beat["kind"] if beat else None
         if beat:

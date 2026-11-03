@@ -452,8 +452,8 @@ export function init(a) {
   $('#panelClose').onclick = closePanel;
   $('#lbClose').onclick = () => { $('#lightbox').hidden = true; };
   $('#lightbox').onclick = (e) => { if (e.target.id === 'lightbox') $('#lightbox').hidden = true; };
-  $('#meters').innerHTML = [['energy', '⚡', 'Energy', '#4fa8d8', true], ['battery', '🔋', 'Battery', '#7cb36a', true], ['creativity', '🎨', 'Creativity', '#c77dd1', true], ['boredom', '🥱', 'Boredom', '#e8a13a', false]]
-    .map(([k, i, n, c, good]) => `<div class="m" data-k="${k}" data-good="${good}" title="${n}" style="--c:${c}">${i}<i><b style="width:0"></b></i></div>`).join('');
+  $('#meters').innerHTML = [['battery', 'Battery', '#7cb36a', true], ['energy', 'Energy', '#e8a13a', true], ['creativity', 'Creativity', '#c77dd1', true], ['boredom', 'Boredom', '#4fa8d8', false]]
+    .map(([k, n, c, good]) => `<div class="m" data-k="${k}" data-good="${good}" title="${n}" style="--c:${c}"><span class="dot"></span><span class="lbl">${n}</span><i><b style="width:0"></b></i></div>`).join('');
   addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (!$('#lightbox').hidden) $('#lightbox').hidden = true; else if (document.body.classList.contains('placing')) api.cancelPlace(); else closePanel();
@@ -474,6 +474,7 @@ export function update(s) {
   });
   const wxIcon = (w) => ({ clear: '☀️', 'clear and cold': '☀️', cloudy: '☁️', foggy: '🌫️', breezy: '🍃', 'falling leaves': '🍂', frosty: '❄️', 'light snow': '🌨️', snow: '❄️', thunderstorm: '⛈️' })[w] || (/rain|drizzle/.test(w || '') ? '🌧️' : '🌤️');
   $('#wx').textContent = `${wxIcon(s.weather)} ${s.weather} · ${s.season}`;
+  if (s.bank) { const c = (s.bank.wallet || 0) + (s.bank.account || 0); $('#moneyVal').textContent = '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); $('#money').hidden = false; }
   if (s.state.sleeping) setCaption('🎮', `Game mode — ${short} is asleep and his brain is unloaded. Wake him in the You panel or with the 🎮 button.`, true);
   else if (s.state.paused) setCaption('⏸', `Paused — ${short} is resting until you resume.`, true);
   else if (first && s.state.last_say) setCaption('💭', s.state.last_say);

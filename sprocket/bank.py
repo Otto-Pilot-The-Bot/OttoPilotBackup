@@ -26,7 +26,8 @@ from . import config
 
 CURRENCY = "USD"
 MINT, WALLET, ACCOUNT = "mint", "otto:wallet", "otto:bank"
-ACCOUNTS = (MINT, WALLET, ACCOUNT)
+HOUSE = "casino:house"          # the casino's side of every bet (play money only). Like the mint it may go negative; see bet().
+ACCOUNTS = (MINT, WALLET, ACCOUNT, HOUSE)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS bank_ledger(id INTEGER PRIMARY KEY, ts REAL, tick INT, kind TEXT, src TEXT NOT NULL, dst TEXT NOT NULL,
@@ -96,7 +97,7 @@ def post(db, src, dst, cents, kind, memo="", actor="system", idem=None, tick=0, 
     c = db.c
     try:
         c.execute("BEGIN IMMEDIATE")
-        if src != MINT:
+        if src not in (MINT, HOUSE):
             have = c.execute("SELECT COALESCE(SUM(CASE WHEN dst=? THEN cents ELSE 0 END),0) - COALESCE(SUM(CASE WHEN src=? THEN cents ELSE 0 END),0) FROM bank_ledger", (src, src)).fetchone()[0]
             if have < cents:
                 c.execute("ROLLBACK")
@@ -120,12 +121,30 @@ def recent(db, n=30):
 
 
 def audit(db):
-    """Money is only moved, never made out of thin air: everything in Otto's accounts must equal what the mint paid out."""
+    """Money is only moved, never made out of thin air: everything in Otto's accounts plus the casino's side must equal what the mint paid out."""
     mint = balance(db, MINT)
-    return {"ok": mint + balance(db, WALLET) + balance(db, ACCOUNT) == 0, "mint": mint, **balances(db)}
+    house = balance(db, HOUSE)                                  # the casino's side: what he has lost there (or won from it, negative)
+    return {"ok": mint + balance(db, WALLET) + balance(db, ACCOUNT) + house == 0, "mint": mint, "house": house, **balances(db)}
 
 
 # ---------------------------------------------------------------- Otto's side (his own two accounts only)
+def bet(db, stake, payout, game, tick=0, idem=None):
+    """One casino bet, play money only: the stake goes from his pocket to the house, then any winnings come back (payout includes the stake;
+    0 = lost it). Refuses unless the bank is play money, so the casino can never touch real money. Returns his new balances."""
+    if config.BANK_REAL_ENABLED or config.BANK_PROVIDER != "play":
+        raise BankError("The casino only plays with pretend money.")
+    post(db, WALLET, HOUSE, stake, "bet", f"casino: {game}", "otto", f"{idem}:stake" if idem else None, tick)
+    if payout > 0:
+        post(db, HOUSE, WALLET, payout, "win", f"casino: {game}", "otto", f"{idem}:pay" if idem else None, tick)
+    return balances(db)
+
+
+def net_loss_since(db, tick):
+    """Cents he has lost at the casino since that tick (0 if he is ahead)."""
+    r = db.one("SELECT COALESCE(SUM(CASE WHEN kind='bet' THEN cents ELSE 0 END),0) b, COALESCE(SUM(CASE WHEN kind='win' THEN cents ELSE 0 END),0) w FROM bank_ledger WHERE tick>=? AND kind IN ('bet','win')", tick)
+    return max(0, int(r["b"]) - int(r["w"]))
+
+
 def deposit(db, cents, tick=0, idem=None):
     post(db, WALLET, ACCOUNT, cents, "deposit", "Otto deposited cash", actor="otto", tick=tick, idem=idem)
     return balances(db)

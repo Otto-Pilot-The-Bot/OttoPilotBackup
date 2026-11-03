@@ -212,7 +212,7 @@ def _pack_name(folder_name):
     return n.strip()
 
 
-INDEX_VERSION = 14          # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
+INDEX_VERSION = 16         # bump when the way entries are computed changes (forces a re-index that keeps asset ids)
 
 
 def scan(db, log=print):
@@ -222,7 +222,7 @@ def scan(db, log=print):
     seen_files, added, updated, skipped = set(), 0, 0, []
     used_names = {}
     for root in asset_dirs():
-        max_bytes, max_tris = config.ASSET_LIMITS.get(str(root.relative_to(config.ROOT)), (config.ASSET_MAX_BYTES, config.ASSET_MAX_TRIS))
+        max_bytes, max_tris = config.ASSET_LIMITS.get(root.relative_to(config.ROOT).as_posix(),(config.ASSET_MAX_BYTES, config.ASSET_MAX_TRIS))
         for folder in sorted(p for p in root.iterdir() if p.is_dir()):
             pack = _pack_name(folder.name)
             files = sorted(f for f in folder.rglob("*") if f.suffix.lower() == ".glb" and f.is_file() )

@@ -113,7 +113,7 @@ def describe(o, full=False):
     elif "atm" in t:
         text = "a cash machine: deposit or withdraw your money with the bank tool"
     elif "casino" in t:
-        text = "a casino building: go inside to look around"
+        text = "a casino: go inside and play slots, roulette, blackjack or dice with the gamble tool (play money)"
     elif "bank" in t:
         text = "the bank: go inside to deposit or withdraw your money (bank tool)"
     elif t & {"computer", "screen", "terminal"}:

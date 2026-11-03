@@ -39,7 +39,13 @@ def main():
 async def go(a, agent, runner):
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: runner.kill("signal"))
+        try:
+            loop.add_signal_handler(sig, lambda: runner.kill("signal"))
+        except NotImplementedError:   # Windows' event loop has no add_signal_handler; use the plain signal module
+            try:
+                signal.signal(sig, lambda *_: loop.call_soon_threadsafe(runner.kill, "signal"))
+            except (ValueError, OSError):
+                pass
     if a.cmd == "serve":
         from .server import serve
         await serve(agent, runner, a.interval)

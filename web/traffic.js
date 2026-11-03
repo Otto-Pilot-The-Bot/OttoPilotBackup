@@ -2,16 +2,17 @@
 // they are not objects on the map, so nothing here places, moves or removes anything of yours. Otto can ride one (see main.js 'ride').
 import * as THREE from 'three';
 import { buildDesign } from './models.js';
+import { heightAt } from './terrain.js';
 
 export function createTraffic({ scene }) {
   const root = new THREE.Group(); root.name = 'traffic'; scene.add(root);
-  let cars = [], nodes = new Map(), cell = 4, half = 40;
+  let cars = [], nodes = new Map(), cell = 4, half = 40, curDoc = null;
   const key = (i, j) => i + ',' + j;
   const pos = (i, j) => [-half + (i + 0.5) * cell, -half + (j + 0.5) * cell];
 
   function clear() { for (const c of cars) root.remove(c.g); cars = []; }
   function rebuild(doc, models, count = 3) {
-    clear(); nodes = new Map(); if (!doc || !models?.length) return;
+    clear(); nodes = new Map(); curDoc = doc; if (!doc || !models?.length) return;
     cell = doc.cell; half = (doc.n * doc.cell) / 2;
     for (let j = 0; j < doc.n; j++) for (let i = 0; i < doc.n; i++) if (doc.ground[j][i] === 'r') nodes.set(key(i, j), [i, j]);
     const nb = (i, j) => [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, b]) => [i + a, j + b]).filter(([a, b]) => nodes.has(key(a, b)));
@@ -41,7 +42,7 @@ export function createTraffic({ scene }) {
       const rx = dz / L, rz = -dx / L, lane = 0.9;                     // keep to the right-hand side of the road
       const px = ax + dx * c.t + rx * lane, pz = az + dz * c.t + rz * lane;
       const yaw = Math.atan2(dx, dz); let d = yaw - c.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); c.yaw += d * Math.min(1, dt * 6);
-      c.x = px; c.z = pz; c.g.position.set(px, 0.05, pz); c.g.rotation.y = c.yaw;
+      c.x = px; c.z = pz; c.g.position.set(px, 0.05 + heightAt(curDoc, px, pz), pz); c.g.rotation.y = c.yaw;
     }
   }
   return { root, rebuild, step, get cars() { return cars; } };

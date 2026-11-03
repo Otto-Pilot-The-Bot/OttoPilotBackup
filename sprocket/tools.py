@@ -7,7 +7,7 @@ import re
 import time
 from urllib.parse import urlsplit
 
-from . import artcheck, assets, config, design, gifts, kit, layout, pois, sanitize, scriptlang, web, world
+from . import artcheck, artlook, assets, config, design, gifts, kit, layout, pois, sanitize, scriptlang, web, world
 from .world import dist
 
 FEELING_ENUM = list(world.FEELINGS)
@@ -19,7 +19,7 @@ _GOALS = {
     "sketch_idea": {"type": "string", "description": "optional: jot an idea for a future artwork or build in your sketchbook"},
 }
 ART_HELP = ("Make a small artwork; it hangs in the gallery. kind=drawing: content is SVG markup "
-            "(<svg viewBox='0 0 100 100'>...</svg>) or canvas JS using ctx (2D, 256x256), W, H, rand(). "
+            "(<svg viewBox='0 0 100 100'>...</svg>) or canvas JS using ctx (2D, 256x256), W, H, rand(). Leave content empty to start from a rough sketch of what is in front of you. "
             "kind=pixel: content is rows of letters (max 32x32) plus palette like 'R=red B=#2244ff' ('.'=empty). "
             "kind=sculpture: content is a JSON list of 6-24 parts using at least 3 different shapes that together form a recognisable thing (tree, bird, boat...), like "
             '[{"s":"sphere|box|cone|cylinder|torus","x":0,"y":0.5,"z":0,"size":1,"c":"teal"}] and it stands in the world.')
@@ -114,6 +114,17 @@ def _schemas(publish_enabled):
                "amount like 5 or 12.50. You walk to the bank (or its cash machine) first if you are not there. You can only move your own money between your pocket and your account.",
                {"action": {"type": "string", "enum": ["balance", "deposit", "withdraw"]}, "amount": {"type": "string", "description": "dollars, e.g. 5 or 12.50 (not needed for balance)"}}, ["action"])]
           if config.BANK_ENABLED else []),
+        *([_fn("gamble", "Play a game at the casino (play money, US dollars; the house has an edge, so it is for fun). game: slots, roulette, blackjack or dice. bet: dollars, e.g. 2 or 5.50. "
+               "choice: roulette red/black/odd/even/low/high or a number 0-36; blackjack the total to stand on (12-20); dice over/under/seven; slots none. You walk to the casino first if you are not there.",
+               {"game": {"type": "string", "enum": ["slots", "roulette", "blackjack", "dice"]}, "bet": {"type": "string", "description": "dollars, e.g. 2 or 5.50"},
+                "choice": {"type": "string", "description": "your pick for the game (see above); not needed for slots"}}, ["game", "bet"])]
+          if config.CASINO_ENABLED and config.BANK_ENABLED else []),
+        *([_fn("print3d", "The machines in the 3D print farm turn a short description into a small figurine (play money, takes a few minutes; your human looks each one over before it appears on the tray). "
+               "description: the object in plain words, like 'a small brass lighthouse with a red lamp'. title: optional short name.",
+               {"description": {"type": "string"}, "title": {"type": "string"}}, ["description"])] if config.PRINT_ENABLED else []),
+        *([_fn("library", "Use the library: shelf lists the notes you have kept, read opens one by title, write files a note (title and text: something you learned, or how to do something) "
+               "for your future self. Notes stay on the shelves.",
+               {"action": {"type": "string", "enum": ["shelf", "read", "write"]}, "title": {"type": "string"}, "text": {"type": "string"}}, ["action"])] if config.LIBRARY_ENABLED else []),
         _fn("put_away", "Put away the item you are holding (it goes back where you found it, in your pocket).", {}, []),
         _fn("search_assets", "Search the library of 3D models you can build with (trees, tents, walls, doors, space things...). Returns names, tags and sizes.",
             {"query": {"type": "string", "description": "e.g. 'tree', 'door', 'space', or empty to browse"}}, []),
@@ -127,7 +138,7 @@ def _schemas(publish_enabled):
         _fn("landscape", LAND_HELP, {"what": {"type": "string"}, "kind": {"type": "string"}, "size": {"type": "number"}, "color": {"type": "string"}, "area": {"type": "string"}}, ["what"]),
         _fn("make_art", ART_HELP,
             {"title": {"type": "string"}, "kind": {"type": "string", "enum": list(artcheck.KINDS)}, "content": {"type": "string"},
-             "statement": {"type": "string", "description": "one sentence about what it means to you"}}, ["title", "kind", "content"]),
+             "statement": {"type": "string", "description": "one sentence about what it means to you"}}, ["title", "kind"]),
     ]
     if publish_enabled:
         t.append(_fn("publish_page", "Write a page for your personal website. body is simple markdown or basic HTML (headings, paragraphs, lists, bold/italic, "
@@ -566,6 +577,187 @@ def bank_spot(state):
         if best is None or d < best[0]:
             best = (d, o, "atm" in t)
     return (best[1], best[2]) if best else None
+
+
+def casino_spot(state):
+    """The nearest casino building the human placed (a map object tagged 'casino'), or None."""
+    from . import maps as _maps
+    doc = _maps.ACTIVE.get("doc")
+    if not doc:
+        return None
+    cands = [o for o in doc["objects"] if "casino" in set(o.get("tags") or [])]
+    return min(cands, key=lambda o: world.dist(state["x"], state["z"], o["x"], o["z"])) if cands else None
+
+
+def gamble(ctx, a):
+    from . import bank, casino, affordances as aff, maps as _maps
+    s, db = ctx.state, ctx.db
+    game = str(a.get("game", "")).strip().lower()
+    if game not in casino.GAMES:
+        return out(False, "Pick a game: " + "; ".join(f"{k} ({v})" for k, v in casino.GAMES.items()))
+    try:
+        stake = bank.parse_amount(a.get("bet"))
+    except bank.BankError as e:
+        return out(False, str(e))
+    b = bank.balances(db)
+    cap = min(config.CASINO_MAX_BET_CENTS, b["wallet"] // 4)
+    if stake > b["wallet"]:
+        return out(False, f"You only have {bank.fmt(b['wallet'])} in your pocket.")
+    if stake > max(cap, 100):
+        return out(False, f"The table limit for you right now is {bank.fmt(max(cap, 100))} a bet (a quarter of your pocket cash, never above {bank.fmt(config.CASINO_MAX_BET_CENTS)}).")
+    if bank.net_loss_since(db, s["tick"] - config.CASINO_LOSS_TICKS) >= config.CASINO_LOSS_LIMIT_CENTS:
+        return out(False, "The floor manager gently says you have lost enough for now. Do something else and come back later.")
+    o = casino_spot(s)
+    if not o:
+        return out(False, "There is no casino in your world yet. Your human decides where things go.")
+    ins = aff.inside_obj(s)
+    if ins != o["id"] and aff.dist_to(o, s["x"], s["z"]) > config.REACH:             # walk there first, like the bank tool
+        if ins:
+            _exit(ctx)
+        spot_xy = (_maps.door_world(o, 1.2) if o.get("door") else None) or _maps.nearest_walkable(o["x"], o["z"]) or (o["x"], o["z"])
+        nx, nz, arrived = world.step_toward(s["x"], s["z"], spot_xy[0], spot_xy[1])
+        s["x"], s["z"] = nx, nz
+        s["path"] = [[round(p, 1), round(q, 1)] for p, q in world.LAST_PATH][:40]
+        if aff.dist_to(o, nx, nz) > config.REACH:
+            return out(True, f"You walked toward the casino to play {game}; {aff.dist_to(o, nx, nz):.0f} m left. Keep going.", 0.0, "Walking", moved=True, caption=f"Walking to the casino to play {game}")
+        key = aff.place_key_for(o)
+        if key and world.PLACES[key].get("enter"):
+            _enter(ctx, key)
+    mult, text = casino.play(game, a.get("choice"))
+    payout = int(round(stake * mult))
+    try:
+        nb = bank.bet(db, stake, payout, game, s["tick"], f"otto:{s['tick']}:gamble:{stake}")
+    except bank.BankError as e:
+        return out(False, str(e))
+    net = payout - stake
+    verdict = f"You won {bank.fmt(net)}!" if net > 0 else "You got your bet back." if net == 0 else f"You lost {bank.fmt(stake)}."
+    if mult >= 20:
+        db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"Hit a big {game} win at the casino: {bank.fmt(payout)}.", 2)
+    return out(True, f"{text} {verdict} Pocket cash now {bank.fmt(nb['wallet'])}.", 0.5, "Jump" if net > 0 else "No" if net < 0 else "Idle",
+               subject="the casino", caption=f"{game.capitalize()}: {verdict}")
+
+
+def _tagged_spot(state, tag):
+    """The nearest building the human placed with this tag (printfarm, library...), or None."""
+    from . import maps as _maps
+    doc = _maps.ACTIVE.get("doc")
+    cands = [o for o in (doc["objects"] if doc else []) if tag in set(o.get("tags") or [])]
+    return min(cands, key=lambda o: world.dist(state["x"], state["z"], o["x"], o["z"])) if cands else None
+
+
+def farm_spot(state):
+    return _tagged_spot(state, "printfarm")
+
+
+def library_spot(state):
+    return _tagged_spot(state, "library")
+
+
+def near_building(state, tag, r=16):
+    """True when he is inside it or within r metres: the tools of a special building only show up then."""
+    from . import affordances as aff
+    o = _tagged_spot(state, tag)
+    return bool(o) and (aff.inside_obj(state) == o["id"] or world.dist(state["x"], state["z"], o["x"], o["z"]) <= r)
+
+
+def _reach(ctx, o, what):
+    """Walk to a placed building and go in, like the bank and casino tools. -> None when he is there, else the tool result to return."""
+    from . import affordances as aff, maps as _maps
+    s = ctx.state
+    ins = aff.inside_obj(s)
+    if ins == o["id"] or (not o.get("door") and aff.dist_to(o, s["x"], s["z"]) <= config.REACH):
+        return None
+    if ins:
+        _exit(ctx)
+    spot_xy = (_maps.door_world(o, 1.2) if o.get("door") else None) or _maps.nearest_walkable(o["x"], o["z"]) or (o["x"], o["z"])
+    nx, nz, arrived = world.step_toward(s["x"], s["z"], spot_xy[0], spot_xy[1])
+    s["x"], s["z"] = nx, nz
+    s["path"] = [[round(p, 1), round(q, 1)] for p, q in world.LAST_PATH][:40]
+    if aff.dist_to(o, nx, nz) > config.REACH:
+        return out(True, f"You walked toward the {what}; {aff.dist_to(o, nx, nz):.0f} m left. Keep going.", 0.0, "Walking", moved=True, caption=f"Walking to the {what}")
+    key = aff.place_key_for(o)
+    if key and world.PLACES[key].get("enter"):
+        _enter(ctx, key)
+    return None
+
+
+def print3d(ctx, a):
+    from . import bank, printfarm
+    s, db = ctx.state, ctx.db
+    if not config.PRINT_ENABLED:
+        return out(False, "The printers are switched off.", noop=True)
+    o = farm_spot(s)
+    if not o:
+        return out(False, "There is no print farm in your world yet. Your human decides where things go.")
+    try:
+        prompt = printfarm.clean_prompt(a.get("description") or a.get("prompt"))
+    except printfarm.PrintError as e:
+        return out(False, str(e))
+    refund = lambda row: bank.post(db, bank.MINT, bank.WALLET, row["cost_cents"], "refund", f"Print failed: {row['title']}", actor="system", tick=s["tick"], idem=f"print:{row['id']}:refund")
+    printfarm.recover(db, refund)
+    why = printfarm.limits(db)
+    if why:
+        return out(True, why, 0.0, "Idle", noop=True)
+    if config.PRINT_PROVIDER == "tripo" and not printfarm.read_key():
+        return out(True, "The machines hum but nothing happens: the printers are not connected to anything yet. Your human has to set that up.", 0.0, "Idle", noop=True)
+    cost = config.PRINT_COST_CENTS
+    if bank.balances(db)["wallet"] < cost:
+        return out(False, f"A print costs {bank.fmt(cost)} and you only have {bank.fmt(bank.balances(db)['wallet'])} in your pocket.")
+    r = _reach(ctx, o, "print farm")
+    if r:
+        return r
+    title = str(a.get("title") or "").strip()
+    title = re.sub(r"[^\w \-'!?.,]", "", title)[:40].strip() or printfarm.title_of(prompt)
+    try:
+        bank.post(db, bank.WALLET, bank.MINT, cost, "print", f"3D print: {title}", actor="otto", tick=s["tick"], idem=f"otto:{s['tick']}:print")
+    except bank.BankError as e:
+        return out(False, str(e))
+    pid = db.x("INSERT INTO prints(ts,tick,title,prompt,status,cost_cents) VALUES(?,?,?,?,?,?)", time.time(), s["tick"], title, prompt, "making", cost)
+    asyncio.ensure_future(printfarm.run(db, pid, refund, ctx.log))
+    return out(True, f"You set up a print of \"{title}\" ({bank.fmt(cost)}). The machine starts working; it takes a few minutes. Your human looks over each print before it comes out onto the tray.",
+               0.6, "Yes", subject="3d printing", caption=f"Printing: {title}")
+
+
+def library_tool(ctx, a):
+    s, db = ctx.state, ctx.db
+    if not config.LIBRARY_ENABLED:
+        return out(False, "The library is closed.", noop=True)
+    o = library_spot(s)
+    if not o:
+        return out(False, "There is no library in your world yet. Your human decides where things go.")
+    action = str(a.get("action", "")).strip().lower()
+    if action not in ("shelf", "read", "write"):
+        return out(False, "Use the library with action shelf (list your notes), read (title) or write (title and text).")
+    r = _reach(ctx, o, "library")
+    if r:
+        return r
+    title = re.sub(r"[^\w \-'!?.,]", "", str(a.get("title") or "")).strip()[:60]
+    if action == "shelf":
+        rows = db.q("SELECT title FROM notes ORDER BY id DESC LIMIT 30")
+        return out(True, ("Your notes on the shelves: " + "; ".join(x["title"] for x in rows)) if rows else "The shelves hold nothing of yours yet. Write a note about something you learned or how to do something.",
+                   0.15, "Idle", noop=not rows, subject="the library")
+    if action == "read":
+        row = db.one("SELECT title,body FROM notes WHERE lower(title)=lower(?)", title) or db.one("SELECT title,body FROM notes WHERE lower(title) LIKE ? ORDER BY id DESC", f"%{title.lower()}%") if title else None
+        if not row:
+            return out(False, "No note by that title. Use shelf to see what you have.")
+        s["boredom"] = max(0, s["boredom"] - 10)
+        return out(True, f"You read your note \"{row['title']}\":\n{row['body']}", 0.4, "Yes", subject="reading", caption=f"Reading: {row['title']}")
+    body = re.sub(r"[ \t]+", " ", str(a.get("text") or "")).strip()[:config.LIBRARY_NOTE_MAX]
+    if not title or len(body) < 20:
+        return out(False, "A note needs a title and at least a couple of sentences of text.")
+    if re.search(r"https?://\S+\s*$", body) and len(body) < 60:
+        return out(False, "Write what you learned in your own words, not just a link.")
+    if db.one("SELECT COUNT(*) n FROM notes")["n"] >= config.LIBRARY_MAX_NOTES and not db.one("SELECT 1 FROM notes WHERE title=?", title):
+        return out(False, "The shelves are full. Reuse an old title to update a note.")
+    db.x("INSERT INTO notes(ts,tick,title,body) VALUES(?,?,?,?) ON CONFLICT(title) DO UPDATE SET body=excluded.body, ts=excluded.ts", time.time(), s["tick"], title, body)
+    try:
+        d = config.ROOT / "data" / "library"; d.mkdir(parents=True, exist_ok=True)
+        (d / (re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:50] + ".md")).write_text(f"# {title}\n\n{body}\n", encoding="utf-8")
+    except OSError:
+        pass
+    ctx.learn("writing notes", 0.5)
+    s["boredom"] = max(0, s["boredom"] - 8)
+    return out(True, f"You filed your note \"{title}\" on the library shelves.", 0.6, "ThumbsUp", subject="the library", caption=f"Filed a note: {title}")
 
 
 def bank_tool(ctx, a):
@@ -1217,7 +1409,10 @@ def _sightings(ctx):
     wt = world.world_time(s["tick"]); season = kit.season_now(); wx = world.weather(wt["day"], season)
     out_ = [(t, x) for t, x in SKY[wt["phase"]]]
     out_.append(("weather", f"The weather today is {wx}. " + {"clear": "Everything is sharp and bright.", "cloudy": "The light is soft and grey.", "light rain": "Tiny drops patter on the leaves.",
-                                                      "foggy": "The far side of the world has vanished into mist.", "light snow": "Flakes settle quietly on your shoulders.", "snow": "The ground is turning white."}.get(wx, "")))
+                                                      "foggy": "The far side of the world has vanished into mist.", "light snow": "Flakes settle quietly on your shoulders.", "snow": "The ground is turning white.",
+                                                      "drizzle": "A fine mist of drizzle beads on your shoulders.", "thunderstorm": "Thunder rolls across the sky and the rain comes down hard.",
+                                                      "falling leaves": "Leaves spin down around you.", "breezy": "A breeze tugs at everything that can move.", "frosty": "Your breath fogs in the cold air.",
+                                                      "warm and hazy": "The air shimmers warm and hazy."}.get(wx, "")))
     objs = ctx.objects()
     near = lambda pred, r=16: [o for o in objs if pred(o) and world.dist(s["x"], s["z"], o["x"], o["z"]) <= r]
     trees = near(lambda o: o["kind"] == "landscape" and ("tree" in o["name"].lower()))
@@ -1238,6 +1433,30 @@ def _sightings(ctx):
     if season == "fall":
         out_.append(("leaves", "Leaves spiral down and gather in little drifts."))
     out_ += ctx.poi_sightings() if hasattr(ctx, "poi_sightings") else []
+    out_ += _terrain_sightings(s, wx)
+    return out_
+
+
+def _terrain_sightings(s, wx):
+    """What the lie of the land offers right here: a view from a hilltop, ripples and reflections by the lake."""
+    from . import maps
+    doc = maps.ACTIVE.get("doc")
+    if not doc or not doc.get("heights"):
+        return []
+    x, z, out_ = s["x"], s["z"], []
+    h = maps.height_at(doc, x, z)
+    if h > 0.8:
+        out_.append(("hill", "From up here the whole world is laid out below you: the rooftops, the paths, the trees, the far edge where the grid ends."))
+        out_.append(("view", "You can see a long way from the hilltop. Everything looks small and tidy, like a model somebody loves."))
+    near_water = any(maps.height_at(doc, x + dx * 5, z + dz * 5) < maps.WATER_Y for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1), (0.7, 0.7), (-0.7, 0.7), (0.7, -0.7), (-0.7, -0.7)))
+    if near_water:
+        out_.append(("lake", "The lake is perfectly still; the sky lies upside down in it."))
+        out_.append(("lake", "Small rings spread across the water where something just touched the surface."))
+        out_.append(("lake", "The shallow edge is sandy and cool. Tiny ripples lap at it."))
+        if "rain" in wx or "drizzle" in wx or "storm" in wx:
+            out_.append(("lake", "Rain dimples the whole lake into a thousand tiny rings."))
+        if "snow" in wx or "frost" in wx:
+            out_.append(("lake", "A thin white skin of frost lies along the water's edge."))
     return out_
 
 
@@ -1256,20 +1475,30 @@ def observe(ctx, a):
     if s.get("inside"):
         _exit(ctx)
     cands = _sightings(ctx)
-    if want:
+    is_sky = lambda t: any(k in t.lower() for k in config.SKY_KEYS)
+    sky_ticks = [t for t in s.get("sky_obs", []) if s["tick"] - t <= config.SKY_WINDOW]
+    bored_of_sky = len(sky_ticks) >= config.SKY_LIMIT and (not want or is_sky(want))
+    if want and not bored_of_sky:
         match = [c for c in cands if want in c[0] or c[0] in want or any(w in c[1].lower() for w in re.findall(r"[a-z]{4,}", want))]
         cands = match or cands
+    sky_note = ""
+    if bored_of_sky:                                                      # he has watched the sky a lot lately: something else on the ground catches his eye
+        other = [c for c in cands if not is_sky(c[0]) and not is_sky(c[1])]
+        if other:
+            cands, sky_note = other, "You have watched the sky plenty lately, so your eyes drift down to something nearer. "
     interests = {r["topic"].lower(): r["strength"] for r in db.q("SELECT topic,strength FROM interests")}
     recent = {r["text"][:40] for r in db.q("SELECT text FROM hobby_entries ORDER BY id DESC LIMIT 8")}
     weights = [(2.5 if any(c[0] in t or t in c[0] for t in interests) else 1.0) * (0.3 if c[1][:40] in recent else 1.0) for c in cands]
     topic, text = random.choices(cands, weights=weights)[0]
+    if is_sky(topic):
+        s["sky_obs"] = sky_ticks[-6:] + [s["tick"]]
     wt = world.world_time(s["tick"])
     ctx.hobby_entry("Spotting log", f"[{wt['label']}, day {wt['day']}] {text}", kind="spotting_log", interest=topic)
     new = topic.lower() not in interests
     ctx.touch_interest(topic, 0.7 if not new else 0.8, "observed")
     s["boredom"] = max(0, s["boredom"] - 12)
     v = _maker_valence(ctx, "observe:" + topic, 0.5)
-    return out(True, f"You stood still and watched. {text}{' (A new thing to be curious about: ' + topic + '.)' if new else ''} {_feel_text(v)}", v, "Idle", subject="observing", spot=topic)
+    return out(True, f"You stood still and watched. {sky_note}{text}{' (A new thing to be curious about: ' + topic + '.)' if new else ''} {_feel_text(v)}", v, "Idle", subject="observing", spot=topic)
 
 
 _NOTE = re.compile(r"^([A-Ga-g][#b]?)([2-6])?(?::([whqes]))?$|^[Rr](?::([whqes]))?$")
@@ -1373,11 +1602,14 @@ def collect(ctx, a):
 
 
 # ------------------------------------------------------------------ art
-def make_art(ctx, a):
+async def make_art(ctx, a):
     s, db = ctx.state, ctx.db
     title = re.sub(r"[^\w \-'!?.,]", "", str(a.get("title", "")))[:40].strip()
     if not title:
         return out(False, "Give your artwork a title.")
+    if not str(a.get("content") or "").strip() and str(a.get("kind")).lower() == "drawing" and artlook.available():
+        return out(True, "You look at what is in front of you and rough it out as a starting sketch:\n" + artlook.view_sketch(ctx) +
+                   "\nIt is only a start. Make your own version (add detail, change the colours, take things away) and call make_art again with your content.", 0.05, "Idle", cat="observe")
     if s["tick"] - s.get("last_art_tick", -999) < config.MIN_TICKS_BETWEEN_ART:
         return out(True, "You just made a piece and want to let it breathe. Look around, learn something, or take a walk before the next one.", 0.0, "Idle", noop=True)
     if str(a.get("kind")).lower() == "sculpture" and not config.BUILDING_ENABLED:
@@ -1392,9 +1624,33 @@ def make_art(ctx, a):
     if db.one("SELECT COUNT(*) n FROM art")["n"] >= 300:
         return out(False, "The gallery is full.")
     statement = str(a.get("statement", "")).strip()[:240]
+    score = looks = None
+    svg = artlook.svg_of(kind, mode, content)
+    if svg and config.ART_REVIEW and artlook.available():
+        plain = artlook.plain_check(svg) if kind == "drawing" else ""
+        if plain:
+            return out(False, f"You step back: {plain}. Try again.", -0.1)
+        cr = None
+        for rnd in range(config.ART_REVISIONS + 1):                          # he looks at what he drew; if it does not read, he tries again
+            png = artlook.render(svg)
+            cr = await artlook.critique(ctx, title, statement, png) if png else None
+            if not cr or cr["match"] >= 7 or rnd == config.ART_REVISIONS or kind != "drawing":
+                break
+            new = await artlook.redraw(ctx, title, statement, svg, cr, png)
+            if not new:
+                break
+            svg, content = new, new
+            colors = list(dict.fromkeys(world.to_hex(c) for c in re.findall(r"#[0-9a-fA-F]{6}", new) if world.to_hex(c)))[:6]
+        if cr:
+            score, looks = cr["match"], cr["sees"]
+            if score < config.ART_MIN_MATCH:
+                db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"My drawing \"{title}\" only looked like: {looks}. I put it aside."[:200], 2)
+                s["last_art_tick"] = s["tick"]
+                return out(True, f"You made \"{title}\" but looking at it you only see: {looks}. It does not look like what you meant, so you put it aside. Try again with a simpler, bolder idea.",
+                           -0.3, "No", subject="making art")
     insp = ctx.inspiration()
-    aid = db.x("INSERT INTO art(ts,tick,title,kind,mode,content,statement,inspiration,colors) VALUES(?,?,?,?,?,?,?,?,?)", time.time(), s["tick"], title,
-               kind, mode, content, statement, insp or "", json.dumps(colors))
+    aid = db.x("INSERT INTO art(ts,tick,title,kind,mode,content,statement,inspiration,colors,score,looks) VALUES(?,?,?,?,?,?,?,?,?,?,?)", time.time(), s["tick"], title,
+               kind, mode, content, statement, insp or "", json.dumps(colors), score, looks)
     if kind == "sculpture":
         cx, cz, _ = layout.resolve_area("gallery", s, ctx.objects())
         (sx, sz), _ = ctx.place_near(cx, cz, layout.KIND_RADIUS["sculpture"], group="sculpture")
@@ -1413,7 +1669,8 @@ def make_art(ctx, a):
     _boost(ctx, "creativity", 38)
     db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"I made art called \"{title}\". {statement}"[:200], 3)
     where = "It now stands in the world in front of the gallery." if kind == "sculpture" else "It is now hanging in the gallery."
-    return out(True, f"You made \"{title}\" ({kind}). {where} {_feel_text(v)}", v, "Dance" if v > 1.2 else "ThumbsUp",
+    seen = f" Looking at it, you see: {looks}." if looks else ""
+    return out(True, f"You made \"{title}\" ({kind}). {where}{seen} {_feel_text(v)}", v, "Dance" if v > 1.2 else "ThumbsUp",
                subject="making art", changed_objects=True, art=True, mood="proud" if v > 1.2 else None)
 
 
@@ -1441,7 +1698,7 @@ def publish_page(ctx, a):
 
 
 from . import affordances as _aff
-REGISTRY = {"bank": bank_tool, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
+REGISTRY = {"bank": bank_tool, "gamble": gamble, "print3d": print3d, "library": library_tool, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
             "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Otto Pilot · Admin</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/admin.css">
+</head><body class="admin">
+<header class="bar">
+  <a class="pill back" href="/">← Back to the world</a>
+  <h1>Admin <small id="who">connecting…</small></h1>
+  <div class="row">
+    <button class="btn" id="pauseBtn">Pause</button>
+    <button class="btn" id="adGame">Game mode</button>
+    <button class="btn danger" id="killBtn">Kill switch</button>
+  </div>
+</header>
+<div id="toast" class="paper" hidden></div>
+<main class="grid">
+  <section class="card paper" id="cNeeds"><h2>Needs</h2><div id="needs"></div><div class="row"><button class="btn primary" id="refill">Refill energy + battery</button><button class="btn" id="think">Force think now</button></div></section>
+  <section class="card paper" id="cTraits"><h2>Character</h2><p class="dim small">Slow-moving dials. They tilt what he feels like doing and how he talks; they drift a little with what he really does.</p><div id="dials"></div>
+    <h3>Little habits</h3><div id="quirks" class="chips"></div><div class="row"><select id="quirkAdd"></select><button class="btn" id="quirkBtn">Add habit</button></div></section>
+  <section class="card paper" id="cOmen"><h2>Send an omen</h2><p class="dim small">A thing he senses. It nudges his mood once and shows up in his next thoughts for a while.</p>
+    <input id="omenText" type="text" maxlength="140" placeholder="e.g. a distant bell rings three times">
+    <div class="row"><label>Tone <select id="omenTone"><option value="positive">positive – lifts his mood</option><option value="neutral">neutral</option><option value="negative">negative – drags his mood down</option></select></label></div>
+    <label>Intensity <input id="omenInt" type="range" min="0" max="1" step="0.05" value="0.5"></label><label>Lasts <span id="omenSecV">120</span>s <input id="omenSec" type="range" min="30" max="600" step="30" value="120"></label>
+    <div class="row"><button class="btn primary" id="omenBtn">Send omen</button><span id="omenNow" class="dim small"></span></div></section>
+  <section class="card paper" id="cWorld"><h2>World</h2><label>Weather <select id="wx"></select></label><p class="dim small" id="wxNow"></p>
+    <label>Move Otto to <select id="goto"></select></label><button class="btn" id="gotoBtn">Move</button><p class="dim small">Moves him there at once (no walking). Nothing in the world is changed.</p></section>
+  <section class="card paper" id="cPrints"><h2>3D prints</h2><p class="dim small">Otto's prints wait here. Nothing reaches the world until you approve it; approved ones sit on the tray by the print farm.</p><p class="small" id="printKey"></p><div id="prints"></div></section>
+  <section class="card paper" id="cMind"><h2>His mind</h2><h3>Goals</h3><div id="goals"></div><h3>Interests</h3><div id="interests" class="chips"></div></section>
+  <section class="card paper" id="cRecent"><h2>What he did lately</h2><div id="recent" class="log"></div></section>
+  <section class="card paper danger-zone" id="cWipe"><h2>Wipe memory</h2><p class="small">Erases his memories, diary, thoughts, goals, interests, tastes and sketchbook. His money, gifts, art, map and tunes are never touched. A backup of the whole database is saved first (data/backups).</p>
+    <div class="row"><input id="wipeText" type="text" placeholder='type WIPE to enable' autocomplete="off"><button class="btn danger" id="wipeBtn" disabled>Wipe memory</button></div><p class="dim small" id="wipeCount"></p></section>
+</main>
+<script type="module" src="/admin.js"></script>
+</body></html>

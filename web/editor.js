@@ -3,6 +3,7 @@
 // overlays for footprints and walkable areas, and editable tags. Edits a working copy; "Save" sends it to the server, which validates it.
 import * as THREE from 'three';
 import { LOOKS, TILE_NAMES } from './mapview.js';
+import { H_ZERO, H_STEP } from './terrain.js';
 
 const CORE = ['Space Kit', 'Modular Space Kit', 'Space Station Kit'];
 const SUPPORT = ['City Kit - Roads', 'Road Pack', 'Car Kit', 'Furniture Kit', 'Nature Kit', 'Food Kit', 'City Kit - Suburban', 'City Kit - Commercial'];
@@ -13,7 +14,7 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign, applyLook }) {
   let open = false, doc = null, rows = [], byKit = new Map(), maps = [], active = '', dirty = false;
   let pickName = '', pickRot = 0, pickY = 0, autoY = true, ghostY = 0;
-  let tool = 'select', sel = null, pick = null, tile = 'r', snap = 1, rsnap = 15, kit = 'Space Kit', q = '', cat = '', limit = 48, drag = null, painting = false;
+  let tool = 'select', sel = null, pick = null, tile = 'r', snap = 1, rsnap = 15, kit = 'Space Kit', q = '', cat = '', limit = 48, drag = null, painting = false, tMode = 'raise', tRad = 8, tFlat = 0, lastTerr = 0;
   const undo = [], redo = [];
   const ndc = new THREE.Vector2(), ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
 
@@ -79,13 +80,16 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
         <div class="grid2">${['x0', 'z0', 'x1', 'z1'].map((k) => `<label>${k} <input data-r="${k}" type="number" step="0.5" value="${doc.bounds ? doc.bounds[k] : ''}" placeholder="none"></label>`).join('')}
         ${['x', 'z'].map((k) => `<label>exit ${k} <input data-r="e${k}" type="number" step="0.5" value="${doc.exit ? doc.exit[k] : ''}" placeholder="none"></label>`).join('')}</div>
         <div class="row"><button data-a="room" title="Walls at 8 m each way, the way out on the front side">Make it a 16 × 16 m room</button><button data-a="noroom">Clear</button></div></details>
-      <div class="sec"><div class="row tools">${[['select', '☝ Select / move'], ['place', '➕ Place'], ['paint', '🖌 Ground']].map(([k, l]) => `<button data-a="tool" data-k="${k}" class="${tool === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="sec"><div class="row tools">${[['select', '☝ Select / move'], ['place', '➕ Place'], ['paint', '🖌 Ground'], ['terrain', '⛰ Terrain']].map(([k, l]) => `<button data-a="tool" data-k="${k}" class="${tool === k ? 'on' : ''}">${l}</button>`).join('')}</div>
         <div class="row"><label>Snap <select id="pSnap">${[[0, 'off'], [0.5, '0.5 m'], [1, '1 m'], [2, '2 m'], [doc.cell, `cell (${doc.cell} m)`]].map(([v, l]) => `<option value="${v}" ${v === snap ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label>Turn <select id="pRot">${[15, 45, 90].map((v) => `<option ${v === rsnap ? 'selected' : ''}>${v}</option>`).join('')}</select>°</label></div>
         <div class="row"><label><input type="checkbox" id="pFoot" ${MV.overlays.foot ? 'checked' : ''}> footprints &amp; doors</label><label><input type="checkbox" id="pWalk" ${MV.overlays.walk ? 'checked' : ''}> blocked (last save)</label></div>
         <div class="row"><label>Look <select id="pLook">${Object.entries(LOOKS).map(([k, v]) => `<option value="${k}" ${k === MV.look ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select></label></div>
         <div class="dim small">The ground look is not decided yet: A/B/C are previews. Lighting follows the day/night cycle.</div></div>
       ${tool === 'paint' ? `<div class="sec"><b>Ground</b><div class="row">${Object.entries(TILE_NAMES).map(([k, n]) => `<button data-a="tile" data-k="${k}" class="tilebtn ${tile === k ? 'on' : ''}"><i style="background:${tileSw[k]}"></i>${n}</button>`).join('')}</div><div class="dim small">Click or drag on the map. Water cannot be walked; roads and paths are preferred by Otto.</div></div>` : ''}
+      ${tool === 'terrain' ? `<div class="sec"><b>Terrain</b><div class="row">${[['raise', '⬆ Raise'], ['lower', '⬇ Lower'], ['smooth', '〰 Smooth'], ['flat', '▭ Flatten']].map(([k, l]) => `<button data-a="tmode" data-k="${k}" class="${tMode === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+        <div class="row"><label>Brush <select id="tRad">${[[4, 'small (4 m)'], [8, 'medium (8 m)'], [14, 'large (14 m)']].map(([v, l]) => `<option value="${v}" ${v === tRad ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+        <div class="dim small">Click or drag to sculpt hills. Lower the ground below the water line (about 0.3 m under the level ground) for a lake. Otto can walk on slopes and wade in the shallow edge, but not into deep water. Things you place stand on the ground.</div></div>` : ''}
       ${s ? `<div class="sec"><label><b>Name</b> <input data-p="name" type="text" value="${esc(s.name)}" maxlength="60" placeholder="e.g. Otto's computer"></label> <span class="dim small">#${s.id} · ${esc(s.kit)}</span>
         <label><b>About it</b> <input data-p="about" type="text" value="${esc(s.about || '')}" maxlength="160" placeholder="tell Otto what it is, e.g. my computer: use it to write" style="width:100%"></label>
         <div class="row"><button data-a="rot" data-d="-1">⟲</button><button data-a="rot" data-d="1">⟳</button><button data-a="dup">Duplicate</button><button data-a="drop" title="Put it on top of whatever is directly under it (a desk, a shelf)">⤓ Drop on surface</button><button data-a="del" class="warn">🗑 Delete</button></div>
@@ -146,6 +150,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     else if (a === 'undo') doUndo(); else if (a === 'redo') doRedo();
     else if (a === 'tool') { tool = b.dataset.k; if (tool !== 'place') pick = null; applyTool(); render(); }
     else if (a === 'tile') { tile = b.dataset.k; render(); }
+    else if (a === 'tmode') { tMode = b.dataset.k; render(); }
     else if (a === 'pick') { pick = rows.find((r) => r.id === +b.dataset.id); tool = 'place'; sel = null; MV.select(null); applyTool(); render(); }
     else if (a === 'gift') {
       const g = giftPics().find((x) => x.id === +b.dataset.id); if (!g) return; commit();
@@ -164,7 +169,8 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
   el.addEventListener('change', (e) => {
     const t = e.target;
     if (t.id === 'pMap') return;
-    if (t.id === 'pSnap') snap = +t.value; else if (t.id === 'pRot') rsnap = +t.value;
+    if (t.id === 'tRad') tRad = +t.value;
+    else if (t.id === 'pSnap') snap = +t.value; else if (t.id === 'pRot') rsnap = +t.value;
     else if (t.id === 'pKit') { kit = t.value; cat = ''; limit = 48; render(); }
     else if (t.id === 'pCat') { cat = t.value; limit = 48; paintPalette(); }
     else if (t.id === 'pAuto') { autoY = t.checked; render(); }
@@ -204,23 +210,49 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
   // ---------------------------------------------------------------- events: the 3D view
   function worldAt(e) {
     const r = dom.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    ray.setFromCamera(ndc, camera); return ray.ray.intersectPlane(plane, hit) ? hit.clone() : null;
+    ray.setFromCamera(ndc, camera); if (!ray.ray.intersectPlane(plane, hit)) return null;
+    if (doc && doc.heights) {                                  // hills: slide the cursor point onto the real ground (a few passes are plenty for gentle slopes)
+      for (let k = 0; k < 4; k++) { plane.constant = -MV.heightAt(hit.x, hit.z); if (!ray.ray.intersectPlane(plane, hit)) break; }
+      plane.constant = 0;
+    }
+    return hit.clone();
   }
   function surfaceY(e) {                                       // height of whatever model is under the cursor (0 = open ground)
     if (!autoY) return pickY;
     ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
     const h = ray.intersectObjects(MV.objG.children, true)[0];
-    return h ? Math.max(0, Math.round(h.point.y * 4) / 4) : 0;
+    return h ? Math.max(0, Math.round((h.point.y - MV.heightAt(h.point.x, h.point.z)) * 4) / 4) : 0;
   }
   function dropY(o, ex, ez) {                                   // top of whatever is directly below (x, z), ignoring the object itself
     const r = new THREE.Raycaster(new THREE.Vector3(ex, 60, ez), new THREE.Vector3(0, -1, 0));
     const h = r.intersectObjects(MV.objG.children.filter((c) => c.userData.mapId !== o.id), true)[0];       // (raycasts ignore .visible, so leave the object itself out of the list)
-    return h ? Math.max(0, Math.round(h.point.y * 100) / 100) : 0;
+    return h ? Math.max(0, Math.round((h.point.y - MV.heightAt(ex, ez)) * 100) / 100) : 0;
   }
   function paintAt(p) {
     const c = doc.cell, h = half(), i = Math.floor((p.x + h) / c), j = Math.floor((p.z + h) / c);
     if (i < 0 || j < 0 || i >= doc.n || j >= doc.n || doc.ground[j][i] === tile) return;
     doc.ground[j] = doc.ground[j].slice(0, i) + tile + doc.ground[j].slice(i + 1); dirty = true; MV.doc = doc; MV.rebuildGround();
+  }
+  // Raise / lower / smooth / flatten the corner heights around a point. Heights are kept as letters (0.25 m steps) in doc.heights; the outer ring stays flat.
+  function sculptAt(p, first) {
+    const n = doc.n, c = doc.cell, h0 = half(); if (!doc.heights) doc.heights = Array.from({ length: n + 1 }, () => String.fromCharCode(H_ZERO).repeat(n + 1));
+    const rows = doc.heights.map((r) => [...r].map((ch) => (ch.charCodeAt(0) - H_ZERO) * H_STEP)), rad = tRad, src = rows.map((r) => r.slice());
+    if (first) tFlat = rows[Math.max(0, Math.min(n, Math.round((p.z + h0) / c)))][Math.max(0, Math.min(n, Math.round((p.x + h0) / c)))];
+    for (let j = 1; j < n; j++) for (let i = 1; i < n; i++) {
+      const d = Math.hypot(-h0 + i * c - p.x, -h0 + j * c - p.z); if (d > rad) continue;
+      const w = (1 - d / rad) ** 1.5 * 0.5 + 0.05;                                            // soft edge, still reaches the nearest corner of a small brush
+      if (tMode === 'raise') rows[j][i] += 0.75 * w; else if (tMode === 'lower') rows[j][i] -= 0.75 * w;
+      else if (tMode === 'flat') rows[j][i] += (tFlat - src[j][i]) * Math.min(1, w * 1.6);
+      else rows[j][i] += ((src[j - 1][i] + src[j + 1][i] + src[j][i - 1] + src[j][i + 1]) / 4 - src[j][i]) * Math.min(1, w * 1.6);
+    }
+    const next = rows.map((r) => r.map((v) => String.fromCharCode(H_ZERO + Math.max(-12, Math.min(12, Math.round(v / H_STEP))))).join(''));
+    if (next.join() === doc.heights.join()) return false;
+    doc.heights = next; dirty = true; return true;
+  }
+  function terrainAt(p, first) {
+    if (!sculptAt(p, first)) return;
+    const now = performance.now(); if (!first && now - lastTerr < 90) return; lastTerr = now;      // rebuilding the ground is not free: at most about 11 times a second while dragging
+    MV.doc = doc; MV.rebuildGround(); MV.updateColliders();
   }
   function applyTool() {
     controls.mouseButtons = tool === 'select' ? { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN } : { LEFT: -1, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
@@ -230,6 +262,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     if (!open || e.target !== dom || e.button !== 0 || !doc) return;
     const p = worldAt(e); if (!p) return;
     if (tool === 'paint') { commit(); painting = true; paintAt(p); return; }
+    if (tool === 'terrain') { commit(); painting = true; terrainAt(p, true); return; }
     if (tool === 'place') {
       if (!pick) return; ghostY = surfaceY(e); addObject(pick, snapV(Math.max(-half(), Math.min(half(), p.x))), snapV(Math.max(-half(), Math.min(half(), p.z)))); return;
     }
@@ -243,7 +276,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     if (!open || !doc) return;
     if (e.target !== dom && !drag && !painting) return;
     const p = worldAt(e); if (!p) return;
-    if (painting) { paintAt(p); return; }
+    if (painting) { if (tool === 'terrain') terrainAt(p, false); else paintAt(p); return; }
     if (drag) {
       const o = objOf(drag.id); if (!o) return;
       const nx = snapV(p.x + drag.dx), nz = snapV(p.z + drag.dz);
@@ -258,7 +291,7 @@ export function createEditor({ camera, controls, dom, MV, send, CAM, thumbDesign
     } else { ghost.visible = false; arrow.visible = false; }
   });
   window.addEventListener('pointerup', () => {
-    if (painting) { painting = false; render(false); }
+    if (painting) { painting = false; if (tool === 'terrain') { MV.doc = doc; MV.rebuildGround(); MV.updateColliders(); } render(false); }
     if (drag) { if (drag.moved) { undo.push(drag.snapshot); redo.length = 0; dirty = true; MV.rebuildOverlays(); } drag = null; controls.enabled = true; render(false); }
   });
   window.addEventListener('keydown', (e) => {

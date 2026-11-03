@@ -2,6 +2,7 @@
 // All 3D models come from assets/kenney and are shown exactly as authored (never tinted). The page never trusts a path: models load by asset id from /asset/<id>.
 import * as THREE from 'three';
 import { buildDesign } from './models.js';
+import { buildTerrain, heightAt, baseHeight } from './terrain.js';
 
 // Three ground options (UNDECIDED, see STYLE.md). They only change flat tile colours, never the models. Lighting follows the day/night cycle.
 export const LOOKS = {
@@ -25,25 +26,19 @@ export function createMapView({ scene, art, onReady }) {
 
   MV.setLook = (name) => { MV.look = LOOKS[name] ? name : 'B'; MV.rebuildGround(); return LOOKS[MV.look]; };
 
+  let terrain = null;
+  MV.heightAt = (x, z) => heightAt(MV.doc, x, z);                         // ground height here (0 when the map has no hills)
   MV.rebuildGround = () => {
     for (const c of [...tileG.children]) { tileG.remove(c); c.geometry?.dispose?.(); c.material?.dispose?.(); }
+    if (terrain) { terrain.dispose(); terrain = null; }
     const doc = MV.doc; if (!doc) return;
-    const L = LOOKS[MV.look], n = doc.n, cell = doc.cell, half = (n * cell) / 2;
-    const by = {};
-    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const t = doc.ground[j][i]; if (t === 'g' && !L.hideGrass) continue; (by[t] ||= []).push([i, j]); }
-    const geo = new THREE.PlaneGeometry(cell, cell); geo.rotateX(-Math.PI / 2);
-    const m4 = new THREE.Matrix4();
-    for (const [t, cells] of Object.entries(by)) {
-      const mat = new THREE.MeshStandardMaterial({ color: L.tiles[t] ?? 0x888888, roughness: 0.95, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-        ...(t === 'w' ? { roughness: 0.25, metalness: 0.05, transparent: true, opacity: 0.9 } : {}) });
-      const im = new THREE.InstancedMesh(geo, mat, cells.length); im.receiveShadow = true;
-      cells.forEach(([i, j], k) => { m4.makeTranslation(-half + (i + 0.5) * cell, t === 'w' ? 0.015 : t === 'r' ? -0.02 : 0.03, -half + (j + 0.5) * cell); im.setMatrixAt(k, m4); });
-      im.userData.tile = t; tileG.add(im);
+    const L = LOOKS[MV.look], n = doc.n, cell = doc.cell;
+    terrain = buildTerrain(doc, { g: 0x8fbf6a, ...L.tiles }); MV.terrain = terrain.ground; tileG.add(terrain.group);
+    const side = n * cell, M = 260, bm = new THREE.MeshStandardMaterial({ color: L.tiles.g ?? 0x8fbf6a, roughness: 1 });       // a wide frame of plain ground around the map so its edge is not a void (a full plane would cover the lake)
+    for (const [w, d, x, z] of [[side + 2 * M, M, 0, -(side + M) / 2], [side + 2 * M, M, 0, (side + M) / 2], [M, side, -(side + M) / 2, 0], [M, side, (side + M) / 2, 0]]) {
+      const f = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), bm); f.position.set(x, -0.04, z); f.receiveShadow = true; tileG.add(f);
     }
-    if (L.hideGrass) {                                  // a base so the world edge is not a void
-      const base = new THREE.Mesh(new THREE.PlaneGeometry(n * cell + 40, n * cell + 40).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: L.tiles.g, roughness: 1 }));
-      base.position.y = 0.005; base.receiveShadow = true; tileG.add(base);
-    }
+    for (const m of meshes.values()) placeWrap(m.g, m.o);                  // things stand on the new ground
   };
 
   // ------------- objects
@@ -83,7 +78,7 @@ export function createMapView({ scene, art, onReady }) {
     wrap.userData.mapId = o.id;
     placeWrap(wrap, o); return wrap;
   }
-  function placeWrap(w, o) { w.position.set(o.x, o.panel ? (o.y ?? 1.2) : (o.y || 0), o.z); w.rotation.y = (o.rot * Math.PI) / 180; }
+  function placeWrap(w, o) { const gy = o.panel ? heightAt(MV.doc, o.x, o.z) : baseHeight(MV.doc, o); w.position.set(o.x, gy + (o.panel ? (o.y ?? 1.2) : (o.y || 0)), o.z); w.rotation.y = (o.rot * Math.PI) / 180; }
 
   MV.sync = () => {
     const doc = MV.doc; if (!doc) return;

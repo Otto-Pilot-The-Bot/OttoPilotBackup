@@ -4,6 +4,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as UI from './ui.js';
 import { ArtStore } from './art.js';
 import { createRealism } from './realism.js';
+import { createWeather } from './weather.js';
+import { createLook } from './look.js';
+import { createIdle } from './idle.js';
+import { hasLake } from './terrain.js';
 import { createCameraModes } from './camera.js';
 import { createMapView, LOOKS } from './mapview.js';
 import { createEditor } from './editor.js';
@@ -32,6 +36,12 @@ sun.castShadow = true;
 Object.assign(sun.shadow.camera, { left: -38, right: 38, top: 38, bottom: -38 }); sun.shadow.mapSize.set(2048, 2048);
 scene.add(sun);
 const REAL = createRealism({ renderer, scene, camera, sun, hemi });          // realism pass (web/realism.js); ?plain=1 turns it off
+const WX = createWeather({ scene, camera, renderer, sun, hemi, REAL, getCenter: () => (CAM.mode === 'overhead' ? controls.target : camera.position) });   // rain, snow, fog, lightning (web/weather.js); ?wx=0 turns it off
+const LOOK = createLook({ renderer, scene, camera });                           // Normal / Flat (halftone) look (web/look.js); the button is added with the other bottom buttons
+{ const b = document.createElement('button'); b.id = 'lookBtn'; b.title = 'Switch the picture between the normal look and a flat halftone look';
+  const paint = () => { b.classList.toggle('on', LOOK.mode === 'flat'); b.textContent = LOOK.mode === 'flat' ? '🎨 Look: Flat' : '🎨 Look: Normal'; };
+  b.onclick = () => { LOOK.setMode(LOOK.mode === 'flat' ? 'normal' : 'flat'); paint(); }; paint(); document.body.appendChild(b); }
+{ const a = document.createElement('a'); a.id = 'adminBtn'; a.href = '/admin.html'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = '🛠 Admin'; a.title = 'The admin dashboard: needs, character, omens, weather'; document.body.appendChild(a); }
 var ground, groundParts = [], curHalf = 0;
 function buildGround(half) {
   for (const o of groundParts) { scene.remove(o); o.geometry?.dispose?.(); }
@@ -42,7 +52,7 @@ function buildGround(half) {
   const border = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(half * 2, 0.2, half * 2)), new THREE.LineBasicMaterial({ color: 0x4a6a3a }));
   groundParts = REAL.on ? [ground] : [ground, grid, border];
   if (REAL.on) { REAL.buildGround(half, ground); border.geometry.dispose(); grid.geometry.dispose(); }
-  for (const o of groundParts) scene.add(o);
+  for (const o of groundParts) { o.visible = !window.__terrainOn; scene.add(o); }          // once a map is loaded its own terrain mesh is the ground
   Object.assign(sun.shadow.camera, { left: -half - 14, right: half + 14, top: half + 14, bottom: -half - 14 }); sun.shadow.camera.updateProjectionMatrix();
   controls.maxDistance = 70 + (half - 24) * 1.6; scene.fog.far = 120 + (half - 24) * 2.2;
 }
@@ -275,7 +285,7 @@ function makeObject(o, thumb = false) {
     g.userData.born = performance.now(); g.scale.setScalar(0.01);
   }
   else if (!thumb) { g.userData.born = performance.now() - 5000; }
-  g.position.set(o.x, 0, o.z);
+  g.position.set(o.x, MV.heightAt(o.x, o.z), o.z);
   return g;
 }
 const sigOf = (o) => [o.kind, o.meta?.stage || '', o.name, o.color, o.meta?.parts?.length || '', o.meta?.design ? JSON.stringify(o.meta.design) : ''].join('|');
@@ -285,7 +295,7 @@ function syncObjects(list) {
     const sig = sigOf(o), cur = objMeshes.get(o.id);
     if (cur && cur.userData.sig === sig) continue;
     if (cur) scene.remove(cur);
-    const g = makeObject(o); g.userData.sig = sig; g.position.set(o.x, 0, o.z); scene.add(g); objMeshes.set(o.id, g);
+    const g = makeObject(o); g.userData.sig = sig; g.position.set(o.x, MV.heightAt(o.x, o.z), o.z); scene.add(g); objMeshes.set(o.id, g);
   }
   for (const o of list) { const g = objMeshes.get(o.id); if (g && (g.position.x !== o.x || g.position.z !== o.z)) g.userData.glide = { x: o.x, z: o.z }; }   // the engine may move things
   objectsById = new Map(list.map((o) => [o.id, o]));
@@ -411,7 +421,7 @@ new GLTFLoader().load('/models/RobotExpressive.glb', (gltf) => {
     if (o.isBone && (o.name === 'Palm2R' || o.name === 'Palm2.R') && !handBone) handBone = o;
   });
   bodyOrig = bodyMat ? bodyMat.color.clone() : null;              // the model's own orange, kept so we can restore it
-  scene.add(robot);
+  scene.add(robot); window.__robot = robot;
   mixer = new THREE.AnimationMixer(robot);
   for (const clip of gltf.animations) actions[clip.name] = mixer.clipAction(clip);
   for (const n of ['Jump', 'Yes', 'No', 'Wave', 'Punch', 'ThumbsUp', 'Death']) if (actions[n]) { actions[n].loop = THREE.LoopOnce; actions[n].clampWhenFinished = true; }
@@ -431,6 +441,20 @@ function playEmote(name) {
   if (LOOPING.has(name)) { holdLoop = name; oneShot = false; play(name); return; }
   holdLoop = null; oneShot = true; play(name, 0.2);
 }
+
+// Idle life (web/idle.js): looks around, nods, tilts his head, sits when tired. Skipped while he walks, rides, is paused or in game mode.
+const IDLE = createIdle({
+  getRobot: () => robot, getHead: () => headBone,
+  canFidget: () => !!robot && !!mixer && !pathQ.length && !oneShot && !rideAnim && !paused && !window.__sleeping && (!holdLoop || holdLoop === 'Sitting' || holdLoop === 'Idle' || holdLoop === 'Standing') && Math.hypot(targetPos.x - robotPos.x, targetPos.z - robotPos.z) < 0.25,
+  emote: (n) => playEmote(n), getMood: () => (last && last.state && last.state.mood) || 'content', getNeeds: () => (last && last.state) || { energy: 100, battery: 100, boredom: 0 },
+  getPoints: () => {
+    const pts = [];
+    for (const o of (MV.doc && MV.doc.objects) || []) if (!o.panel && Math.hypot(o.x - robotPos.x, o.z - robotPos.z) < 22) pts.push({ x: o.x, z: o.z, d: Math.hypot(o.x - robotPos.x, o.z - robotPos.z) });
+    for (const p of Object.values((last && last.places) || {})) if (p && p.x !== undefined && Math.hypot(p.x - robotPos.x, p.z - robotPos.z) < 40) pts.push({ x: p.x, z: p.z, d: Math.hypot(p.x - robotPos.x, p.z - robotPos.z) });
+    return pts.sort((a, b) => a.d - b.d).slice(0, 8);
+  },
+});
+window.__idle = IDLE;                                                              // IDLE.enabled = false turns it off
 
 const ACC = {
   hat() { const g = new THREE.Group(); g.add(mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.06, 24), null)); g.add(mesh(new THREE.CylinderGeometry(0.36, 0.42, 0.45, 24), null, 0, 0.25, 0)); return g; },
@@ -464,6 +488,7 @@ let ws, last = null, placesBuilt = false, snapHour = 8, snapAt = 0, intervalMs =
 const art = new ArtStore((o) => send(o));
 let EDITOR = null;
 const MV = createMapView({ scene, art });
+{ const rg = MV.rebuildGround; MV.rebuildGround = () => { rg(); REAL.setFarY?.(hasLake(MV.doc) ? -3.4 : -0.06); }; }     // the far ground must sit below a lake, including one you just dug in the editor
 const TRAFFIC = createTraffic({ scene });
 let pathQ = [], pathSig = '', rideAnim = null, lastRideTick = -1, lastHonk = -1, fadedNow = null;
 let beepCtx = null;
@@ -471,7 +496,7 @@ function honk() { try { beepCtx = beepCtx || new (window.AudioContext || window.
 let forcedHour = null, mapActive = false, mapSeen = false, lastMapName = null;
 function applyLook(name) {
   const L = MV.setLook(name); window.__look = MV.look;
-  for (const o of groundParts) o.visible = !L.hideGrass;
+  for (const o of groundParts) o.visible = false;                              // the map's own terrain mesh is the ground now (web/terrain.js)
   REAL.setTufts?.(false);
   UI.mapLook?.(MV.look);
 }
@@ -523,9 +548,11 @@ function updateInsideFade() {
 }
 function onMap(m) {
   mapActive = !!m.doc;
+  window.__terrainOn = mapActive; for (const o of groundParts) o.visible = !mapActive;
   setBright(m.bright);
   if (m.doc) {
     MV.setDoc(m.doc, m.nav); TRAFFIC.rebuild(m.doc, m.traffic);
+    REAL.setFarY?.(hasLake(m.doc) ? -3.4 : -0.06);
     const q = new URLSearchParams(location.search).get('look'); applyLook(q || MV.look);
     if (m.doc.n * m.doc.cell / 2 !== curHalf) { buildGround(m.doc.n * m.doc.cell / 2); if (!mapSeen) { mapSeen = true; resetCamera(); } }
     applyLook(MV.look);
@@ -540,6 +567,7 @@ function applySnapshot(m, teleport) {
   if (!placesBuilt) { if (!(m.map && m.map.name)) buildPlaces(m.places); placesBuilt = true; }
   if (m.world_half && m.world_half !== curHalf) buildGround(m.world_half);
   insideKey = s.inside || null;
+  WX.fromServer(m.weather);
   UI.update(m);
   art.update(m.art);
   syncObjects(m.objects);
@@ -572,6 +600,7 @@ function onAction(a) {
   pendingAnim = a.anim && a.anim !== 'Walking' && a.anim !== 'Running' ? a.anim : null;
   if (a.face) targetFace = new THREE.Vector3(a.face[0], 0, a.face[1]);
   if (a.anim === 'Death') playEmote('Death');
+  if (a.tool === 'observe' && /(sky|cloud|clouds|star|stars|moon|sun|weather|rain|snow)/i.test(`${a.result || ''} ${(a.args && a.args.target) || ''}`)) IDLE.lookUp(5);   // watching the sky: his head tips back
 }
 
 // ------------------------------------------------------------------ placing objects
@@ -591,7 +620,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
 });
 
 const CAM = createCameraModes({
-  camera, controls, dom: renderer.domElement,
+  camera, controls, dom: renderer.domElement, getGround: (x, z) => MV.heightAt(x, z),
   getRobot: () => ({ pos: robotPos, yaw: robot ? robot.rotation.y : 0 }),
   getHalf: () => curHalf || HALF, getColliders: () => (window.__colliders || []),
   onChange: (m) => { if (m === 'walk') cancelPlace(); if (m !== 'overhead') EDITOR?.close(); },
@@ -601,6 +630,25 @@ EDITOR = createEditor({ camera, controls, dom: renderer.domElement, MV, send, CA
 window.__editor = EDITOR;
 { const q = new URLSearchParams(location.search), cm = q.get('cam');
   if (cm) setTimeout(() => { CAM.setMode(cm); const at = (q.get('at') || '').split(',').map(Number); if (at.length === 2 && cm === 'walk') CAM.pose(at[0], at[1], +q.get('yaw') || 0, +q.get('pitch') || 0); }, 2500); }
+// Overhead view: dragging the map lets go of Otto (it used to pull the view back to him every frame); the "Follow Otto" button on the camera bar locks on again.
+{ const btn = document.createElement('button'); btn.id = 'camFollow'; btn.title = 'Keep the view centred on Otto (dragging the map lets go)';
+  const sync = () => { btn.classList.toggle('on', follow); btn.textContent = follow ? '📍 Following Otto' : '📍 Follow Otto'; const chk = document.querySelector('#followChk'); if (chk) chk.checked = follow; btn.hidden = CAM.mode !== 'overhead'; };
+  const setFollow = (v) => { follow = v; sync(); };
+  btn.onclick = () => setFollow(!follow);
+  controls.addEventListener('start', () => { if (follow) setFollow(false); });
+  const bar = document.querySelector('#camBar'); if (bar) bar.insertBefore(btn, bar.querySelector('#camMode'));
+  window.__setFollow = setFollow; sync(); setInterval(sync, 500); }
+// Company: while you walk around in walk mode he knows you are there (the server puts it in his thoughts), turns to face you, and waves once when you come close.
+{ let here = false, waved = false, sentAt = 0;
+  setInterval(() => {
+    const walking = CAM.mode === 'walk', p = CAM.pos, now = performance.now();
+    if (walking !== here || (walking && now - sentAt > 1500)) { here = walking; sentAt = now; send({ type: 'visitor', here: walking, x: +p.x.toFixed(1), z: +p.z.toFixed(1) }); if (!walking) waved = false; }
+    if (!walking || !robot) return;
+    const d = Math.hypot(p.x - robotPos.x, p.z - robotPos.z);
+    if (d < 16) IDLE.glance(p.x, p.z);
+    if (d < 7 && !waved && !pathQ.length && !oneShot && !rideAnim && !paused && !window.__sleeping) { waved = true; playEmote('Wave'); }
+  }, 1000);
+}
 UI.init({ send, art, startPlace, cancelPlace, setFollow: (v) => { follow = v; }, resetCamera, thumb: thumbOf, thumbArt: thumbOfArt, thumbDesign: thumbOfDesign, setLabelMode: (m) => { labelMode = m; } });
 
 // ------------------------------------------------------------------ frame loop
@@ -628,7 +676,7 @@ function frame() {
   adaptQuality(rawDt, now, cap || 60);
   // world clock: glides between ticks (10 world minutes per tick)
   const hour = new URLSearchParams(location.search).get('hour') ? +new URLSearchParams(location.search).get('hour') : forcedHour != null ? forcedHour : (snapHour + (paused ? 0 : Math.min(1, (now - snapAt) / intervalMs)) * (10 / 60)) % 24;
-  applyTime(hour); REAL.update(hour, nightness, dt, now / 1000);
+  applyTime(hour); REAL.update(hour, nightness, dt, now / 1000); WX.update(dt, now / 1000, nightness);
   const hh = Math.floor(hour), mm = Math.floor((hour % 1) * 60), lbl = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   if (lbl !== lastClock && last) { lastClock = lbl; UI.setClock({ label: lbl, day: last.world.day, phase: hour >= 5 && hour < 7.5 ? 'dawn' : hour >= 7.5 && hour < 18 ? 'day' : hour >= 18 && hour < 20 ? 'dusk' : 'night' }); }
   if (robot) {
@@ -644,8 +692,9 @@ function frame() {
       if (targetFace) { const f = targetFace.clone().sub(robotPos); robot.rotation.y = Math.atan2(f.x, f.z); }
       if (pendingAnim) { playEmote(pendingAnim); pendingAnim = null; } else play('Idle');
     } else if (pendingAnim && !oneShot) { playEmote(pendingAnim); pendingAnim = null; }
-    robot.position.copy(robotPos);
-    mixer.update(dt);
+    robot.position.copy(robotPos); robot.position.y = MV.heightAt(robotPos.x, robotPos.z);
+    IDLE.update(dt);
+    IDLE.clearHead(); mixer.update(dt); IDLE.applyHead(dt);
     if (face) for (const k of Object.keys(expr)) { expr[k] += (exprTarget[k] - expr[k]) * Math.min(1, dt * 4); face.morphTargetInfluences[face.morphTargetDictionary[k]] = expr[k]; }
     if (heldObj && handBone) {                           // follows his right hand (a scene object, so the arm's bone scale cannot distort it)
       handBone.getWorldPosition(tmp); heldObj.position.copy(tmp); heldObj.position.x += Math.sin(robot.rotation.y) * 0.18; heldObj.position.z += Math.cos(robot.rotation.y) * 0.18; heldObj.position.y += 0.12;
@@ -663,12 +712,13 @@ function frame() {
   if (rideAnim) {                                                              // Otto rides along the road in a car; the real position is already the destination
     const R = rideAnim, tg = R.pts[R.i], dv = tmp.subVectors(tg, R.g.position), dl = dv.length();
     if (dl < 0.3) { R.i++; if (R.i >= R.pts.length) { scene.remove(R.g); rideAnim = null; if (robot) robot.visible = true; } }
-    else { R.g.position.addScaledVector(dv.normalize(), Math.min(dl, R.speed * dt)); R.g.rotation.y += shortest(Math.atan2(dv.x, dv.z) - R.g.rotation.y) * Math.min(1, dt * 6); }
+    else { R.g.position.addScaledVector(dv.normalize(), Math.min(dl, R.speed * dt)); R.g.position.y = MV.heightAt(R.g.position.x, R.g.position.z); R.g.rotation.y += shortest(Math.atan2(dv.x, dv.z) - R.g.rotation.y) * Math.min(1, dt * 6); }
   }
   for (const m of mixers) m.update(dt);
   for (const m of glowMats) m.emissiveIntensity = 1.0 + nightness * 1.6;
   for (const m of kitGlow) m.emissiveIntensity = 0.9 + nightness * 1.8;
   for (const g of objMeshes.values()) {
+    g.position.y = MV.heightAt(g.position.x, g.position.z);
     if (g.userData.design) animateDesign(g.userData.design, tsec, dt);
     if (g.userData.glide) { const gl = g.userData.glide, k = Math.min(1, dt * 3); g.position.x += (gl.x - g.position.x) * k; g.position.z += (gl.z - g.position.z) * k; if (Math.hypot(gl.x - g.position.x, gl.z - g.position.z) < 0.03) { g.position.set(gl.x, 0, gl.z); g.userData.glide = null; } }
     if (g.userData.bob) { g.userData.bob.position.y = 0.3 + Math.sin(tsec * 2 + g.position.x) * 0.06; g.userData.bob.rotation.y += dt; }
@@ -678,7 +728,7 @@ function frame() {
   if (CAM.mode === 'overhead') { if (follow && robot) controls.target.lerp(tmp.set(robotPos.x, 1, robotPos.z), Math.min(1, dt * 2)); controls.update(); }
   CAM.update(dt);
   if ((frameN++ & 3) === 0) updateLabels();
-  renderer.render(scene, camera);
+  LOOK.render();
 }
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 connect(); frame();

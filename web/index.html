@@ -4,11 +4,17 @@
 <script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/vendor/addons/"}}</script>
 <link rel="stylesheet" href="/style.css">
 </head><body>
-<header id="top" class="paper">
-  <div class="who"><span id="moodEmoji" class="avatar">🤖</span><div><b id="name">…</b><span id="moodChip" class="chip">waking up</span></div></div>
-  <div id="meters"></div>
-  <div id="wx" class="chip" title="Weather and season"></div>
-  <div id="clock" class="chip clock" title="In-world time"><span id="clockIcon">☀️</span> <span id="clockText">--:--</span></div>
+<header id="top">
+  <div id="stats" class="pill dashed">
+    <div id="meters"></div>
+    <div class="sx mood" title="Mood"><span class="dot" style="--c:#e87aa0"></span><span class="lbl" id="moodChip">waking up</span></div>
+    <div class="sx money" id="money" title="Otto's money (pocket + bank)" hidden><span class="dot" style="--c:#e8b13a"></span><span class="lbl" id="moneyVal">$0.00</span></div>
+  </div>
+  <div id="meta">
+    <div id="clock" class="pill blue clock" title="In-world time"><span id="clockIcon">☀️</span> <span id="clockText">--:--</span></div>
+    <div class="pill who"><span id="moodEmoji" class="avatar">🤖</span><b id="name">…</b></div>
+    <div id="wx" class="pill" title="Weather and season"></div>
+  </div>
 </header>
 <nav id="menu"></nav>
 <section id="panel" class="paper" hidden>

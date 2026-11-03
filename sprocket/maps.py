@@ -142,6 +142,9 @@ def clean(doc, db):
             if isinstance(at, list) and len(at) == 2:
                 places[k]["at"] = [round(_num(at[0], -config.WORLD_HALF_MAX, config.WORLD_HALF_MAX), 2), round(_num(at[1], -config.WORLD_HALF_MAX, config.WORLD_HALF_MAX), 2)]
     res = {"version": 1, "name": name, "cell": cell, "n": n, "ground": ground, "objects": objs, "places": places}
+    hts = _heights(doc, n)
+    if hts:
+        res["heights"] = hts
     half = n * cell / 2
     b = doc.get("bounds")
     if isinstance(b, dict):                                              # interiors: the walkable room; everything outside this rectangle is wall
@@ -180,6 +183,47 @@ def load(name):
 
 
 # ---------------------------------------------------------------- derived data: places, colliders, walkable grid
+# ---------------------------------------------------------------- terrain
+# doc["heights"] is optional: n+1 strings of n+1 letters, one per grid corner. 'm' is ground level; each letter step is 0.25 m (a = -3 m ... z = +3.25 m).
+# The surface between corners is a smooth (Catmull-Rom) blend, and web/terrain.js uses the very same formula, so the page and the server agree on every height.
+H_ZERO, H_STEP, WATER_Y = "m", 0.25, -0.3          # a lake is simply ground below WATER_Y; shallow edges (less than 0.12 m deep) can be walked through
+
+
+def _heights(doc, n):
+    """Validate the height grid: right size, only a-z, and a flat outer ring so the terrain meets the flat world beyond the map. None = flat."""
+    rows = doc.get("heights")
+    if not isinstance(rows, list):
+        return None
+    out = []
+    for z in range(n + 1):
+        r = str(rows[z]) if z < len(rows) else ""
+        r = "".join(c if "a" <= c <= "z" else H_ZERO for c in (r + H_ZERO * (n + 1))[:n + 1])
+        out.append(H_ZERO * (n + 1) if z in (0, n) else H_ZERO + r[1:n] + H_ZERO)
+    return None if all(set(r) == {H_ZERO} for r in out) else out
+
+
+def _hv(rows, n, i, j):
+    return (ord(rows[min(n, max(0, j))][min(n, max(0, i))]) - ord(H_ZERO)) * H_STEP
+
+
+def _cr(p0, p1, p2, p3, t):
+    return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
+
+
+def height_at(doc, x, z):
+    """Ground height in meters at a world position (0 on a map without terrain)."""
+    rows = doc.get("heights")
+    if not rows:
+        return 0.0
+    n, c = doc["n"], doc["cell"]
+    half = n * c / 2
+    gx, gz = min(max((x + half) / c, 0.0), float(n)), min(max((z + half) / c, 0.0), float(n))
+    i, j = min(int(gx), n - 1), min(int(gz), n - 1)
+    fx, fz = gx - i, gz - j
+    cols = [_cr(*(_hv(rows, n, i + di, j + dj) for di in (-1, 0, 1, 2)), fx) for dj in (-1, 0, 1, 2)]
+    return _cr(*cols, fz)
+
+
 def tile_at(doc, x, z):
     n, c = doc["n"], doc["cell"]
     i, j = int((x + n * c / 2) // c), int((z + n * c / 2) // c)
@@ -233,6 +277,8 @@ def activate(doc, db=None):
                 blocked[j][i] = True
             else:
                 cost[j][i] = tc
+            if doc.get("heights") and height_at(doc, -half + (i + 0.5) * NAV, -half + (j + 0.5) * NAV) < WATER_Y - 0.12:
+                blocked[j][i] = True                                  # deeper than ankle-deep water: a lake he cannot wade into
     bd = doc.get("bounds")
     if bd:
         for j in range(W):
@@ -287,6 +333,8 @@ def activate(doc, db=None):
         nm = re.sub(r"[-_]", " ", o["name"]).strip()
         world.PLACES[f"b{o['id']}"] = {"label": nm, "x": round(spot[0], 2), "z": round(spot[1], 2), "aliases": [nm.lower()], "object": o["id"],
                                        "enter": True, "inside": [round(o["x"], 2), round(o["z"], 2)]}
+    if doc.get("heights"):
+        _terrain_places(doc, half)
     FALL = {"home": ("home spot", ["home", "pad", "bed"]), "fuel_station": ("charging spot", ["charging", "station", "fuel", "battery", "food"]),
             "clothing_store": ("shop spot", ["shop", "store", "clothing"]), "gallery": ("gallery spot", ["gallery", "art"])}
     for i, (key, (label, al)) in enumerate(FALL.items()):            # a map without these still works: plain named spots near the middle until you mark real buildings
@@ -295,6 +343,30 @@ def activate(doc, db=None):
             world.PLACES[key] = {"label": label, "x": round(spot[0], 2), "z": round(spot[1], 2), "aliases": al}
     ACTIVE["warnings"] = reachability(doc)
     return doc
+
+
+def _terrain_places(doc, half):
+    """A lake and up to two hills become places he can walk to and look around from (found from the height grid, never hand-coded)."""
+    from . import world
+    W = ACTIVE["n"]
+    pts = [(-half + (i + 0.5) * NAV, -half + (j + 0.5) * NAV) for j in range(0, W, 2) for i in range(0, W, 2)]
+    hts = {p: height_at(doc, *p) for p in pts}
+    wet = [p for p in pts if hts[p] < WATER_Y - 0.12]
+    if len(wet) >= 4:
+        cx, cz = sum(p[0] for p in wet) / len(wet), sum(p[1] for p in wet) / len(wet)
+        spot = nearest_walkable(cx, cz, maxr=25)
+        if spot:
+            world.PLACES["lake"] = {"label": "lake", "x": round(spot[0], 2), "z": round(spot[1], 2), "aliases": ["lake", "water", "pond", "shore", "shoreline", "lakeside"]}
+    high = sorted(((hts[p], p) for p in pts if hts[p] > 0.9 and walkable(*p)), reverse=True)
+    picks = []
+    for h, p in high:
+        if all(math.hypot(p[0] - q[0], p[1] - q[1]) > 16 for _, q in picks):
+            picks.append((h, p))
+        if len(picks) == 2:
+            break
+    for k, (h, p) in enumerate(picks):
+        world.PLACES["hill" if k == 0 else "hill2"] = {"label": "hill" if k == 0 else "second hill", "x": round(p[0], 2), "z": round(p[1], 2),
+                                                       "aliases": ["hill", "hilltop", "summit", "lookout", "view"] if k == 0 else ["second hill", "other hill", "far hill"]}
 
 
 def reachability(doc):

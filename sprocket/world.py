@@ -192,8 +192,28 @@ WEATHER = {"spring": ["clear", "clear", "cloudy", "light rain", "light rain", "b
            "fall": ["clear", "cloudy", "cloudy", "drizzle", "foggy", "breezy", "falling leaves"], "winter": ["clear and cold", "cloudy", "light snow", "snow", "foggy", "frosty"]}
 
 
+OVERRIDE = ""         # set from the admin page to force a weather (empty = the normal daily pick)
+
+
 def weather(day, season):
-    """Deterministic weather for a world day (so it is the same for him, the prompt and the UI)."""
+    """Deterministic weather for a world day (so it is the same for him, the prompt and the UI), unless the admin page forces one."""
+    if OVERRIDE:
+        return OVERRIDE
     h = int.from_bytes(hashlib.sha256(f"wx:{day}".encode()).digest()[:2], "big")
     opts = WEATHER.get(season, WEATHER["summer"])
     return opts[h % len(opts)]
+
+
+WEATHER_NOTES = {"thunderstorm": "Thunder rumbles and rain pours down; indoors would be safest and cosiest.",
+                 "light rain": "A light rain is falling; the buildings stay dry.", "drizzle": "A fine drizzle hangs in the air.",
+                 "light snow": "Light snow drifts down, soft and quiet.", "snow": "Snow is falling and the world has gone hushed.",
+                 "foggy": "Thick fog hides the far side of the world.", "falling leaves": "Leaves are drifting down all around.",
+                 "frosty": "A hard frost; it is cold out.", "warm and hazy": "The air is warm and hazy.", "breezy": "A breeze stirs everything."}
+
+
+def weather_note(wx, inside=False):
+    """One line for his prompt: today's weather and what it suggests (shelter when it is wet, enjoy it when it is mild)."""
+    note = WEATHER_NOTES.get(wx, "")
+    if note and inside and wx in ("thunderstorm", "light rain", "drizzle", "light snow", "snow"):
+        note += " You are indoors, out of it."
+    return note

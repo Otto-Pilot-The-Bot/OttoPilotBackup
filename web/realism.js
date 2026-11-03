@@ -52,7 +52,7 @@ function cloudTexture() {
 // ---------------------------------------------------------------- the setup
 export function createRealism({ renderer, scene, camera, sun, hemi }) {
   const on = !new URLSearchParams(location.search).get('plain');
-  const R = { on, update() {}, buildGround: null };
+  const R = { on, update() {}, buildGround: null, tint: { amount: 0, color: new THREE.Color(0xb4bcc6) } };      // tint: the weather pulls the sky and clouds toward a colour
   if (!on) return R;
 
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
@@ -98,7 +98,8 @@ export function createRealism({ renderer, scene, camera, sun, hemi }) {
        float sw = uv.y * uv.y; vec4 ip = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
        transformed.x += sin(uWind * 1.6 + ip.x * 0.55 + ip.z * 0.35) * 0.09 * sw + sin(uWind * 3.1 + ip.z) * 0.025 * sw;`);
   };
-  let tufts = null, farPlane = null, tuftsOn = true;
+  let tufts = null, farPlane = null, tuftsOn = true, farY = -0.06;
+  R.setFarY = (y) => { farY = y; if (farPlane) farPlane.position.y = y; };      // a lake in the map needs the far ground well below it
   R.setTufts = (v) => { tuftsOn = v; if (tufts) tufts.visible = v; };      // off when a map's flat tiles (roads, plaza) lie on the ground
 
   R.buildGround = (half, ground) => {
@@ -107,7 +108,7 @@ export function createRealism({ renderer, scene, camera, sun, hemi }) {
     ground.material = groundMat; ground.position.y = 0;
     if (farPlane) { scene.remove(farPlane); farPlane.geometry.dispose(); }
     const frep = 1200 / 14; const fm = farMat; fm.map = map.clone(); fm.map.repeat.set(frep, frep); fm.map.needsUpdate = true;
-    farPlane = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), fm); farPlane.rotation.x = -Math.PI / 2; farPlane.position.y = -0.06; farPlane.receiveShadow = false; scene.add(farPlane);
+    farPlane = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), fm); farPlane.rotation.x = -Math.PI / 2; farPlane.position.y = farY; farPlane.receiveShadow = false; scene.add(farPlane);
     if (tufts) { scene.remove(tufts); tufts.geometry.dispose(); tufts.dispose(); }
     const n = Math.min(14000, Math.round(half * half * 5.5)), g = new THREE.PlaneGeometry(0.62, 0.5); g.translate(0, 0.25, 0);
     const g2 = g.clone(); g2.rotateY(Math.PI / 2);
@@ -133,7 +134,8 @@ export function createRealism({ renderer, scene, camera, sun, hemi }) {
   const tmpC = new THREE.Color();
 
   R.update = (hour, nightness, dt, t) => {
-    const top = lerpKey(TOP, hour), hor = lerpKey(HOR, hour);
+    const top = lerpKey(TOP, hour), hor = lerpKey(HOR, hour), wk = R.tint.amount;
+    if (wk > 0.005) { tmpC.copy(R.tint.color).multiplyScalar(1 - nightness * 0.7); top.lerp(tmpC, Math.min(1, wk * 1.3)); hor.lerp(tmpC, wk * 0.9); }
     skyMat.uniforms.top.value.copy(top); skyMat.uniforms.horizon.value.copy(hor); skyMat.uniforms.night.value = nightness;
     skyMat.uniforms.sunDir.value.copy(sun.position).normalize(); skyMat.uniforms.sunCol.value.copy(sun.color);
     sky.position.copy(camera.position);
@@ -141,7 +143,8 @@ export function createRealism({ renderer, scene, camera, sun, hemi }) {
     farMat.color.copy(tmpC.set(0xdfe8d0)).multiplyScalar(1 - nightness * 0.65);
     groundMat.color.setScalar(1 - nightness * 0.1);
     for (const c of clouds) { c.userData.a += c.userData.v * dt; const a = c.userData.a; c.position.x = Math.cos(a) * c.userData.d; c.position.z = Math.sin(a) * c.userData.d;
-      c.material.color.copy(tmpC.set(0xffffff).lerp(sun.color, 0.35).multiplyScalar(1 - nightness * 0.75)); c.material.opacity = 0.9 - nightness * 0.35; }
+      c.material.color.copy(tmpC.set(0xffffff).lerp(sun.color, 0.35).multiplyScalar(1 - nightness * 0.75)); c.material.opacity = Math.min(1, 0.9 - nightness * 0.35 + wk * 0.12);
+      if (wk > 0.005) c.material.color.lerp(tmpC.copy(R.tint.color).multiplyScalar(0.85 - nightness * 0.5), wk * 0.8); }
     wind.value = t;
     hemi.intensity *= 0.82;                                                       // the environment light adds to the hemisphere light
     if (Math.abs(hour - lastEnv) > 0.5 || hour < lastEnv) {                      // refresh reflections/ambient from the sky

@@ -12,7 +12,7 @@ import time
 
 from aiohttp import web, WSMsgType
 
-from . import assets as assetlib, maps as maplib, starter as starterlib, config, design, gifts as giftlib, kit, layout, world
+from . import admin as adminlib, assets as assetlib, maps as maplib, starter as starterlib, config, design, gifts as giftlib, kit, layout, world
 
 WEB = config.ROOT / "web"
 
@@ -166,6 +166,17 @@ async def serve(agent, runner, interval=None):
         t, s, db = m.get("type"), agent.state, agent.db
         if t in ("get_map", "map_edit", "map_load", "map_save", "map_new", "map_starter", "map_city") and config.MAPS_ENABLED:
             return map_handle(t, m, ws)
+        if t == "admin_get":                                    # the admin page (HUMAN ONLY, same sign-in as everything else; no model tool can reach sprocket/admin.py)
+            if ws is not None:
+                asyncio.ensure_future(_send(ws, json.dumps(adminlib.view(agent))))
+            return
+        if isinstance(t, str) and t.startswith("admin_"):
+            try:
+                toast(adminlib.apply(agent, runner, t, m))
+            except (ValueError, TypeError) as e:
+                toast(str(e), False)
+            agent.save(); push(agent.snapshot()); push(adminlib.view(agent))
+            return
         if t in ("place_object", "place_design") and config.MAPS_ENABLED:
             return toast("Placing now happens in the Plan editor (the 🗺️ Plan button, bottom left).", False)
         if t == "set_pace":
@@ -194,6 +205,18 @@ async def serve(agent, runner, interval=None):
                 push(agent.snapshot())
         elif t == "game_mode":
             asyncio.ensure_future(runner.set_sleeping(bool(m.get("on"))))
+        elif t == "visitor":                                    # the page tells him someone is walking around his world (walk mode); sent every second or so while they are
+            try:
+                x, z, here = float(m.get("x", 0)), float(m.get("z", 0)), bool(m.get("here", True))
+            except (TypeError, ValueError):
+                return
+            old = getattr(agent, "visitor", None)
+            arrived = here and not (old and old["here"] and time.time() - old["seen"] < 10)
+            agent.visitor = {"here": here, "x": x, "z": z, "seen": time.time(), "since": s["tick"] if arrived else (old or {}).get("since", s["tick"])}
+            if arrived and not runner.paused:
+                db.control("a visitor started walking around his world")
+                runner.wake.set()                               # he notices straight away instead of waiting out the thinking interval
+            return
         elif t == "pause":
             runner.set_paused(True)
         elif t == "resume":
@@ -488,7 +511,7 @@ async def serve(agent, runner, interval=None):
         resp = await handler(request)
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["Referrer-Policy"] = "no-referrer"
-        if request.path in ("/", "/index.html"):
+        if request.path in ("/", "/index.html", "/admin.html"):
             resp.headers["Content-Security-Policy"] = csp_page(request.host)
             resp.headers["Cache-Control"] = "no-store"
         elif request.path == "/art-sandbox.html":
