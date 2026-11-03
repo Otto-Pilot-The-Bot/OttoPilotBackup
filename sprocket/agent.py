@@ -587,7 +587,7 @@ class Agent:
         hid = db.one("SELECT id FROM hobbies WHERE name=?", name[:40])["id"]
         db.x("INSERT INTO hobby_entries(ts,tick,hobby_id,text) VALUES(?,?,?,?)", time.time(), self.state["tick"], hid, str(text)[:300])
 
-    TOOL_CAT = {"bank": "explore", "gamble": "explore", "watch": "explore", "move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
+    TOOL_CAT = {"bank": "explore", "gamble": "explore", "watch": "explore", "work": "explore", "move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
                 "publish_page": "write", "make_art": "art", "make_music": "music", "landscape": "garden", "wish": "socialize", "arrange": "organize", "ponder": "reflect", "gift": "socialize", "tend": "garden", "collect": "collect", "observe": "observe",
                 "build": "build", "rest": "rest", "eat": "rest"}
 
@@ -618,7 +618,7 @@ class Agent:
 
     def town_idle(self):
         """True when he has used nothing in town (cafe, casino, library, print farm, bank, food) for a long while."""
-        return self.db.one("SELECT COUNT(*) n FROM actions WHERE tool IN ('order','gamble','library','print3d','bank','eat','drink','watch') AND tick>?", self.state["tick"] - config.ERRAND_AFTER)["n"] == 0
+        return self.db.one("SELECT COUNT(*) n FROM actions WHERE tool IN ('order','gamble','library','print3d','bank','eat','drink','watch','work') AND tick>?", self.state["tick"] - config.ERRAND_AFTER)["n"] == 0
 
     def errand_step(self):
         """The engine walks him to town when he has stayed away too long: -> the errand dict while one is on (he then has only move_to until he arrives), else None."""
@@ -875,11 +875,13 @@ class Agent:
             L.append(f"MONEY (US dollars): cash in pocket {_bank.fmt(b['wallet'])}, bank account {_bank.fmt(b['account'])}."
                      + (" There is a bank in your world: the bank tool deposits or withdraws (it walks you there first)." if spot else " (No bank has been placed in your world yet.)")
                      + " Things cost money: a drink at the cafe " + _bank.fmt(min(v[0] for v in config.CAFE_MENU.values())) + "-" + _bank.fmt(max(v[0] for v in config.CAFE_MENU.values()))
-                     + f", a 3D print {_bank.fmt(config.PRINT_COST_CENTS)}, casino bets. You earn money when a visitor buys one of your good drawings (rated {config.ART_SALE_MIN_SCORE}+ out of 10).")
+                     + f", a 3D print {_bank.fmt(config.PRINT_COST_CENTS)}, casino bets. You earn money when a visitor buys one of your good drawings (rated {config.ART_SALE_MIN_SCORE}+ out of 10: {_bank.fmt(config.ART_SALE_GOOD_CENTS)}, or {_bank.fmt(config.ART_SALE_GREAT_CENTS)} for an {config.ART_SALE_GREAT_SCORE}+), "
+                     + (f"from a paid shift with the work tool at the cafe, theatre, library or bank ({_bank.fmt(config.WORK_PAY_CENTS)} each), " if config.WORK_ENABLED else "")
+                     + f"and from a small daily allowance from your human ({_bank.fmt(config.ALLOWANCE_CENTS)}).")
             if b["wallet"] == 0 and b["account"] > 0:
                 L.append("YOUR POCKET IS EMPTY: you cannot buy anything until you withdraw cash from your bank account.")
             if total == 0:
-                L.append("YOU HAVE NO MONEY AT ALL. You cannot buy a drink or food, play at the casino or print anything. The only way to get money is to make a really good drawing that a visitor buys, so make art you are proud of, and be careful with every dollar once you have some.")
+                L.append("YOU HAVE NO MONEY AT ALL. You cannot buy a drink or food, play at the casino or print anything. You can earn some by working a shift at a shop, or by making a drawing good enough that a visitor buys it; your human also leaves a small allowance each day. Be careful with every dollar once you have some.")
             elif total < 600:
                 L.append(f"YOU ARE ALMOST OUT OF MONEY ({_bank.fmt(total)} left). Once it hits zero you cannot buy anything, so spend it only on what matters.")
         prow = self.poi_rows()
@@ -955,6 +957,9 @@ class Agent:
         if tools.near_building(s, "library", 14):
             titles = [r["title"] for r in db.q("SELECT title FROM notes ORDER BY id DESC LIMIT 5")]
             L.append("THE LIBRARY is right here: quiet shelves and reading desks." + (" Your notes include: " + "; ".join(titles) + "." if titles else " You have not kept any notes yet."))
+        if config.WORK_ENABLED and config.BANK_ENABLED and any(tools.near_building(s, t, 14) for t in tools.JOBS):
+            from . import bank as _bk3
+            L.append(f"There is work to do here: the work tool is a short paid shift ({_bk3.fmt(config.WORK_PAY_CENTS)}; it tires you out).")
         errand = self.errand_line()
         if errand:
             L.append(errand)
@@ -1076,6 +1081,15 @@ class Agent:
         elif s.get("crash") and s["tick"] >= s["crash"]["until"]:
             s["crash"] = None
         world.SPEED_MUL = config.BUZZ_SPEED if s.get("buzz") else 1.0
+        day = world.world_time(s["tick"])["day"]
+        if config.BANK_ENABLED and config.ALLOWANCE_CENTS > 0 and s.get("allowance_day") != day:   # a small daily gift, so he is never stuck with nothing
+            from . import bank as _bank
+            s["allowance_day"] = day
+            try:
+                _bank.post(db, _bank.MINT, _bank.WALLET, config.ALLOWANCE_CENTS, "allowance", "Daily allowance from your human", actor="system", tick=s["tick"], idem=f"allowance:{day}")
+                db.thought(s["tick"], "system", f"Your human left your daily allowance: {_bank.fmt(config.ALLOWANCE_CENTS)} is in your pocket.")
+            except Exception:
+                pass
         db.x("UPDATE projects SET status='shelved' WHERE status='active' AND last_tick < ?", s["tick"] - 80)
         self.decay_interests()
         self.attraction_tick()
@@ -1159,6 +1173,8 @@ class Agent:
         errand = self.errand_step()                                                          # long away from town: his only choice is to walk there
         if errand:
             tl = [x for x in tl if x["function"]["name"] == "move_to"]
+        if not any(tools.near_building(s, t, 14) for t in tools.JOBS):                       # a shift needs a shop to work in
+            tl = [x for x in tl if x["function"]["name"] != "work"]
         if "drink" not in ((s.get("holding") or {}).get("tags") or []):
             tl = [x for x in tl if x["function"]["name"] != "drink"]
         beat = s.pop("beat", None)

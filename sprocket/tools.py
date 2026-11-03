@@ -132,6 +132,8 @@ def _schemas(publish_enabled):
         *([_fn("library", "Use the library: shelf lists the notes you have kept, read opens one by title, write files a note (title and text: something you learned, or how to do something) "
                "for your future self. Notes stay on the shelves.",
                {"action": {"type": "string", "enum": ["shelf", "read", "write"]}, "title": {"type": "string"}, "text": {"type": "string"}}, ["action"])] if config.LIBRARY_ENABLED else []),
+        *([_fn("work", "Do a short paid shift at the shop or building you are at (cafe, movie theatre, library or bank). It tires you out but pays a little play money.", {}, [])]
+          if config.WORK_ENABLED and config.BANK_ENABLED else []),
         _fn("put_away", "Put away the item you are holding (it goes back where you found it, in your pocket).", {}, []),
         _fn("search_assets", "Search the library of 3D models you can build with (trees, tents, walls, doors, space things...). Returns names, tags and sizes.",
             {"query": {"type": "string", "description": "e.g. 'tree', 'door', 'space', or empty to browse"}}, []),
@@ -810,6 +812,37 @@ def order(ctx, a):
     if food:
         return out(True, f"You order a {name} ({bank.fmt(price)}). It is handed over fresh and you carry it.{thanks} Use the eat tool to take a bite.", v, "ThumbsUp", subject="the cafe", caption=f"Ordered a {name}")
     return out(True, f"You order a {name} ({bank.fmt(price)}). It comes in a warm cup that you carry.{thanks} Use the drink tool to sip it.", v, "ThumbsUp", subject="the cafe", caption=f"Ordered a {name}")
+
+
+JOBS = {"cafe": ("the cafe", "wipe the tables and carry the empty cups back to the counter"),
+        "cinema": ("the movie theatre", "sweep up the popcorn and tear tickets at the door"),
+        "library": ("the library", "reshelve the books left on the reading desks"),
+        "bank": ("the bank", "sort and stack the coins in the back room")}
+
+
+def work(ctx, a):
+    from . import bank
+    s, db = ctx.state, ctx.db
+    if not (config.WORK_ENABLED and config.BANK_ENABLED):
+        return out(False, "There is no work today.", noop=True)
+    tag = next((t for t in JOBS if near_building(s, t, 14)), None)
+    if not tag:
+        return out(False, "There is no job here. Cafes, the movie theatre, the library and the bank sometimes need a hand.")
+    if s["tick"] - s.get("last_work_tick", -999) < config.WORK_MIN_TICKS:
+        return out(True, "You have only just finished a shift. Take a break before the next one.", 0.0, "Idle", noop=True)
+    if s["energy"] < config.WORK_ENERGY + 10:
+        return out(False, "You are too tired for a shift. Rest or eat something first.")
+    where, task = JOBS[tag]
+    try:
+        bank.post(db, bank.MINT, bank.WALLET, config.WORK_PAY_CENTS, "wage", f"Shift at {where}", actor="system", tick=s["tick"], idem=f"otto:{s['tick']}:work")
+    except bank.BankError as e:
+        return out(False, str(e))
+    s["last_work_tick"] = s["tick"]
+    s["energy"] = max(0.0, s["energy"] - config.WORK_ENERGY)
+    s["boredom"] = max(0.0, s["boredom"] - 4)
+    db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"Worked a shift at {where} and earned {bank.fmt(config.WORK_PAY_CENTS)}.", 1)
+    return out(True, f"You work a shift at {where}: you {task}. You are paid {bank.fmt(config.WORK_PAY_CENTS)} and feel tired but useful. Pocket cash is now {bank.fmt(bank.balances(db)['wallet'])}.",
+               0.5, "ThumbsUp", subject=where, caption=f"Working at {where}")
 
 
 def drink(ctx, a):
@@ -1854,7 +1887,7 @@ async def make_art(ctx, a):
     seen = f" Looking at it, you see: {looks}." if looks else ""
     if score is not None and score >= config.ART_SALE_MIN_SCORE and config.BANK_ENABLED:             # good work sells: this is how money comes in
         from . import bank
-        cents = (score - 5) * config.ART_SALE_CENTS_PER_POINT
+        cents = config.ART_SALE_GREAT_CENTS if score >= config.ART_SALE_GREAT_SCORE else config.ART_SALE_GOOD_CENTS
         try:
             nb = bank.post(db, bank.MINT, bank.WALLET, cents, "sale", f"Sold: {title}", actor="system", tick=s["tick"], idem=f"art:{aid}:sale")
             seen += f" A gallery visitor buys it for {bank.fmt(cents)}! Your pocket cash is now {bank.fmt(bank.balances(db)['wallet'])}."
@@ -1888,7 +1921,7 @@ def publish_page(ctx, a):
 
 
 from . import affordances as _aff
-REGISTRY = {"bank": bank_tool, "gamble": gamble, "print3d": print3d, "library": library_tool, "drink": drink, "order": order, "watch": watch, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
+REGISTRY = {"bank": bank_tool, "gamble": gamble, "print3d": print3d, "library": library_tool, "drink": drink, "work": work, "order": order, "watch": watch, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
             "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')
