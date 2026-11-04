@@ -23,7 +23,7 @@ REFLECT_EVERY = 24            # ticks between reflection calls
 DOING_TOOLS = ("make_art", "make_music", "collect", "tend", "landscape", "arrange", "build", "read_page", "search_web", "wish", "gift", "design", "place_object")
 # Ideas shown to him while he stands at one of these places (keys of world.PLACES), so arriving leads to doing, not just looking.
 PLACE_IDEAS = {
-    "lake": "sketch the ripples with make_art, compose the sound of the water with make_music, tend or reshape the land by the water, or write what it makes you think of.",
+    "lake": "go for a swim with the swim tool, sketch the ripples with make_art, compose the sound of the water with make_music, tend or reshape the land by the water, or write what it makes you think of.",
     "hill": "sketch the view with make_art, compose something wide and open with make_music, tend or reshape the land up here, or read about what you can see.",
     "hill2": "sketch the view with make_art, compose something with make_music, tend or reshape the land here, or read about what you can see.",
 }
@@ -173,8 +173,8 @@ ATTRACT_DECAY = 0.96             # per tick; things placed in his world pull on 
 # =====================================================================================================
 PACE_PRESETS = {"calm": {"interval": 30, "dur": 1.5}, "normal": {"interval": 20, "dur": 1.0}, "lively": {"interval": 10, "dur": 0.6}}   # tick seconds, action-duration factor
 # extra ticks an action keeps him busy AFTER it starts (no model call while busy); scaled by the pace preset's "dur"
-DURATION_EXTRA = {"build": 2, "make_art": 2, "read_page": 1, "make_music": 1, "landscape": 1, "arrange": 1, "observe": 1, "tend": 1, "write_journal": 0, "rest": 1}
-BUSY_VERB = {"build": "working on", "make_art": "making", "read_page": "reading", "make_music": "composing", "landscape": "shaping the land with", "arrange": "arranging",
+DURATION_EXTRA = {"swim": 2, "build": 2, "make_art": 2, "read_page": 1, "make_music": 1, "landscape": 1, "arrange": 1, "observe": 1, "tend": 1, "write_journal": 0, "rest": 1}
+BUSY_VERB = {"swim": "swimming in", "build": "working on", "make_art": "making", "read_page": "reading", "make_music": "composing", "landscape": "shaping the land with", "arrange": "arranging",
              "observe": "watching", "tend": "tending", "rest": "resting"}
 WALK_MAX_TICKS = 14             # a walk continues by itself for at most this many ticks
 BURST_MAX = 4                   # after this many busy actions in a row he takes a quiet breather
@@ -294,6 +294,10 @@ ART_SALE_MIN_SCORE = 5            # a drawing rated at least this (0-10) can be 
 ART_SALE_GOOD_CENTS = 1000        # a 5-7 sells for $10
 ART_SALE_GREAT_SCORE = 8
 ART_SALE_GREAT_CENTS = 2000       # an 8-10 sells for $20
+SWIM_ENABLED = True               # a swim in the lake, when he is at the water's edge
+SWIM_MIN_TICKS = 40
+SWIM_ENERGY = 12                  # a swim tires him (more in the cold)
+SWIM_REACH = 14                   # metres from the lake spot within which the swim tool exists
 WORK_ENABLED = True               # odd jobs: a short shift at the cafe, cinema, library or bank for pay
 WORK_PAY_CENTS = 200
 WORK_ENERGY = 15                  # a shift tires him

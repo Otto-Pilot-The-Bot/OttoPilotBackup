@@ -134,6 +134,7 @@ def _schemas(publish_enabled):
                {"action": {"type": "string", "enum": ["shelf", "read", "write"]}, "title": {"type": "string"}, "text": {"type": "string"}}, ["action"])] if config.LIBRARY_ENABLED else []),
         *([_fn("work", "Do a short paid shift at the shop or building you are at (cafe, movie theatre, library or bank). It tires you out but pays a little play money.", {}, [])]
           if config.WORK_ENABLED and config.BANK_ENABLED else []),
+        *([_fn("swim", "Go for a swim in the lake (only when you are at the water's edge). It tires you out, but it is refreshing and fun.", {}, [])] if config.SWIM_ENABLED else []),
         _fn("put_away", "Put away the item you are holding (it goes back where you found it, in your pocket).", {}, []),
         _fn("search_assets", "Search the library of 3D models you can build with (trees, tents, walls, doors, space things...). Returns names, tags and sizes.",
             {"query": {"type": "string", "description": "e.g. 'tree', 'door', 'space', or empty to browse"}}, []),
@@ -843,6 +844,42 @@ def work(ctx, a):
     db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"Worked a shift at {where} and earned {bank.fmt(config.WORK_PAY_CENTS)}.", 1)
     return out(True, f"You work a shift at {where}: you {task}. You are paid {bank.fmt(config.WORK_PAY_CENTS)} and feel tired but useful. Pocket cash is now {bank.fmt(bank.balances(db)['wallet'])}.",
                0.5, "ThumbsUp", subject=where, caption=f"Working at {where}")
+
+
+def near_lake(state, r=None):
+    p = world.PLACES.get("lake")
+    return bool(p) and dist(state["x"], state["z"], p["x"], p["z"]) <= (r or config.SWIM_REACH)
+
+
+def swim(ctx, a):
+    s, db = ctx.state, ctx.db
+    if not config.SWIM_ENABLED:
+        return out(False, "The lake is not for swimming today.", noop=True)
+    p = world.PLACES.get("lake")
+    if not p or not near_lake(s):
+        return out(False, "There is no water to swim in here. The lake is the place for that.")
+    if s["tick"] - s.get("last_swim_tick", -999) < config.SWIM_MIN_TICKS:
+        return out(True, "You have only just got out of the water. Dry off and do something else for a while.", 0.0, "Idle", noop=True)
+    if dist(s["x"], s["z"], p["x"], p["z"]) > 3:                                    # walk down to the water's edge first
+        nx, nz, arrived = world.step_toward(s["x"], s["z"], p["x"], p["z"])
+        s["x"], s["z"] = nx, nz
+        s["path"] = [[round(q, 1), round(r, 1)] for q, r in world.LAST_PATH][:40]
+        if dist(s["x"], s["z"], p["x"], p["z"]) > 3:
+            return out(True, f"You walk down to the water's edge to swim; {dist(s['x'], s['z'], p['x'], p['z']):.0f} units left. Keep going.", 0.0, "Walking", moved=True, caption="Walking to the water to swim")
+    if s["energy"] < config.SWIM_ENERGY + 10:
+        return out(False, "You are too tired to swim. Rest or eat something first.")
+    season = kit.season_now()
+    cold = season == "winter"
+    s["last_swim_tick"] = s["tick"]
+    s["energy"] = max(0.0, s["energy"] - config.SWIM_ENERGY * (1.5 if cold else 1.0))
+    s["boredom"] = max(0.0, s["boredom"] - 30)
+    _boost(ctx, "creativity", 6)
+    wt = world.world_time(s["tick"])
+    feel = "The water is icy: it takes your breath away, and you are glad to climb out." if cold else         "The water is cool and bright. You float, kick about and watch the sky wobble above you." if wt["phase"] in ("day", "dawn") else         "The water is dark and quiet; the lights and the sky are doubled in it as you drift."
+    ctx.touch_interest("swimming", 0.8, "swam in the lake")
+    db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"Went for a swim in the lake. {feel}"[:220], 2)
+    v = _maker_valence(ctx, "swim", 0.6) if not cold else 0.1
+    return out(True, f"You wade into the lake and swim. {feel} {_feel_text(v)}", v, "Jump", subject="the lake", caption="Swimming in the lake", cat="rest")
 
 
 def drink(ctx, a):
@@ -1939,7 +1976,7 @@ def publish_page(ctx, a):
 
 
 from . import affordances as _aff
-REGISTRY = {"bank": bank_tool, "gamble": gamble, "print3d": print3d, "library": library_tool, "drink": drink, "work": work, "order": order, "watch": watch, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
+REGISTRY = {"bank": bank_tool, "gamble": gamble, "print3d": print3d, "library": library_tool, "drink": drink, "swim": swim, "work": work, "order": order, "watch": watch, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
             "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')

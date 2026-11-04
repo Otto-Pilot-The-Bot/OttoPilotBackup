@@ -587,7 +587,7 @@ class Agent:
         hid = db.one("SELECT id FROM hobbies WHERE name=?", name[:40])["id"]
         db.x("INSERT INTO hobby_entries(ts,tick,hobby_id,text) VALUES(?,?,?,?)", time.time(), self.state["tick"], hid, str(text)[:300])
 
-    TOOL_CAT = {"bank": "explore", "gamble": "explore", "watch": "explore", "work": "explore", "move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
+    TOOL_CAT = {"bank": "explore", "gamble": "explore", "watch": "explore", "work": "explore", "swim": "rest", "move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
                 "publish_page": "write", "make_art": "art", "make_music": "music", "landscape": "garden", "wish": "socialize", "arrange": "organize", "ponder": "reflect", "gift": "socialize", "tend": "garden", "collect": "collect", "observe": "observe",
                 "build": "build", "rest": "rest", "eat": "rest"}
 
@@ -957,6 +957,8 @@ class Agent:
         if tools.near_building(s, "library", 14):
             titles = [r["title"] for r in db.q("SELECT title FROM notes ORDER BY id DESC LIMIT 5")]
             L.append("THE LIBRARY is right here: quiet shelves and reading desks." + (" Your notes include: " + "; ".join(titles) + "." if titles else " You have not kept any notes yet."))
+        if config.SWIM_ENABLED and tools.near_lake(s):
+            L.append("THE LAKE is right here, and you can go for a swim in it (the swim tool; it tires you out).")
         if config.WORK_ENABLED and config.BANK_ENABLED and any(tools.near_building(s, t, 14) for t in tools.JOBS):
             from . import bank as _bk3
             L.append(f"There is work to do here: the work tool is a short paid shift ({_bk3.fmt(config.WORK_PAY_CENTS)}; it tires you out).")
@@ -1178,6 +1180,8 @@ class Agent:
         errand = self.errand_step()                                                          # long away from town: his only choice is to walk there
         if errand:
             tl = [x for x in tl if x["function"]["name"] == "move_to"]
+        if not tools.near_lake(s):                                                           # swimming needs the water's edge
+            tl = [x for x in tl if x["function"]["name"] != "swim"]
         if not any(tools.near_building(s, t, 14) for t in tools.JOBS):                       # a shift needs a shop to work in
             tl = [x for x in tl if x["function"]["name"] != "work"]
         if "drink" not in ((s.get("holding") or {}).get("tags") or []):
