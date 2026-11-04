@@ -54,14 +54,14 @@ async function draw(piece) {
 }
 
 export class ArtStore {
-  constructor(send) { this.send = send; this.meta = new Map(); this.canvas = new Map(); this.thumbs = new Map(); this.asked = new Set(); this.listeners = []; this.chain = Promise.resolve(); }
+  constructor(send) { this.send = send; this.meta = new Map(); this.canvas = new Map(); this.thumbs = new Map(); this.asked = new Map(); this.done = new Set(); this.listeners = []; this.chain = Promise.resolve(); }
   onChange(cb) { this.listeners.push(cb); }
   update(list) {
-    const want = [];
+    const want = [], now = Date.now();
     for (const a of list) {
       this.meta.set(a.id, a);
-      if (a.status === 'broken') continue;
-      if (!this.asked.has(a.id)) { this.asked.add(a.id); want.push(a.id); }
+      if (a.status === 'broken' || this.done.has(a.id)) continue;
+      if (!this.asked.has(a.id) || now - this.asked.get(a.id) > 20000) { this.asked.set(a.id, now); want.push(a.id); }   // asked again if the answer never came (e.g. the server restarted meanwhile)
     }
     for (let i = 0; i < want.length; i += 12) this.send({ type: 'get_art', ids: want.slice(i, i + 12) });
   }
@@ -69,6 +69,7 @@ export class ArtStore {
     this.chain = this.chain.then(async () => {
       try {
         const c = await draw(msg);
+        this.done.add(msg.id);
         if (c) { this.canvas.set(msg.id, c); this.thumbs.set(msg.id, c.toDataURL('image/png')); }
         this.listeners.forEach((cb) => cb());
       } catch (err) {
