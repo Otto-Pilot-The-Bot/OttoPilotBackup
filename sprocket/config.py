@@ -331,3 +331,18 @@ LIBRARY_ENABLED = True
 LIBRARY_NOTE_MAX = 1200
 LIBRARY_MAX_NOTES = 200
 BANK_MAX_TXN_CENTS = 1_000_000     # no single move above $10,000.00
+
+# ---- drawing variety (nobody tells him what to draw: he is shown his own habits, and the market reacts) ----
+ART_HABIT_WINDOW = 12            # "your last N drawings..." line
+ART_REPEAT_STEP = 0.2            # each earlier similar drawing (among the last ART_REPEAT_LOOKBACK) takes this much off a sale price
+ART_REPEAT_FLOOR = 0.3           # but never below this share
+ART_REPEAT_LOOKBACK = 40
+STUDY_ENABLED = True             # copy a picture his human gave him, then compare: practice with a real answer key
+STUDY_MIN_TICKS = 25
+STUDY_ENERGY = 6
+STUDY_MAX_TRIES = 2
+
+# ---- the Internet Cafe: the web (search, reading pages, writing for his site) only works from there ----
+NET_CAFE_ENABLED = True
+NET_FEE_CENTS = 50               # a session at a computer
+NET_SESSION_TICKS = 20           # and how long it lasts

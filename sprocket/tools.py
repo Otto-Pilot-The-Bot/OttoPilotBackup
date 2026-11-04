@@ -134,6 +134,9 @@ def _schemas(publish_enabled):
                {"action": {"type": "string", "enum": ["shelf", "read", "write"]}, "title": {"type": "string"}, "text": {"type": "string"}}, ["action"])] if config.LIBRARY_ENABLED else []),
         *([_fn("work", "Do a short paid shift at the shop or building you are at (cafe, movie theatre, library or bank). It tires you out but pays a little play money.", {}, [])]
           if config.WORK_ENABLED and config.BANK_ENABLED else []),
+        *([_fn("study", "Practise drawing by copying a picture your human gave you. Call it with no content to look closely at one (you get a description), then call it again with content "
+               "(an <svg viewBox=\"0 0 100 100\"> ... </svg> copy of it). The copy is compared with the real picture and you see how close it was; you may try once more.",
+               {"content": {"type": "string"}, "name": {"type": "string", "description": "optional: which picture gift"}}, [])] if config.STUDY_ENABLED else []),
         *([_fn("swim", "Go for a swim in the lake (only when you are at the water's edge). It tires you out, but it is refreshing and fun.", {}, [])] if config.SWIM_ENABLED else []),
         _fn("put_away", "Put away the item you are holding (it goes back where you found it, in your pocket).", {}, []),
         _fn("search_assets", "Search the library of 3D models you can build with (trees, tents, walls, doors, space things...). Returns names, tags and sizes.",
@@ -1853,7 +1856,7 @@ async def make_art(ctx, a):
         return out(False, "Give your artwork a title.")
     if not str(a.get("content") or "").strip() and str(a.get("kind")).lower() == "drawing" and artlook.available():
         return out(True, "You look at what is in front of you and rough it out as a starting sketch:\n" + artlook.view_sketch(ctx) +
-                   "\nIt is only a start. Make your own version (add detail, change the colours, take things away) and call make_art again with your content." + artlook.noticed(db), 0.05, "Idle", cat="observe")
+                   "\nIt is only a start. Make your own version (add detail, change the colours, take things away) and call make_art again with your content." + artlook.noticed(db) + artlook.habit(db) + artlook.lived(db), 0.05, "Idle", cat="observe")
     if s["tick"] - s.get("last_art_tick", -999) < config.MIN_TICKS_BETWEEN_ART:
         return out(True, "You just made a piece and want to let it breathe. Look around, learn something, or take a walk before the next one.", 0.0, "Idle", noop=True)
     if str(a.get("kind")).lower() == "sculpture" and not config.BUILDING_ENABLED:
@@ -1943,9 +1946,11 @@ async def make_art(ctx, a):
     if score is not None and score >= config.ART_SALE_MIN_SCORE and config.BANK_ENABLED:             # good work sells: this is how money comes in
         from . import bank
         cents = config.ART_SALE_GREAT_CENTS if score >= config.ART_SALE_GREAT_SCORE else config.ART_SALE_GOOD_CENTS
+        reps = artlook.repeat_count(db, title, exclude_id=aid) if kind == "drawing" else 0
+        cents = max(100, int(round(cents * artlook.price_factor(reps) / 50.0)) * 50)    # a subject seen many times fetches less; always a multiple of 50c
         try:
             nb = bank.post(db, bank.MINT, bank.WALLET, cents, "sale", f"Sold: {title}", actor="system", tick=s["tick"], idem=f"art:{aid}:sale")
-            seen += f" A gallery visitor buys it for {bank.fmt(cents)}! Your pocket cash is now {bank.fmt(bank.balances(db)['wallet'])}."
+            seen += (" Visitors have seen several like it, so it fetches less." if reps >= 2 else "") + f" A gallery visitor buys it for {bank.fmt(cents)}! Your pocket cash is now {bank.fmt(bank.balances(db)['wallet'])}."
         except bank.BankError:
             pass
     return out(True, f"You made \"{title}\" ({kind}). {where}{seen} {_feel_text(v)}", v, "Dance" if v > 1.2 else "ThumbsUp",
@@ -1975,9 +1980,106 @@ def publish_page(ctx, a):
                0.3, "Idle", subject="writing", pages=True)
 
 
+def _net_gate(ctx):
+    """The web only works from a computer at the Internet Cafe (when the human has placed one). -> (blocking result or None, note about the session fee)."""
+    s, db = ctx.state, ctx.db
+    if not config.NET_CAFE_ENABLED or not _tagged_spot(s, "internetcafe"):
+        return None, ""
+    if not near_building(s, "internetcafe", 14):
+        return out(False, "You cannot get online from here. The web only works on the computers at the Internet Cafe: walk there first.", -0.02, noop=True), ""
+    if s["tick"] <= s.get("net_until", -1):
+        return None, ""
+    note = ""
+    if config.BANK_ENABLED and config.NET_FEE_CENTS > 0:
+        from . import bank
+        try:
+            bank.post(db, bank.WALLET, bank.MINT, config.NET_FEE_CENTS, "net", "Internet Cafe session", actor="otto", tick=s["tick"], idem=f"otto:{s['tick']}:net")
+            note = f"You sit at a computer and pay {bank.fmt(config.NET_FEE_CENTS)} for a session."
+        except bank.BankError:
+            return out(True, f"A session at a computer costs {bank.fmt(config.NET_FEE_CENTS)} and your pocket cash is {bank.fmt(bank.balances(db)['wallet'])}. Do a shift with the work tool first.", 0.0, "Idle", noop=True), ""
+    s["net_until"] = s["tick"] + config.NET_SESSION_TICKS
+    return None, note
+
+
+def _netted(fn):
+    async def wrapped(ctx, a):
+        blocked, note = _net_gate(ctx)
+        if blocked:
+            return blocked
+        r = fn(ctx, a)
+        if asyncio.iscoroutine(r):
+            r = await r
+        if note and r.get("ok"):
+            r["result"] = note + " " + r["result"]
+        return r
+    return wrapped
+
+
+async def study(ctx, a):
+    s, db = ctx.state, ctx.db
+    if not (config.STUDY_ENABLED and artlook.available()):
+        return out(False, "There is nothing to study with right now.", noop=True)
+    st = s.get("study")
+    if st and s["tick"] - st["tick"] > 60:
+        st = s["study"] = None
+    if not st and s["tick"] - s.get("last_study_tick", -999) < config.STUDY_MIN_TICKS:
+        return out(True, "You have only just finished practising. Let it sink in; do something else for a while.", 0.0, "Idle", noop=True)
+    if s["energy"] < config.STUDY_ENERGY + 10:
+        return out(False, "You are too tired to concentrate on copying. Rest first.", noop=True)
+    content = str(a.get("content") or "").strip()
+    g = db.one("SELECT * FROM gifts WHERE id=? AND kind='picture'", st["gift"]) if st else artlook.study_gift(db, a.get("name"))
+    if not g:
+        return out(False, "Nobody has left you a picture to practise with yet.", noop=True)
+    try:
+        data = (gifts.GIFT_DIR / g["file"]).read_bytes()
+    except OSError:
+        return out(False, "That picture cannot be opened any more.", noop=True)
+    if not st:
+        desc = await artlook.describe_ref(ctx, data)
+        st = s["study"] = {"gift": g["id"], "tick": s["tick"], "tries": 0, "first": None, "desc": desc}
+        if not content:
+            return out(True, f"You look closely at a picture your human left you. What you see: {desc or 'a picture, hard to describe'}\n"
+                             "Now copy it as a flat drawing: call study again with content (an <svg viewBox=\"0 0 100 100\">...</svg>). It will be compared with the real picture.",
+                       0.1, "Idle", cat="art", subject="practising drawing")
+    if not content:
+        return out(True, f"You still have the picture in front of you: {st.get('desc') or 'a picture'}\nCall study with content (your <svg> copy).", 0.0, "Idle", noop=True)
+    try:
+        mode, svg, _ = artcheck.check_art("drawing", content)
+    except artcheck.ArtError as e:
+        return out(False, f"That copy could not be drawn: {e}. Try again.", -0.05)
+    if mode != "svg":
+        return out(False, "Copy it as an <svg> drawing.", -0.05)
+    png = artlook.render(svg)
+    cmp = await artlook.compare_ref(ctx, data, png) if png else None
+    if not cmp:
+        return out(False, "You could not tell how close the copy is. Try again in a moment.", noop=True)
+    st["tries"] += 1
+    if st["first"] is None:
+        st["first"] = (cmp["score"], cmp["miss"])
+    s["energy"] = max(0.0, s["energy"] - config.STUDY_ENERGY)
+    if cmp["score"] < 7 and st["tries"] < config.STUDY_MAX_TRIES:
+        return out(True, f"You hold your copy beside the picture: about {cmp['score']}/10 close. What it is missing: {cmp['miss']}. You can try once more (study with new content).",
+                   0.05, "Idle", cat="art", subject="practising drawing")
+    rf = await artlook.reflect_study(ctx, st["first"], (cmp["score"], cmp["miss"]), st["tries"], data, png)
+    learned = ""
+    if rf:
+        artlook.save_lesson(db, s["tick"], "study", rf[0], rf[1])
+        db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"A note to myself about drawing: {rf[0]}"[:220], 2)
+        learned = f" You make a note to yourself: {rf[0]}"
+    db.x("INSERT INTO art_studies(ts,tick,gift_id,first_score,score,tries,miss) VALUES(?,?,?,?,?,?,?)", time.time(), s["tick"], g["id"], st["first"][0], cmp["score"], st["tries"], cmp["miss"])
+    s["study"] = None
+    s["last_study_tick"] = s["tick"]
+    s["boredom"] = max(0.0, s["boredom"] - 12)
+    _boost(ctx, "creativity", 10)
+    ctx.learn("practising drawing", 0.5)
+    v = 0.3 + 0.07 * cmp["score"]
+    return out(True, f"You finish copying the picture: your copy is about {cmp['score']}/10 close (first try {st['first'][0]}/10).{learned}", v, "ThumbsUp" if cmp["score"] >= 6 else "Idle",
+               subject="practising drawing", cat="art", caption="Practising drawing")
+
+
 from . import affordances as _aff
-REGISTRY = {"bank": bank_tool, "gamble": gamble, "print3d": print3d, "library": library_tool, "drink": drink, "swim": swim, "work": work, "order": order, "watch": watch, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "search_web": search_web, "read_page": read_page, "write_journal": write_journal,
-            "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": publish_page}
+REGISTRY = {"bank": bank_tool, "gamble": gamble, "print3d": print3d, "library": library_tool, "drink": drink, "swim": swim, "work": work, "order": order, "watch": watch, "put_away": put_away, "use": _aff.use, "wish": wish, "ponder": ponder, "move_to": move_to, "eat": eat, "rest": rest, "study": study, "search_web": _netted(search_web), "read_page": _netted(read_page), "write_journal": write_journal,
+            "interact_with": interact_with, "shop": shop, "search_assets": search_assets, "build": build, "landscape": landscape, "arrange": arrange, "gift": gift, "make_art": make_art, "observe": observe, "make_music": make_music, "tend": tend, "collect": collect, "publish_page": _netted(publish_page)}
 
 _ARG = re.compile(r'(\w+)\s*[:=]\s*(?:"((?:[^"\\]|\\.)*)"|\'([^\']*)\'|(-?\d+(?:\.\d+)?)\b|([A-Za-z_][\w\-]*))')
 

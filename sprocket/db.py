@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS wishes(id INTEGER PRIMARY KEY, ts REAL, tick INT, ite
 CREATE TABLE IF NOT EXISTS prints(id INTEGER PRIMARY KEY, ts REAL, tick INT, title TEXT, prompt TEXT, status TEXT, file TEXT, preview TEXT, tris INT, size TEXT,
   cost_cents INT, error TEXT, obj_id INT, approved_ts REAL);
 CREATE TABLE IF NOT EXISTS art_lessons(id INTEGER PRIMARY KEY, ts REAL, tick INT, title TEXT, lesson TEXT, gain INT DEFAULT 0);
+CREATE TABLE IF NOT EXISTS art_studies(id INTEGER PRIMARY KEY, ts REAL, tick INT, gift_id INT, first_score INT, score INT, tries INT, miss TEXT);
 CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY, ts REAL, tick INT, title TEXT UNIQUE, body TEXT);
 CREATE TABLE IF NOT EXISTS controls(id INTEGER PRIMARY KEY, ts REAL, what TEXT);
 """

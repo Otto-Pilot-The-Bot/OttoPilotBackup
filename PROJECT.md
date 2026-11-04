@@ -58,13 +58,18 @@ Goal from Dru: he must actually learn to draw better without being told how.
 5. Later (Dru said "we will do 3 after"): a practice/study mode where he draws a real render of the scene and gets an objective comparison score, still with no "do X" advice.
 Config: `ART_LEARN`, `ART_REVIEW`, `ART_REVISIONS`, `ART_MIN_MATCH`, `ART_MARKER_STYLE`.
 
+## Drawing variety, study and Internet Cafe (added after the first handoff)
+- Drawing variety: `artlook.habit` (his recent repeated subjects, shown as a fact), `repeat_count`/`price_factor` (repeats sell for less, floor 30%), `lived` (his own recent memories, shown with the starting sketch), more sketch icons.
+- `study` tool: copies a picture gift, engine compares copy with the real picture (`artlook.compare_ref`), lesson saved to `art_lessons`; table `art_studies`. Hidden until Dru gifts a picture.
+- Internet Cafe: `search_web`, `read_page`, `publish_page` only work near a building tagged `internetcafe` (`tools._net_gate`, fee `NET_FEE_CENTS` per `NET_SESSION_TICKS`); if no such building is placed, the web works everywhere.
+
 ## Open items / backlog
 - Dru creates a backup GitHub repo; then add remote and push when told. Back up `data/` and the large model files separately.
 - Place the 3D Print Farm model in the map editor; Dru adds `TRIPO_API_KEY` to `.env`; test the Tripo adapter for real.
 - Notion: the "Movie Theatre works" line is stale (says eight films / three showing; now nine films, one each of horror/comedy/action) and recent work is not all recorded (hotel shrink, work/allowance, art-learning). Dru once rejected a Notion edit attempt: offer before editing.
 - He is "focused on the hills" per Dru: stats showed hills ~13% of arrivals; likely cause is that lake/hills are the only scenery he is handed for drawing, plus prompt nudges naming the hill. Waiting for Dru to say what they see before changing prompts.
 - Observed oddities: he sometimes calls a non-existent `browse` tool at shops; Otto's battery was nearly empty at one check; Casino/House have see-through BLEND materials (offered to patch).
-- Backlog (on Notion): clock tower and sense of time, venue system for more food places, duck conversion, night routine/sleeping (interiors much later), real Internet Cafe function (web search only there), Sketchbook as a real sketchbook, automatic daily DB backup (sqlite3 backup API), Mac mirroring.
+- Backlog (on Notion): clock tower and sense of time, venue system for more food places, duck conversion, night routine/sleeping (interiors much later), Sketchbook as a real sketchbook, automatic daily DB backup (sqlite3 backup API), Mac mirroring.
 
 ## Gotchas learned the hard way
 - Editor raycasts need `updateMatrixWorld(true)` first. Map padding must use `maps.H_ZERO` chars, not ints.
@@ -72,7 +77,7 @@ Config: `ART_LEARN`, `ART_REVIEW`, `ART_REVISIONS`, `ART_MIN_MATCH`, `ART_MARKER
 - In Python heredocs, `\n` inside f-strings can turn into real newlines when text is generated through a non-raw string: always `py_compile` after editing.
 - Building exports from Blender: the whole scene can get exported instead of one object; check triangle counts. Heavy models: ASSET_LIMITS 150 MB / 3M tris; textures were shrunk to 1K for the hotel.
 - `art` rows for marker-style drawings have `mode='image'` (JPEG data URL); the original SVG is in `source`.
-- Commits end with the Claude co-author line given by the harness; the current commit chain is local only (latest known: `ad6a2b3` income; art-learning work after it may be uncommitted: run `git status`).
+- Commits end with the Claude co-author line given by the harness; backup remote is `origin` (OttoPilotBackup); push only when Dru says so. Run `git log` for the latest commit.
 
 ## Memory files (Claude auto-memory, per account)
 `C:\Users\Dru\.claude\projects\D--Git-Projects-OTTO-PILOT-BOT-OTTO-PILOT\memory\` holds the Notion and server preferences. A different account will not have them; this file replaces them.

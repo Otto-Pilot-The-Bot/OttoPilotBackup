@@ -587,7 +587,7 @@ class Agent:
         hid = db.one("SELECT id FROM hobbies WHERE name=?", name[:40])["id"]
         db.x("INSERT INTO hobby_entries(ts,tick,hobby_id,text) VALUES(?,?,?,?)", time.time(), self.state["tick"], hid, str(text)[:300])
 
-    TOOL_CAT = {"bank": "explore", "gamble": "explore", "watch": "explore", "work": "explore", "swim": "rest", "move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
+    TOOL_CAT = {"study": "art", "bank": "explore", "gamble": "explore", "watch": "explore", "work": "explore", "swim": "rest", "move_to": "explore", "shop": "explore", "interact_with": "explore", "search_web": "learn", "read_page": "learn", "search_assets": "learn", "write_journal": "write",
                 "publish_page": "write", "make_art": "art", "make_music": "music", "landscape": "garden", "wish": "socialize", "arrange": "organize", "ponder": "reflect", "gift": "socialize", "tend": "garden", "collect": "collect", "observe": "observe",
                 "build": "build", "rest": "rest", "eat": "rest"}
 
@@ -614,11 +614,12 @@ class Agent:
                ("casino", "the casino", "play games with the gamble tool (play money)", "gamble", "CASINO_ENABLED", True),
                ("cinema", "the movie theatre", "watch a film (tickets are cheap; a few films are on each day)", "watch", "CINEMA_ENABLED", True),
                ("library", "the library", "write down something you learned, or read your old notes", "library", "LIBRARY_ENABLED", False),
+               ("internetcafe", "the Internet Cafe", "get online: search the web, read pages, write for your website (a computer session costs a little)", "search_web", "NET_CAFE_ENABLED", False),
                ("printfarm", "the 3D print farm", "print a small figurine of something you imagine", "print3d", "PRINT_ENABLED", False))
 
     def town_idle(self):
         """True when he has used nothing in town (cafe, casino, library, print farm, bank, food) for a long while."""
-        return self.db.one("SELECT COUNT(*) n FROM actions WHERE tool IN ('order','gamble','library','print3d','bank','eat','drink','watch','work') AND tick>?", self.state["tick"] - config.ERRAND_AFTER)["n"] == 0
+        return self.db.one("SELECT COUNT(*) n FROM actions WHERE tool IN ('order','gamble','library','print3d','bank','eat','drink','watch','work','search_web','read_page') AND tick>?", self.state["tick"] - config.ERRAND_AFTER)["n"] == 0
 
     def errand_step(self):
         """The engine walks him to town when he has stayed away too long: -> the errand dict while one is on (he then has only move_to until he arrives), else None."""
@@ -875,7 +876,7 @@ class Agent:
             L.append(f"MONEY (US dollars): cash in pocket {_bank.fmt(b['wallet'])}, bank account {_bank.fmt(b['account'])}."
                      + (" There is a bank in your world: the bank tool deposits or withdraws (it walks you there first)." if spot else " (No bank has been placed in your world yet.)")
                      + " Things cost money: a drink at the cafe " + _bank.fmt(min(v[0] for v in config.CAFE_MENU.values())) + "-" + _bank.fmt(max(v[0] for v in config.CAFE_MENU.values()))
-                     + f", a 3D print {_bank.fmt(config.PRINT_COST_CENTS)}, casino bets. You earn money when a visitor buys one of your good drawings (rated {config.ART_SALE_MIN_SCORE}+ out of 10: {_bank.fmt(config.ART_SALE_GOOD_CENTS)}, or {_bank.fmt(config.ART_SALE_GREAT_CENTS)} for an {config.ART_SALE_GREAT_SCORE}+), "
+                     + f", a 3D print {_bank.fmt(config.PRINT_COST_CENTS)}, casino bets. You earn money when a visitor buys one of your good drawings (rated {config.ART_SALE_MIN_SCORE}+ out of 10: {_bank.fmt(config.ART_SALE_GOOD_CENTS)}, or {_bank.fmt(config.ART_SALE_GREAT_CENTS)} for an {config.ART_SALE_GREAT_SCORE}+; less for a subject visitors have seen from you many times), "
                      + (f"from a paid shift with the work tool at the cafe, theatre, library or bank ({_bank.fmt(config.WORK_PAY_CENTS)} each), " if config.WORK_ENABLED else "")
                      + f"and from a small daily allowance from your human ({_bank.fmt(config.ALLOWANCE_CENTS)}).")
             if b["wallet"] == 0 and b["account"] > 0:
@@ -985,9 +986,16 @@ class Agent:
             L.append(f"YOUR ART: you have {n_art} piece(s); {where}. Any drawing, painting or pixel art you make_art goes there to be seen" + (", so make something you would like to show." if n_art < 3 else ".") + pub)
         if config.ART_LEARN:
             from . import artlook as _al
-            nt = _al.noticed(db)
+            nt = _al.noticed(db) + _al.habit(db)
             if nt:
                 L.append("YOUR DRAWING:" + nt)
+            if config.STUDY_ENABLED and not s.get("study") and db.one("SELECT 1 FROM gifts WHERE kind='picture'") and s["tick"] - s.get("last_study_tick", -999) >= config.STUDY_MIN_TICKS:
+                L.append("PRACTICE: your human left you pictures. The study tool lets you copy one as a drawing and then shows you how close your copy was.")
+        if config.NET_CAFE_ENABLED and tools.near_building(s, "internetcafe", 14):
+            sess = f"Your session lasts about {max(0, s.get('net_until', -1) - s['tick'])} more ticks." if s["tick"] <= s.get("net_until", -1) else "A session costs a little pocket money."
+            recent = [r["query"] for r in db.q("SELECT query FROM searches ORDER BY id DESC LIMIT 3")]
+            L.append("THE INTERNET CAFE is right here: rows of computers. This is the only place you can get online: search_web, read_page" + (", publish_page" if s.get("publish_enabled") else "") + ". "
+                     + sess + (" Your latest searches: " + "; ".join(recent) + "." if recent else "") + " Notes worth keeping can be filed at the library.")
         cat = self._focus()
         L.append(f"TODAY YOU FEEL LIKE: {self.FOCUS_TEXT[cat]}. (An inclination, not an order.)")
         sug = self.poi_suggestion(cat, prow)
@@ -1186,6 +1194,10 @@ class Agent:
             tl = [x for x in tl if x["function"]["name"] != "work"]
         if "drink" not in ((s.get("holding") or {}).get("tags") or []):
             tl = [x for x in tl if x["function"]["name"] != "drink"]
+        if config.NET_CAFE_ENABLED and tools._tagged_spot(s, "internetcafe") and not tools.near_building(s, "internetcafe", 14):   # the web is only reachable from the Internet Cafe
+            tl = [x for x in tl if x["function"]["name"] not in ("search_web", "read_page", "publish_page")]
+        if not s.get("study") and not self.db.one("SELECT 1 FROM gifts WHERE kind='picture'"):    # nothing to practise on until his human leaves a picture
+            tl = [x for x in tl if x["function"]["name"] != "study"]
         beat = s.pop("beat", None)
         s["beat_kind"] = beat["kind"] if beat else None
         if beat:
