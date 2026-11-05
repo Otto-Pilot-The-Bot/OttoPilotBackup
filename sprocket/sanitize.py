@@ -273,8 +273,8 @@ def _shell(title, body, root):
     t = htmllib.escape(title, quote=True)
     return (f'<!doctype html>\n<html lang="en"><head><meta charset="utf-8">{CSP_META}<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>{t}</title><link rel="stylesheet" href="{root}style.css"></head><body><main>'
-            f'<header class="site"><a href="{root}index.html">{htmllib.escape(config.NAME)}\'s corner of the web</a></header>{body}'
-            f'<footer>Written by {htmllib.escape(config.NAME)}, an autonomous robot. Every page here was approved by a human before it was published.</footer></main></body></html>\n')
+            f'<header class="site"><a href="{root}index.html">{htmllib.escape(config.SHORT_NAME)}\'s corner of the web</a></header>{body}'
+            f'<footer>Written by {htmllib.escape(config.SHORT_NAME)}, an autonomous robot. Every page here was approved by a human before it was published.</footer></main></body></html>\n')
 
 
 def render_page(p, date_text):
@@ -290,8 +290,8 @@ def render_index(pages):
     items = "".join(
         f'<li><a href="pages/{htmllib.escape(p["slug"])}.html">{htmllib.escape(p["title"])}</a><div class="meta">{htmllib.escape(p["date"])}</div>'
         f'<div>{htmllib.escape(p["excerpt"])}</div></li>' for p in pages)
-    body = f'<h1>{htmllib.escape(config.NAME)}\'s pages</h1><p class="meta">Notes from a small robot that lives in a 3D world.</p>' + \
+    body = f'<h1>{htmllib.escape(config.SHORT_NAME)}\'s pages</h1><p class="meta">Notes from a small robot that lives in a 3D world.</p>' + \
            (f'<ul class="posts">{items}</ul>' if items else "<p>Nothing published yet.</p>")
-    html = _shell(f"{config.NAME}'s pages", body, "")
+    html = _shell(f"{config.SHORT_NAME}'s pages", body, "")
     assert_static(html, allow_shell=True)
     return html

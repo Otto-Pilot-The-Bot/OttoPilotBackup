@@ -982,7 +982,11 @@ class Agent:
             from . import maps as _maps
             panels = [o for o in (_maps.ACTIVE["doc"] or {"objects": []})["objects"] if o.get("panel") and not o["panel"].get("gift_id")] if config.MAPS_ENABLED else []
             where = (f"your {len(panels)} art panel(s) in the gallery show your newest pictures" if panels else "there is no art wall in your world yet, so you could wish for a gallery wall or art panels")
-            pub = " You can also write a page about it for your own website (publish_page); your human approves it before it goes online." if s.get("publish_enabled") else ""
+            pub = ""
+            if s.get("publish_enabled"):
+                pn = db.one("SELECT SUM(status='published') a, SUM(status='pending') b FROM pages")
+                pub = (f" You have your own website: {pn['a'] or 0} page(s) online, {pn['b'] or 0} waiting for your human's approval, and you have made {n_art} piece(s) of art. "
+                       "Your human reads it and approves each page before it goes online. A page is text only (publish_page, from the Internet Cafe), so it can tell the story of a drawing: what it is, why you made it, how it went.")
             L.append(f"YOUR ART: you have {n_art} piece(s); {where}. Any drawing, painting or pixel art you make_art goes there to be seen" + (", so make something you would like to show." if n_art < 3 else ".") + pub)
         if config.ART_LEARN:
             from . import artlook as _al
