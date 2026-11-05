@@ -1425,7 +1425,7 @@ async def gift(ctx, a):
     if action == "look":
         info = await ctx.gift_reaction(g)
         feeling = info["feeling"] if info.get("feeling") in world.FEELINGS else "happy"
-        db.x("UPDATE gifts SET looked=1, reaction=? WHERE id=?", info["reaction"][:400], g["id"])
+        db.x("UPDATE gifts SET looked=1, reaction=?, status=CASE WHEN status='new' THEN 'seen' ELSE status END WHERE id=?", info["reaction"][:400], g["id"])
         db.x("INSERT INTO journal(ts,tick,kind,text,mood) VALUES(?,?,?,?,?)", time.time(), s["tick"], "gift", f"A gift from my human, \"{g['name']}\": {info['description']} {info['reaction']}"[:900], feeling)
         db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"My human gave me \"{g['name']}\". {info['reaction']}"[:240], 4)
         for t in info.get("topics", [])[:2]:

@@ -2,37 +2,42 @@
 // Nothing here touches Otto, his map, his database or his world.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createRealism } from './realism.js';
+import { buildDesign, setBright } from './models.js';
 
 const $ = (id) => document.getElementById(id);
 const LS_LAYOUTS = 'ottoSandbox:layouts', LS_CURRENT = 'ottoSandbox:current';
 const HALF = 60;                                   // the ground is 120 m across
 
-// ---------------------------------------------------------------- scene
+// ---------------------------------------------------------------- scene: the same sky, light, ground and models as Otto's world (midday)
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.shadowMap.enabled = true;
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xcfd8dc);
-const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 600);
-camera.position.set(40, 38, 48);
+scene.background = new THREE.Color(0x9ec5e8);
+scene.fog = new THREE.Fog(0x9ec5e8, 90, 200 + (HALF - 24) * 3.2);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 520);
+camera.position.set(0, HALF * 0.55, HALF * 0.8);
 const controls = new OrbitControls(camera, canvas);
-controls.target.set(0, 0, 0);
-controls.maxPolarAngle = Math.PI * 0.49;
-scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f99, 1.35));
-const sun = new THREE.DirectionalLight(0xffffff, 2.0);
-sun.position.set(40, 70, 30);
+controls.target.set(0, 1, 0); window.__camera = camera; window.__controls = controls;
+controls.maxPolarAngle = Math.PI * 0.48; controls.minDistance = 4; controls.maxDistance = 130 + (HALF - 24) * 2.4;
+const hemi = new THREE.HemisphereLight(0xffffff, 0x6a7a55, 1.0); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff2d6, 2.2);
 sun.castShadow = true;
+sun.position.set(0, 33, 12);
+Object.assign(sun.shadow.camera, { left: -HALF - 14, right: HALF + 14, top: HALF + 14, bottom: -HALF - 14 });
 sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -HALF, right: HALF, top: HALF, bottom: -HALF, near: 1, far: 220 });
 scene.add(sun);
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2, HALF * 2), new THREE.MeshStandardMaterial({ color: 0xb9c4b0, roughness: 1 }));
+const REAL = createRealism({ renderer, scene, camera, sun, hemi });
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2 + 8, HALF * 2 + 8), new THREE.MeshStandardMaterial({ color: 0x8fbf6a }));
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
 scene.add(ground);
-const grid = new THREE.GridHelper(HALF * 2, HALF / 2, 0x7d8a78, 0xa3ad9e);   // lines every 4 m
-grid.position.y = 0.01;
+if (REAL.on) REAL.buildGround(HALF, ground);
+const grid = new THREE.GridHelper(HALF * 2, HALF / 2, 0x4a6a3a, 0x5d8a46);   // lines every 4 m (off by default)
+grid.position.y = 0.03; grid.visible = false;
 scene.add(grid);
+$('gridOn').onchange = () => { grid.visible = $('gridOn').checked; };
 
 function resize() {
   const r = canvas.parentElement.getBoundingClientRect();
@@ -41,30 +46,65 @@ function resize() {
 }
 addEventListener('resize', resize); resize();
 
-// ---------------------------------------------------------------- models
+// ---------------------------------------------------------------- models (built exactly like the world builds them: web/models.js)
 let assets = [], byId = new Map();
-const loader = new GLTFLoader();
-const templates = new Map();
-function template(a) {
-  if (!templates.has(a.id)) {
-    templates.set(a.id, new Promise((res, rej) => loader.load(`/asset/${a.id}?v=2`, res, undefined, rej)).then((g) => {
-      const holder = new THREE.Group(), s = g.scene;
-      s.scale.multiplyScalar(a.fit > 0 ? a.fit : 1);
-      holder.add(s);
-      const b = new THREE.Box3().setFromObject(holder), c = b.getCenter(new THREE.Vector3());
-      s.position.set(-c.x, -b.min.y, -c.z);                     // sits on the ground, centred
-      s.traverse((o) => {
-        if (!o.isMesh) return;
-        o.castShadow = true; o.receiveShadow = true;
-        for (const m of Array.isArray(o.material) ? o.material : [o.material]) {   // colours stay as authored; only fully-metal files (black without reflections) are made matte
-          if (m && m.isMeshStandardMaterial && m.metalness > 0.3) m.metalness = m.metalnessMap ? 0.15 : (m.roughness >= 0.99 ? 0 : 0.3);
-        }
-      });
-      return holder;
-    }));
-  }
-  return templates.get(a.id);
+const designOf = (a, scale) => buildDesign({ parts: [{ a: a.id, f: a.fit > 0 ? a.fit : 0, x: 0, y: 0, z: 0, s: 1, r: [0, 0, 0] }], scale: scale || 1, rot: 0 });
+
+// thumbnails: drawn on demand by a small separate renderer, remembered in this browser
+const thumbs = new Map();
+const idb = (() => {
+  let p;
+  const open = () => p || (p = new Promise((res) => { try { const r = indexedDB.open('ottoSandbox', 1); r.onupgradeneeded = () => r.result.createObjectStore('thumbs'); r.onsuccess = () => res(r.result); r.onerror = () => res(null); } catch (e) { res(null); } }));
+  return {
+    async get(k) { const d = await open(); if (!d) return null; return new Promise((res) => { try { const q = d.transaction('thumbs').objectStore('thumbs').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch (e) { res(null); } }); },
+    async put(k, v) { const d = await open(); if (!d) return; try { d.transaction('thumbs', 'readwrite').objectStore('thumbs').put(v, k); } catch (e) { /* storage may be full */ } },
+  };
+})();
+let tr = null, tscene = null, tcam = null;
+function thumbSetup() {
+  tr = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  tr.setSize(144, 144, false); tr.toneMapping = THREE.ACESFilmicToneMapping; tr.toneMappingExposure = 1.05;
+  tscene = new THREE.Scene(); tscene.background = new THREE.Color(0x3a4358);
+  tscene.add(new THREE.HemisphereLight(0xffffff, 0x6a7a55, 1.6));
+  const d = new THREE.DirectionalLight(0xfff2d6, 2.4); d.position.set(3, 6, 4); tscene.add(d);
+  tcam = new THREE.PerspectiveCamera(30, 1, 0.05, 2000);
 }
+async function makeThumb(a) {
+  if (!tr) thumbSetup();
+  const g = designOf(a, 1);
+  tscene.add(g);
+  try {
+    await Promise.race([g.userData.ready, new Promise((r) => setTimeout(r, 20000))]);
+    const b = new THREE.Box3().setFromObject(g);
+    if (b.isEmpty()) return null;
+    const c = b.getCenter(new THREE.Vector3()), r = b.getSize(new THREE.Vector3()).length() / 2 || 1;
+    const dist = (r / Math.sin(THREE.MathUtils.degToRad(15))) * 0.95;
+    tcam.position.copy(c).addScaledVector(new THREE.Vector3(1, 0.75, 1.1).normalize(), dist);
+    tcam.near = dist / 100; tcam.far = dist * 10; tcam.lookAt(c); tcam.updateProjectionMatrix();
+    tr.render(tscene, tcam);
+    return tr.domElement.toDataURL('image/jpeg', 0.82);
+  } finally { tscene.remove(g); }
+}
+const thumbQueue = [];
+let thumbBusy = false;
+const thumbKey = (a) => `t1:${a.id}:${a.fit}`;
+async function thumbPump() {
+  if (thumbBusy) return;
+  thumbBusy = true;
+  while (thumbQueue.length) {
+    const el = thumbQueue.shift();
+    if (!el.isConnected || !el._vis || el._done) continue;
+    const a = el._a;
+    let url = thumbs.get(a.id) || await idb.get(thumbKey(a));
+    if (!url) { try { url = await makeThumb(a); } catch (e) { url = null; } if (url) idb.put(thumbKey(a), url); }
+    el._done = true;
+    if (url) { thumbs.set(a.id, url); el.src = url; } else el.alt = 'no preview';
+  }
+  thumbBusy = false;
+}
+const io = new IntersectionObserver((es) => {
+  for (const e of es) { e.target._vis = e.isIntersecting; if (e.isIntersecting && !e.target._done) { thumbQueue.push(e.target); thumbPump(); } }
+}, { root: $('list'), rootMargin: '300px' });
 
 // ---------------------------------------------------------------- the layout
 let items = [];                                    // {uid, a: asset id, x, z, r (degrees), s (scale), g: THREE.Group}
@@ -77,17 +117,15 @@ function persist() { try { localStorage.setItem(LS_CURRENT, JSON.stringify(snaps
 
 function apply(i) {
   i.g.position.set(i.x, 0, i.z);
-  i.g.rotation.y = -i.r * Math.PI / 180;
+  i.g.rotation.y = i.r * Math.PI / 180;
   i.g.scale.setScalar(i.s);
 }
 async function addItem(d, quiet) {
   const a = byId.get(d.a);
   if (!a) return null;
   const item = { uid: uidn++, a: a.id, x: +d.x || 0, z: +d.z || 0, r: +d.r || 0, s: Math.min(5, Math.max(0.1, +d.s || 1)), g: null };
-  try {
-    const t = await template(a);
-    item.g = t.clone(true);
-  } catch (e) { say(`Could not load ${a.name}.`); return null; }
+  item.g = new THREE.Group();
+  item.g.add(designOf(a, 1));
   item.g.userData.uid = item.uid;
   scene.add(item.g); items.push(item); apply(item);
   if (!quiet) remember();
@@ -130,16 +168,22 @@ const listEl = $('list');
 function renderList() {
   const q = $('q').value.trim().toLowerCase(), pack = $('pack').value;
   const hit = assets.filter((a) => (!pack || a.pack === pack) && (!q || (a.name + ' ' + a.tags.join(' ')).toLowerCase().includes(q)));
-  $('count').textContent = `${hit.length} model${hit.length === 1 ? '' : 's'}` + (hit.length > 300 ? ' (showing 300: type to narrow)' : '');
+  $('count').textContent = `${hit.length} model${hit.length === 1 ? '' : 's'}` + (hit.length > 120 ? ' (showing 120: type to narrow)' : '');
+  io.disconnect();
+  thumbQueue.length = 0;
   listEl.innerHTML = '';
-  for (const a of hit.slice(0, 300)) {
+  listEl.scrollTop = 0;
+  for (const a of hit.slice(0, 120)) {
     const d = document.createElement('div');
     d.className = 'item' + (brush && brush.id === a.id ? ' on' : '');
-    const b = document.createElement('b'); b.textContent = a.name;
-    const s = document.createElement('span'); s.textContent = `${a.pack} · ${(Math.max(a.fw || 0, a.fd || 0)).toFixed(1)} m wide · ${(a.sy * (a.fit || 1)).toFixed(1)} m tall`;
-    d.append(b, s);
+    const im = document.createElement('img'); im._a = a; im.alt = '';
+    if (thumbs.has(a.id)) { im.src = thumbs.get(a.id); im._done = true; }
+    const b = document.createElement('b'); b.textContent = a.name; b.title = a.name;
+    const s = document.createElement('span'); s.textContent = `${a.pack} · ${(Math.max(a.fw || 0, a.fd || 0)).toFixed(1)} m`; s.title = `${a.pack}: ${(a.sy * (a.fit || 1)).toFixed(1)} m tall`;
+    d.append(im, b, s);
     d.onclick = () => setBrush(a);
     listEl.appendChild(d);
+    io.observe(im);
   }
 }
 async function setBrush(a) {
@@ -149,7 +193,7 @@ async function setBrush(a) {
   if (a) {
     $('brush').textContent = `Placing: ${a.name}  (click the ground, Esc to stop)`;
     select(null);
-    try { const t = await template(a); if (brush === a) { ghost = t.clone(true); ghost.visible = false; scene.add(ghost); } } catch (e) { say(`Could not load ${a.name}.`); }
+    const gh = designOf(a, ghostScale); gh.visible = false; if (brush === a) { ghost = gh; scene.add(ghost); }
   }
   renderList();
 }
@@ -189,7 +233,7 @@ canvas.addEventListener('pointermove', (e) => {
     drag.it.z = snapV(Math.max(-HALF, Math.min(HALF, p.z + drag.oz)));
     drag.changed = true; apply(drag.it); box.setFromObject(drag.it.g);
   }
-  if (ghost && p) { ghost.visible = true; ghost.position.set(snapV(p.x), 0, snapV(p.z)); ghost.rotation.y = -ghostRot * Math.PI / 180; ghost.scale.setScalar(ghostScale); }
+  if (ghost && p) { ghost.visible = true; ghost.position.set(snapV(p.x), 0, snapV(p.z)); ghost.rotation.y = ghostRot * Math.PI / 180; ghost.scale.setScalar(ghostScale); }
 });
 let ghostRot = 0, ghostScale = 1;
 addEventListener('pointerup', async (e) => {
@@ -272,7 +316,8 @@ function say(t) { const m = $('msg'); m.textContent = t; m.hidden = false; clear
 // ---------------------------------------------------------------- go
 (async function start() {
   try {
-    assets = await (await fetch('/sandbox/assets')).json();
+    const d = await (await fetch('/sandbox/assets')).json();
+    assets = d.assets; setBright(d.bright || {});
   } catch (e) { return say('Could not get the model list. Is the server running?'); }
   byId = new Map(assets.map((a) => [a.id, a]));
   const packs = [...new Set(assets.map((a) => a.pack))];
@@ -281,9 +326,13 @@ function say(t) { const m = $('msg'); m.textContent = t; m.hidden = false; clear
   try { const cur = JSON.parse(localStorage.getItem(LS_CURRENT) || '[]'); if (cur.length) { await setLayout(cur); say(`Restored your last session (${items.length} models).`); } } catch (e) { /* nothing to restore */ }
   history.push(JSON.stringify(snapshot()));
 })();
+let lastT = performance.now() / 1000;
 (function loop() {
   requestAnimationFrame(loop);
   controls.update();
+  const tt = performance.now() / 1000, dt = Math.min(0.1, tt - lastT); lastT = tt;
+  hemi.intensity = 1.0;
+  if (REAL.on) REAL.update(12, 0, dt, tt);
   if (box.visible && selected && !drag) box.setFromObject(selected.g);
   renderer.render(scene, camera);
 })();

@@ -599,7 +599,8 @@ async def serve(agent, runner, interval=None):
                 r["tags"] = json.loads(r["tags"] or "[]")[:6]
             except ValueError:
                 r["tags"] = []
-        return web.json_response(rows, headers={"Cache-Control": "no-cache"})
+        bright = {r["id"]: config.kit_bright(r["pack"], r["name"]) for r in rows if config.kit_bright(r["pack"], r["name"]) != 1.0}
+        return web.json_response({"assets": rows, "bright": bright}, headers={"Cache-Control": "no-cache"})
 
     app = web.Application(middlewares=[auth, security_headers])
     app.router.add_get("/", index)

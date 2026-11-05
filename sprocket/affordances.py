@@ -301,10 +301,12 @@ def use(ctx, args):
             ang = math.atan2(s["z"] - o["z"], s["x"] - o["x"]); r = max(abs(o["fw"]), abs(o["fd"])) * o["scale"] / 2 + 1.0
             spot = maps.nearest_walkable(o["x"] + math.cos(ang) * r, o["z"] + math.sin(ang) * r) or spot
         tgt = {"label": label(o).lower(), "kind": "object", "x": spot[0], "z": spot[1], "key": None, "id": None}
+        px, pz = s["x"], s["z"]
         nx, nz, arrived = world.step_toward(s["x"], s["z"], tgt["x"], tgt["z"])
         s["x"], s["z"] = nx, nz
         s["path"] = [[round(p, 1), round(q, 1)] for p, q in world.LAST_PATH][:40]
-        if dist_to(o, nx, nz) > config.REACH:
+        boxed_in = (arrived or (nx, nz) == (px, pz)) and dist_to(o, nx, nz) <= config.REACH_BOXED_IN     # it stands somewhere he cannot walk to (e.g. inside a building's footprint): as close as he can get is close enough
+        if dist_to(o, nx, nz) > config.REACH and not boxed_in:
             return out(True, f"You walked toward the {label(o)} to {act['label']}; {dist_to(o, nx, nz):.0f} m left. Keep going.", 0.0, "Walking", moved=True,
                        caption=f"Walking to the {label(o).lower()} {act['why']}")
     # --- do it
