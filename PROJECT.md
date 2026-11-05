@@ -1,6 +1,13 @@
 # Otto Pilot: project handoff (read this first)
 
-Written 3 Nov 2026 so a different Claude account/session can pick up exactly where this one stopped. README.md and STYLE.md cover the older foundations; this file covers the current state, how we work, and what is next. No secrets are in this file (never put any here).
+Written 3 Nov 2026, refreshed 4 Nov 2026, so a different Claude account/session can pick up exactly where the last one stopped.
+
+## START HERE (for a new Claude)
+1. Read this whole file, then `README.md` and `STYLE.md`. Run `git log --oneline | head -15` for the latest work.
+2. Paste this to the new Claude as its first message: *"Read PROJECT.md in the repo root and follow its rules. Continue the Otto Pilot project with me (Dru). Do not change anything until you have read it and told me in two lines what you understood."*
+3. Things NOT in git that the project needs (get them from Dru's PC or from the data zip made by `tools/backup_data.py`, see "Moving to another account or machine" below): `data/` (database, maps, gifts, library), `assets/meshy/**/*.glb`, `assets/kenney/` (licence unknown, never commit), `.env` (secrets: Dru only), the `SPROCKET_TOKEN` Windows variable.
+4. Everything runs on Dru's Windows PC. A new Claude on another computer can read and edit code from the GitHub backup, but cannot run or test Otto without the data and models.
+Background: README.md and STYLE.md cover the older foundations; this file covers the current state, how we work, and what is next. No secrets are in this file (never put any here).
 
 ## What this is
 "Otto" (package/db still named `sprocket`) is an autonomous robot living in a 3D town. A local model (Ollama `gemma4:e4b`) decides what he does each tick. The human (Dru) never commands him; they only change his world (place buildings, give money, approve things). Server: Python (`sprocket/`). Page: Three.js (`web/`). Everything runs on Dru's Windows PC at `D:\Git-Projects\OTTO PILOT BOT\OTTO PILOT`, reached over Tailscale on port 8765.
@@ -9,7 +16,7 @@ Written 3 Nov 2026 so a different Claude account/session can pick up exactly whe
 - **Otto decides for himself.** Never script what he says, draws or does. Give him information, consequences and feedback, not instructions. No copying another bot's (Pino's) drawings, no template designs.
 - **Server runs on its own.** Start/stop only with `powershell -File tools\server.ps1 start|stop|restart` (WMI-detached). Never run it as a background task of a Claude session (it died overnight that way). Check afterwards that port 8765 answers (401 without a token is normal).
 - **Secrets:** never read or print `.env`; the access token lives in the Windows user variable `SPROCKET_TOKEN`; `TRIPO_API_KEY` goes in `.env` (Dru adds it). Don't touch safety features (sanitisers, publish approval, kill switch).
-- **Commits:** commit locally only when Dru says "commit it". The repo has **no remote**. Dru will create a backup GitHub repo ("tomorrow" relative to 3 Nov); connect and push only when told. `data/` and `assets/meshy/**/*.glb` are git-ignored, so back those up separately (use the sqlite3 backup API for the DB, not a file copy: WAL).
+- **Commits:** commit locally only when Dru says "commit it". Remote `origin` = https://github.com/Otto-Pilot-The-Bot/OttoPilotBackup.git (public; Dru gave access to whoever pushes). Push only when Dru says so. `data/`, `assets/meshy/**/*.glb`, `assets/kenney/` and `.env` are git-ignored: back them up with `tools/backup_data.py` (uses the sqlite3 backup API, never a raw file copy of the WAL database).
 - **STYLE.md:** don't recolor/tint models; ask before changing ground, lighting mood or day/night look. Only Dru places objects; Otto can wish, never place.
 - **Notion:** Dru keeps a page "Otto Pilot" (id `40d34248-8929-813b-b0bd-f237764190dc`) as the to-do/idea list. After finishing work, tick items and append to "Done recently". Fetch the page first (bold = `<b>`, code = `<code>`, `$` escaped).
 - Publishing to the web or anything outward-facing needs explicit permission.
@@ -17,7 +24,9 @@ Written 3 Nov 2026 so a different Claude account/session can pick up exactly whe
 
 ## Run it
 - Normal: `powershell -File tools\server.ps1 restart` (log: `data\server.log`, UTF-16, read with `Get-Content`). Needs `ollama serve` with `gemma4:e4b`, `nomic-embed-text`.
-- Python env: `.venv\Scripts\python.exe` (has `resvg_py`, PIL; the system Python does not, so run tests with the venv).
+- One click: the Desktop shortcuts "Otto Pilot" / "Stop Otto" run `tools/open-otto.ps1` (starts Ollama and the server detached, opens the page on the Tailscale address).
+- Python env: `.venv\Scripts\python.exe` (has `resvg_py`, PIL; the system Python does not, so run tests with the venv). Run scripts with `PYTHONPATH=.` from the project root. The Ollama host in config is 0.0.0.0 and does not work as a client address: use `http://127.0.0.1:11434` in your own test scripts.
+- If the server hangs in an error loop, `server.ps1 stop` may not stop it (the kill file is only checked between ticks); find `python -m sprocket serve` with `Get-CimInstance Win32_Process` and stop it, then `server.ps1 start`. A tick crash now logs `at function:line <- ...` in `data\server.log`.
 - Config: `sprocket/config.py` (all tunables). Token: `SPROCKET_TOKEN` user variable.
 
 ## Architecture (files that matter)
@@ -42,14 +51,14 @@ Written 3 Nov 2026 so a different Claude account/session can pick up exactly whe
 | `publisher/` | Otto's website publishing (dry-run by default) |
 
 ## The world and economy (current state)
-- Map `mine` (36x36 cells, 4 m each). Placed: Ottos House (home), Cafe, Bank, Casino, Movie Theatre, Library, Internet Cafe, Hotel, charging pad, gallery, trees, lake/hills (terrain-derived places). 3D Print Farm model is indexed but **not placed yet**.
+- Map `mine` (36x36 cells, 4 m each). Placed: Ottos House (home), Cafe, Bank, Casino, Movie Theatre, Library, Internet Cafe, Hotel, charging pad, gallery, trees, lake/hills (terrain-derived places). 3D Print Farm model is indexed but **not placed yet**. A Dumpster model (asset id 10460) was added by Dru on 4 Nov and is not placed.
 - Buildings get behaviour from **tags** (set by NAME_TAGS from the model's name): cafe, cinema, library, printfarm, bank, home... The tools of a special building only exist for him within ~14-16 m of it (`tools.near_building`).
 - **Errands:** if he uses nothing in town for 40 ticks the engine restricts him to `move_to` and sends him to the nearest unused venue.
 - **Money:** starts $50. Spends: cafe drinks/bagel, tips, cinema $1.50, prints, casino. Earns: art sales ($10 for score 5-7, $20 for 8-10, paid when the drawing is saved), `work` shifts ($2, -15 energy, 20-tick cooldown, only at cafe/cinema/library/bank), $2 daily allowance from his human (world day = 144 ticks). The prompt warns him when money is low/zero.
 - **Cafe:** drinks have caffeine -> buzz (faster, restless) then sugar crash; bagel is carried food eaten in bites.
 - **Cinema:** each watch, the model writes his own review/rating/topics (never scripted); saved to journal, memory, interests.
 
-## Drawing: how he learns (built 3 Nov, just deployed, not yet observed live)
+## Drawing: how he learns (built 3 Nov, live; scores were trending 5-8 by 4 Nov)
 Goal from Dru: he must actually learn to draw better without being told how.
 1. He draws; his vision pass describes the picture blind and compares to the intent (`critique`), redraws up to `ART_REVISIONS` times.
 2. `artlook.reflect` runs after a drawing: if a redraw jumped the score by 2+, if it failed, if it worked first time at 8+, or if an earlier drawing of the same subject exists (title words in common), he compares the two pictures (order randomised) and writes ONE short note to his future self **in his own words**. Stored in table `art_lessons`.
@@ -61,10 +70,20 @@ Config: `ART_LEARN`, `ART_REVIEW`, `ART_REVISIONS`, `ART_MIN_MATCH`, `ART_MARKER
 ## Drawing variety, study and Internet Cafe (added after the first handoff)
 - Drawing variety: `artlook.habit` (his recent repeated subjects, shown as a fact), `repeat_count`/`price_factor` (repeats sell for less, floor 30%), `lived` (his own recent memories, shown with the starting sketch), more sketch icons.
 - `study` tool: copies a picture gift, engine compares copy with the real picture (`artlook.compare_ref`), lesson saved to `art_lessons`; table `art_studies`. Hidden until Dru gifts a picture.
-- Internet Cafe: `search_web`, `read_page`, `publish_page` only work near a building tagged `internetcafe` (`tools._net_gate`, fee `NET_FEE_CENTS` per `NET_SESSION_TICKS`); if no such building is placed, the web works everywhere.
+- Internet Cafe: `search_web`, `read_page`, `publish_page` only work near a building tagged `internetcafe` (`tools._net_gate`, fee `NET_FEE_CENTS` per `NET_SESSION_TICKS`); if no such building is placed, the web works everywhere. Built 4 Nov; Otto had walked there but the fee/search flow had not yet been seen live.
+- Also built since the first handoff: `swim` tool at the lake (`near_lake`, `SWIM_*`), gallery thumbnails re-ask (`web/art.js`), launcher scripts, backup remote.
+
+## Moving to another account or machine
+1. Code: `git clone https://github.com/Otto-Pilot-The-Bot/OttoPilotBackup.git`.
+2. State: on Dru's PC run `.venv\Scripts\python.exe tools\backup_data.py` (writes `backup\OttoPilot-data-<date>.zip`: database snapshot, maps, gifts, library notes, Meshy models; no secrets, no logs). Unzip it in the project root on the new machine so `data/` and `assets/meshy/` fill in.
+3. Kenney model packs: copy `assets/kenney/` by hand (not in git, not in the zip).
+4. Environment: Python 3 + `pip install -r requirements.txt` into `.venv` (`resvg-py` and Pillow are in it), Node for `npm install` if the page tooling is needed, Ollama with `gemma4:e4b` and `nomic-embed-text`, Tailscale if the page is reached remotely. Set the Windows user variable `SPROCKET_TOKEN` yourself and put `TRIPO_API_KEY` in `.env`: secrets are never in the repo or the zip.
+5. The Claude side needs nothing else: this file replaces the per-account memory files. If you want the same working habits, re-read "The rules Dru has set".
+
 
 ## Open items / backlog
-- Dru creates a backup GitHub repo; then add remote and push when told. Back up `data/` and the large model files separately.
+- Back up `data/` and the large model files regularly with `tools/backup_data.py` (not automatic yet).
+- Dru has a Blender glTF export error (AssertionError on materials) on a new "different 3D Print Farm" model: a diagnostic script writing `data\blender_materials.txt` was offered; unresolved. The new model file has not been found on disk.
 - Place the 3D Print Farm model in the map editor; Dru adds `TRIPO_API_KEY` to `.env`; test the Tripo adapter for real.
 - Notion: the "Movie Theatre works" line is stale (says eight films / three showing; now nine films, one each of horror/comedy/action) and recent work is not all recorded (hotel shrink, work/allowance, art-learning). Dru once rejected a Notion edit attempt: offer before editing.
 - He is "focused on the hills" per Dru: stats showed hills ~13% of arrivals; likely cause is that lake/hills are the only scenery he is handed for drawing, plus prompt nudges naming the hill. Waiting for Dru to say what they see before changing prompts.
