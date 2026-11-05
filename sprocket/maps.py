@@ -316,7 +316,7 @@ def activate(doc, db=None):
             continue
         dw = door_world(o) or (o["x"], o["z"] + o["fd"] * o["scale"] / 2 + 1.8)
         spot = nearest_walkable(*dw) or dw
-        pl = {"label": p["label"], "x": round(spot[0], 2), "z": round(spot[1], 2), "aliases": p.get("aliases", []), "object": o["id"]}
+        pl = {"label": p["label"], "x": round(spot[0], 2), "z": round(spot[1], 2), "aliases": list(dict.fromkeys(list(p.get("aliases", [])) + [re.sub(r"[-_]", " ", o["name"]).strip().lower()])), "object": o["id"]}
         if p.get("enter") and o.get("door"):
             ins = (o["x"], o["z"])
             pl.update(enter=True, inside=[round(ins[0], 2), round(ins[1], 2)])

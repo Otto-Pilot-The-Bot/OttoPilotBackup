@@ -302,6 +302,11 @@ def move_to(ctx, a):
     tgt = world.resolve_target(raw, s["x"], s["z"], ctx.objects())
     if not tgt:
         return out(False, f"Unknown target '{a.get('target')}'. Use a place, an object name, or 'x,z'." + (f" You are inside the {s['interior']['label']}: move_to exit first to go outside." if s.get("interior") else ""))
+    if enter and not tgt.get("key") and tgt.get("map_id") is not None:             # "inside Ottos House": the object is the building behind an enterable place
+        pk = next((k for k, p in world.PLACES.items() if p.get("enter") and p.get("object") == tgt["map_id"]), None)
+        if pk:
+            pl = world.PLACES[pk]
+            tgt = {"label": pl["label"], "kind": "place", "x": pl["x"], "z": pl["z"], "key": pk, "id": None}
     if enter and not (tgt.get("key") and world.PLACES[tgt["key"]].get("enter")):
         return out(False, f"You cannot go inside {tgt['label']}. You can go inside: " +
                    ", ".join(p["label"] for p in world.PLACES.values() if p.get("enter")) + ".")
