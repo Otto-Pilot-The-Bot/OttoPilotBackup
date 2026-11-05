@@ -511,7 +511,7 @@ async def serve(agent, runner, interval=None):
         resp = await handler(request)
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["Referrer-Policy"] = "no-referrer"
-        if request.path in ("/", "/index.html", "/admin.html"):
+        if request.path in ("/", "/index.html", "/admin.html", "/sandbox", "/sandbox.html"):
             resp.headers["Content-Security-Policy"] = csp_page(request.host)
             resp.headers["Cache-Control"] = "no-store"
         elif request.path == "/art-sandbox.html":
@@ -588,8 +588,23 @@ async def serve(agent, runner, interval=None):
     async def index(_):
         return web.FileResponse(WEB / "index.html")
 
+    async def sandbox_page(_):
+        """A separate play area for trying models out. Nothing on it touches Otto, his world, his map or his database."""
+        return web.FileResponse(WEB / "sandbox.html")
+
+    async def sandbox_assets(_):
+        rows = agent.db.q("SELECT id,pack,name,tags,fit,fw,fd,sy,tris,size_bytes FROM assets WHERE usable=1 ORDER BY pack, name")
+        for r in rows:
+            try:
+                r["tags"] = json.loads(r["tags"] or "[]")[:6]
+            except ValueError:
+                r["tags"] = []
+        return web.json_response(rows, headers={"Cache-Control": "no-cache"})
+
     app = web.Application(middlewares=[auth, security_headers])
     app.router.add_get("/", index)
+    app.router.add_get("/sandbox", sandbox_page)
+    app.router.add_get("/sandbox/assets", sandbox_assets)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/asset/{id}", asset_file)
     app.router.add_get("/gift/{id}/file", gift_file)
