@@ -103,6 +103,8 @@ class Runner:
                 break
             except Exception as e:
                 self.log(f"  tick error: {type(e).__name__}: {e}")
+                import traceback
+                self.log("  at " + " <- ".join(f"{f.name}:{f.lineno}" for f in reversed(traceback.extract_tb(e.__traceback__)[-4:])))
                 self.agent.save()
             n += 1
             if max_ticks and n >= max_ticks:

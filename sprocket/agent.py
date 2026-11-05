@@ -993,9 +993,9 @@ class Agent:
                 L.append("PRACTICE: your human left you pictures. The study tool lets you copy one as a drawing and then shows you how close your copy was.")
         if config.NET_CAFE_ENABLED and tools.near_building(s, "internetcafe", 14):
             sess = f"Your session lasts about {max(0, s.get('net_until', -1) - s['tick'])} more ticks." if s["tick"] <= s.get("net_until", -1) else "A session costs a little pocket money."
-            recent = [r["query"] for r in db.q("SELECT query FROM searches ORDER BY id DESC LIMIT 3")]
+            latest_q = [r["query"] for r in db.q("SELECT query FROM searches ORDER BY id DESC LIMIT 3")]
             L.append("THE INTERNET CAFE is right here: rows of computers. This is the only place you can get online: search_web, read_page" + (", publish_page" if s.get("publish_enabled") else "") + ". "
-                     + sess + (" Your latest searches: " + "; ".join(recent) + "." if recent else "") + " Notes worth keeping can be filed at the library.")
+                     + sess + (" Your latest searches: " + "; ".join(latest_q) + "." if latest_q else "") + " Notes worth keeping can be filed at the library.")
         cat = self._focus()
         L.append(f"TODAY YOU FEEL LIKE: {self.FOCUS_TEXT[cat]}. (An inclination, not an order.)")
         sug = self.poi_suggestion(cat, prow)
