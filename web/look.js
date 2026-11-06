@@ -20,6 +20,8 @@ const DEFAULTS = {
   },
 };
 const RAMP_ORDER = ['blue', 'green', 'warm', 'neutral'];
+const GRAY_NEUTRAL = ['#3b3d42', '#9a9ea6', '#eceef1'];            // with the gray ground, stone and walls print gray instead of lavender
+export const GROUND_STYLES = ['pink', 'gray', 'mat'];
 
 const VERT = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 const FRAG = `
@@ -65,6 +67,8 @@ const FRAG = `
 export function createLook({ renderer, scene, camera }) {
   const L = { mode: 'normal', cfg: { ...DEFAULTS } };
   try { L.mode = localStorage.getItem('look') === 'flat' ? 'flat' : 'normal'; } catch { /* private window: stay Normal */ }
+  L.ground = 'pink';                                           // the ground's look while Flat is on: pink (as it was), gray, or mat (blue with white lines); see mapview.js
+  try { const g = localStorage.getItem('flatGround'); if (GROUND_STYLES.includes(g)) L.ground = g; } catch { /* stay pink */ }
   const q = new URLSearchParams(location.search).get('look');
   if (q === 'flat' || q === 'normal') L.mode = q;
 
@@ -91,6 +95,13 @@ export function createLook({ renderer, scene, camera }) {
     RAMP_ORDER.forEach((name, r) => { for (let i = 0; i < 3; i++) srgb(u.ramp.value[r * 3 + i], c.ramps[name][i]); });
   }
 
+  L.setGround = (g) => {
+    L.ground = GROUND_STYLES.includes(g) ? g : 'pink';
+    try { localStorage.setItem('flatGround', L.ground); } catch { /* not remembered */ }
+    L.cfg.ramps = { ...L.cfg.ramps, neutral: L.ground === 'gray' ? GRAY_NEUTRAL : DEFAULTS.ramps.neutral };
+    L.onChange?.(L.mode); return L.ground;
+  };
+  L.cfg.ramps = { ...L.cfg.ramps, neutral: L.ground === 'gray' ? GRAY_NEUTRAL : DEFAULTS.ramps.neutral };
   L.set = (patch) => { Object.assign(L.cfg, patch); return L.cfg; };
   L.setMode = (m) => {
     L.mode = m === 'flat' ? 'flat' : 'normal';

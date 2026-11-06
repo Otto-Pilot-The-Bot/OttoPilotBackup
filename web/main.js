@@ -41,6 +41,11 @@ const LOOK = createLook({ renderer, scene, camera });                           
 { const b = document.createElement('button'); b.id = 'lookBtn'; b.title = 'Switch the picture between the normal look and a flat halftone look';
   const paint = () => { b.classList.toggle('on', LOOK.mode === 'flat'); b.textContent = LOOK.mode === 'flat' ? '🎨 Look: Flat' : '🎨 Look: Normal'; };
   b.onclick = () => { LOOK.setMode(LOOK.mode === 'flat' ? 'normal' : 'flat'); paint(); }; paint(); document.body.appendChild(b); }
+{ const b = document.createElement('button'); b.id = 'groundBtn'; b.title = 'What the ground looks like in the flat halftone view: pink, gray, or a blue mat with white lines';
+  const NAMES = { pink: 'Pink', gray: 'Gray', mat: 'Blue mat' };
+  const paint = () => { b.hidden = LOOK.mode !== 'flat'; b.textContent = '🟦 Ground: ' + NAMES[LOOK.ground]; };
+  b.onclick = () => { const order = ['pink', 'gray', 'mat']; LOOK.setGround(order[(order.indexOf(LOOK.ground) + 1) % order.length]); };
+  const prev = LOOK.onChange; LOOK.onChange = (m) => { paint(); if (prev) prev(m); }; paint(); document.body.appendChild(b); window.__paintGroundBtn = paint; }
 { const a = document.createElement('a'); a.id = 'adminBtn'; a.href = '/admin.html'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = '🛠 Admin'; a.title = 'The admin dashboard: needs, character, omens, weather'; document.body.appendChild(a); }
 var ground, groundParts = [], curHalf = 0;
 function buildGround(half) {
@@ -488,6 +493,8 @@ let ws, last = null, placesBuilt = false, snapHour = 8, snapAt = 0, intervalMs =
 const art = new ArtStore((o) => send(o));
 let EDITOR = null;
 const MV = createMapView({ scene, art });
+MV.groundStyle = LOOK.mode === 'flat' ? LOOK.ground : 'pink';
+{ const prev = LOOK.onChange; LOOK.onChange = (m) => { MV.setGroundStyle(LOOK.mode === 'flat' ? LOOK.ground : 'pink'); if (prev) prev(m); }; }
 { const rg = MV.rebuildGround; MV.rebuildGround = () => { rg(); REAL.setFarY?.(hasLake(MV.doc) ? -3.4 : -0.06); }; }     // the far ground must sit below a lake, including one you just dug in the editor
 const TRAFFIC = createTraffic({ scene });
 let pathQ = [], pathSig = '', rideAnim = null, lastRideTick = -1, lastHonk = -1, fadedNow = null;

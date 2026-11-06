@@ -43,13 +43,25 @@ function gridTexture() {
   gridTex = new THREE.CanvasTexture(c); gridTex.colorSpace = THREE.SRGBColorSpace; gridTex.anisotropy = 4; return gridTex;
 }
 
+// The "blue project mat" ground (Flat look only): each tile is a mid-grey with a bright white line round it and faint lines at the quarters. The tile colour is blue, so the lines print light.
+let matTex = null;
+function matTexture() {
+  if (matTex) return matTex;
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#9c9c9c'; g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = 'rgba(255,255,255,0.4)'; g.lineWidth = 1.5;
+  for (const p of [32, 64, 96]) { g.beginPath(); g.moveTo(p, 0); g.lineTo(p, 128); g.stroke(); g.beginPath(); g.moveTo(0, p); g.lineTo(128, p); g.stroke(); }
+  g.strokeStyle = '#ffffff'; g.lineWidth = 6; g.strokeRect(0, 0, 128, 128);
+  matTex = new THREE.CanvasTexture(c); matTex.colorSpace = THREE.SRGBColorSpace; matTex.anisotropy = 8; return matTex;
+}
+
 const SAND = new THREE.Color(0xe3cf98), BED = new THREE.Color(0x6a8f9a);
 const _c = new THREE.Color();
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 /** The ground as one mesh: every tile a small subdivided patch (own vertices, so each tile keeps its flat colour), plus the lake surface when there is one.
  *  tileColors: { g, p, r, t, w, s, d } hex colours. Returns { group, dispose }. */
-export function buildTerrain(doc, tileColors, sub = 4) {
+export function buildTerrain(doc, tileColors, sub = 4, style = 'pink') {
   const n = doc.n, cell = doc.cell, half = (n * cell) / 2, V = sub + 1, per = V * V;
   const pos = new Float32Array(n * n * per * 3), nor = new Float32Array(n * n * per * 3), col = new Float32Array(n * n * per * 3), uv = new Float32Array(n * n * per * 2);
   const idx = new Uint32Array(n * n * sub * sub * 6);
@@ -72,10 +84,16 @@ export function buildTerrain(doc, tileColors, sub = 4) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(new THREE.BufferAttribute(idx, 1));
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, map: gridTexture(), roughness: 0.95, metalness: 0 });
+  const plain = style === 'gray' || style === 'mat';           // these two are not lit (day and night never tint them: gray stays gray, blue stays blue); a shadow-only layer on top keeps the shadows
+  const mat = plain ? new THREE.MeshBasicMaterial({ vertexColors: true, map: style === 'mat' ? matTexture() : gridTexture() })
+                    : new THREE.MeshStandardMaterial({ vertexColors: true, map: gridTexture(), roughness: 0.95, metalness: 0 });
   const ground = new THREE.Mesh(geo, mat); ground.receiveShadow = true; ground.userData.terrain = true; ground.frustumCulled = false;
   const group = new THREE.Group(); group.add(ground);
   const parts = [ground];
+  if (plain) {
+    const sh = new THREE.Mesh(geo, new THREE.ShadowMaterial({ opacity: 0.42, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    sh.receiveShadow = true; sh.frustumCulled = false; sh.renderOrder = 1; group.add(sh); parts.push(sh);
+  }
   if (hasLake(doc)) {
     const w = new THREE.Mesh(new THREE.PlaneGeometry(n * cell, n * cell).rotateX(-Math.PI / 2),
       new THREE.MeshStandardMaterial({ color: tileColors.w ?? 0x5aa3c6, roughness: 0.18, metalness: 0.05, transparent: true, opacity: 0.72, depthWrite: false }));

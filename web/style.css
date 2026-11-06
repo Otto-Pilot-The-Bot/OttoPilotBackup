@@ -163,6 +163,9 @@ body.planning #camBar { left: calc(50% + 160px); top: calc(var(--topH) - 2px); f
 #lookBtn.on { background: #e6508f; color: #fff; border-color: #e6508f; font-weight: 700; }
 
 body.planning #lookBtn { left: 350px; bottom: 14px; }
+#groundBtn { position: fixed; left: 14px; bottom: 140px; z-index: 31; background: #2b2f3a; color: #eee; border: 1px solid #444b5c; border-radius: 9px; padding: 8px 12px; font: 14px system-ui; cursor: pointer; }
+#groundBtn[hidden] { display: none; }
+body.planning #groundBtn { left: 560px; bottom: 14px; }
 #adminBtn { position: fixed; left: 14px; bottom: 98px; z-index: 31; background: #2b2f3a; color: #eee; border: 1px solid #444b5c; border-radius: 9px; padding: 8px 12px; font: 14px system-ui; text-decoration: none; }
 body.planning #adminBtn { left: 450px; bottom: 14px; }
 

@@ -10,6 +10,8 @@
 - UPDATE 2026-11-01 (supersedes the Kenney-only and "no custom 3D models" lines above for new models): new models come from Meshy (AI-made, paid plan, personal project, not for sale; maybe shown in videos). They live in assets/meshy/<pack name>/ with a credits.json. Kenney is PAUSED: no new Kenney builds, but assets/kenney stays as a backup. Do not recolor or tint Meshy models either. Meshy sizes are arbitrary, so each file gets one scale correction (config.NAME_SCALE). Meshy models can be heavy (hundreds of thousands of triangles); the Meshy folder allows up to 150 MB and 600k triangles.
 ## Not decided yet (ask me before choosing)
 - Ground look, lighting mood and day/night look, Otto's own character model and colors.
+- UPDATE 2026-11-05: in the Flat (halftone) look the ground has three options, chosen with the Ground button (bottom left, only shown in Flat): Pink (the original), Gray, and Blue mat (blue with white lines). Gray and Blue mat are unlit so day/night never tints them. The normal look is unchanged.
+
 ## Process
 - Before adding a new kit, place 15-20 pieces, review screenshots, and ask me to confirm it matches.
 - Record each kit (name, source, license) in assets/CREDITS.md. CC0 needs no credit, but keep the list.

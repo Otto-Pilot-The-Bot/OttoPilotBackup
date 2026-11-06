@@ -24,6 +24,9 @@ export function createMapView({ scene, art, onReady }) {
 
   MV.setDoc = (doc, nav) => { MV.doc = doc; if (nav) MV.nav = nav; MV.rebuildGround(); MV.sync(); MV.rebuildOverlays(); MV.updateColliders(); };
 
+  // The ground's look in the Flat (halftone) view: 'pink' (as before), 'gray', or 'mat' (a blue project mat with white lines). Set from main.js.
+  MV.groundStyle = 'pink';
+  MV.setGroundStyle = (s) => { const v = s === 'gray' || s === 'mat' ? s : 'pink'; if (v === MV.groundStyle) return; MV.groundStyle = v; MV.rebuildGround(); };
   MV.setLook = (name) => { MV.look = LOOKS[name] ? name : 'B'; MV.rebuildGround(); return LOOKS[MV.look]; };
 
   let terrain = null;
@@ -33,8 +36,10 @@ export function createMapView({ scene, art, onReady }) {
     if (terrain) { terrain.dispose(); terrain = null; }
     const doc = MV.doc; if (!doc) return;
     const L = LOOKS[MV.look], n = doc.n, cell = doc.cell;
-    terrain = buildTerrain(doc, { g: 0x8fbf6a, ...L.tiles }); MV.terrain = terrain.ground; tileG.add(terrain.group);
-    const side = n * cell, M = 260, bm = new THREE.MeshStandardMaterial({ color: L.tiles.g ?? 0x8fbf6a, roughness: 1 });       // a wide frame of plain ground around the map so its edge is not a void (a full plane would cover the lake)
+    const tiles = { g: 0x8fbf6a, ...L.tiles }, st = MV.groundStyle;
+    if (st === 'gray') tiles.g = 0x9a9ea4; else if (st === 'mat') tiles.g = 0x2b6cb0;
+    terrain = buildTerrain(doc, tiles, 4, st); MV.terrain = terrain.ground; tileG.add(terrain.group);
+    const side = n * cell, M = 260, bm = st === 'pink' ? new THREE.MeshStandardMaterial({ color: L.tiles.g ?? 0x8fbf6a, roughness: 1 }) : new THREE.MeshBasicMaterial({ color: tiles.g });       // a wide frame of plain ground around the map so its edge is not a void (a full plane would cover the lake)
     for (const [w, d, x, z] of [[side + 2 * M, M, 0, -(side + M) / 2], [side + 2 * M, M, 0, (side + M) / 2], [M, side, -(side + M) / 2, 0], [M, side, (side + M) / 2, 0]]) {
       const f = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), bm); f.position.set(x, -0.04, z); f.receiveShadow = true; tileG.add(f);
     }

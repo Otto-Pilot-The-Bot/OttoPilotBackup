@@ -34,6 +34,35 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2 + 8, HALF * 2 + 8
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
 scene.add(ground);
 if (REAL.on) REAL.buildGround(HALF, ground);
+// ---- ground styles: the world's grass, plain gray, or a blue project mat with white lines (the sandbox only; Otto's world is untouched)
+const grassMat = ground.material;
+function matTexture() {                                               // one 10 m tile: faint line every metre, a bright line every 5 m and on the tile edge
+  const N = 1024, c = document.createElement('canvas'); c.width = c.height = N;
+  const g = c.getContext('2d');
+  g.fillStyle = '#2b6cb0'; g.fillRect(0, 0, N, N);
+  const line = (a, w, alpha) => { g.strokeStyle = `rgba(255,255,255,${alpha})`; g.lineWidth = w; for (let i = 0; i <= 10; i++) { const p = Math.min(N - w / 2, Math.max(w / 2, (i / 10) * N)); if (a(i)) { g.beginPath(); g.moveTo(p, 0); g.lineTo(p, N); g.stroke(); g.beginPath(); g.moveTo(0, p); g.lineTo(N, p); g.stroke(); } } };
+  line((i) => i % 5 !== 0, 2, 0.35);
+  line((i) => i % 5 === 0, 5, 0.95);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 16; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const BIG = 420;                                                      // the plain styles run out to the horizon
+let matMat = null, grayMat = null;
+function setGround(kind) {
+  if (kind !== 'gray' && kind !== 'mat') kind = 'grass';
+  if (kind === 'grass') { ground.material = grassMat; ground.scale.set(1, 1, 1); if (REAL.on) { REAL.setTufts(true); REAL.setFarY(-0.06); } }
+  else {
+    if (kind === 'gray') { grayMat = grayMat || new THREE.MeshStandardMaterial({ color: 0x9a9fa6, roughness: 0.95 }); ground.material = grayMat; }
+    else { if (!matMat) { const map = matTexture(); map.repeat.set(BIG / 10, BIG / 10); matMat = new THREE.MeshStandardMaterial({ map, roughness: 0.9 }); } ground.material = matMat; }
+    ground.scale.set(BIG / (HALF * 2 + 8), BIG / (HALF * 2 + 8), 1);
+    if (REAL.on) { REAL.setTufts(false); REAL.setFarY(-3); }
+  }
+  $('groundSel').value = kind;
+  try { localStorage.setItem('ottoSandbox:ground', kind); } catch (e) { /* storage may be blocked */ }
+}
+$('groundSel').onchange = () => setGround($('groundSel').value);
+try { setGround(localStorage.getItem('ottoSandbox:ground') || 'grass'); } catch (e) { setGround('grass'); }
 const grid = new THREE.GridHelper(HALF * 2, HALF / 2, 0x4a6a3a, 0x5d8a46);   // lines every 4 m (off by default)
 grid.position.y = 0.03; grid.visible = false;
 scene.add(grid);

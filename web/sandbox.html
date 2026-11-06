@@ -56,6 +56,11 @@ input[type=range]{width:100%;padding:0}
       <div class="btns"><button id="export">Export file</button><button id="import">Import file</button></div>
       <input id="file" type="file" accept=".json,application/json" hidden>
       <h2>View</h2>
+      <select id="groundSel" title="What the ground looks like">
+        <option value="grass">Ground: grass (Otto's world)</option>
+        <option value="gray">Ground: plain gray</option>
+        <option value="mat">Ground: blue mat, white lines</option>
+      </select>
       <label style="justify-content:flex-start;gap:8px"><input id="gridOn" type="checkbox" style="width:auto"> Show grid lines</label>
       <h2>Snap</h2>
       <select id="snap"><option value="0">Free</option><option value="1">1 m</option><option value="2">2 m</option><option value="4" selected>4 m (map cell)</option></select>
