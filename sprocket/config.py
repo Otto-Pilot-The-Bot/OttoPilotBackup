@@ -89,6 +89,7 @@ MIN_TICKS_BETWEEN_ART = 14
 ART_MARKER_STYLE = True          # drawings are stored as a hand-drawn marker-style picture (his SVG is kept as the source)
 ART_REVIEW = True                # he looks at a picture of his drawing and may redraw it (needs resvg-py and a vision model)
 ART_REVISIONS = 2                # redraws per piece
+ART_GOOD_ENOUGH = 8               # 0-10: he keeps redrawing (up to ART_REVISIONS times) until a stranger reads it at least this well; it was 7
 ART_MIN_MATCH = 5                # 0-10: below this after the redraws he puts the piece aside instead of hanging it
 ART_GALLERY_MATCH = 6            # the website only shows pieces he rated at least this
 FOCUS_TICKS = 10                # how long a "what I feel like doing" inclination lasts

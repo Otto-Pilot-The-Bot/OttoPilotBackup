@@ -1890,7 +1890,8 @@ async def make_art(ctx, a):
         return out(False, "Give your artwork a title.")
     if not str(a.get("content") or "").strip() and str(a.get("kind")).lower() == "drawing" and artlook.available():
         return out(True, "You look at what is in front of you and rough it out as a starting sketch:\n" + artlook.view_sketch(ctx) +
-                   "\nIt is only a start. Make your own version (add detail, change the colours, take things away) and call make_art again with your content." + artlook.noticed(db) + artlook.habit(db) + artlook.lived(db), 0.05, "Idle", cat="observe")
+                   "\nIt is only a start. Make your own version (add detail, change the colours, take things away) and call make_art again with your content." + artlook.noticed(db) + artlook.progress_line(db) + artlook.best_example(db) + artlook.habit(db) + artlook.lived(db)
+                   + (" Your human left you pictures: the study tool lets you practise by copying one." if config.STUDY_ENABLED and db.one("SELECT 1 FROM gifts WHERE kind='picture'") else ""), 0.05, "Idle", cat="observe")
     if s["tick"] - s.get("last_art_tick", -999) < config.MIN_TICKS_BETWEEN_ART:
         return out(True, "You just made a piece and want to let it breathe. Look around, learn something, or take a walk before the next one.", 0.0, "Idle", noop=True)
     if str(a.get("kind")).lower() == "sculpture" and not config.BUILDING_ENABLED:
@@ -1923,7 +1924,7 @@ async def make_art(ctx, a):
             if cr and first is None:
                 first = (png, cr["sees"], cr["match"])
             rounds = rnd
-            if not cr or cr["match"] >= 7 or rnd == config.ART_REVISIONS or kind != "drawing":
+            if not cr or cr["match"] >= config.ART_GOOD_ENOUGH or rnd == config.ART_REVISIONS or kind != "drawing":
                 break
             new = await artlook.redraw(ctx, title, statement, svg, cr, png)
             if not new:

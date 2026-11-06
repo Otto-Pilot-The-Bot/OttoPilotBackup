@@ -172,6 +172,27 @@ def lived(db, n=4):
     return (" Things from your own recent days: " + " | ".join(picked)) if picked else ""
 
 
+def best_example(db):
+    """His own highest-rated drawing so far, as a fact he can look at: ' Your highest-rated drawing so far (8/10), "Title", was: <svg...>' or ''."""
+    recent = set()
+    for r in db.q("SELECT title FROM art WHERE kind='drawing' ORDER BY id DESC LIMIT 5"):
+        recent |= keywords(r["title"])                                  # not a subject he has just drawn: the example should not pull him back to it
+    rows = db.q("SELECT title,score,mode,content,source FROM art WHERE kind='drawing' AND score IS NOT NULL AND status!='broken' ORDER BY score DESC, id DESC LIMIT 30")
+    for r in [x for x in rows if not (keywords(x["title"]) & recent)] + rows:
+        svg = r["source"] or (r["content"] if r["mode"] == "svg" else None)
+        if svg and len(svg) <= 2600:
+            return f" Your highest-rated drawing so far ({r['score']}/10), \"{r['title']}\", was drawn like this: {svg}"
+    return ""
+
+
+def progress_line(db):
+    """A plain fact about whether his drawings are being read better: ' Your last 10 drawings averaged 6.6; the 10 before averaged 6.2.' or ''."""
+    now, before, n = progress(db)
+    if n < 20 or now is None or before is None:
+        return ""
+    return f" Your last 10 drawings read at {now} out of 10 on average; the 10 before at {before}."
+
+
 def old_svg(row):
     return row["source"] or (row["content"] if row["mode"] == "svg" else None)
 

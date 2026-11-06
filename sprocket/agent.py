@@ -604,6 +604,28 @@ class Agent:
         cats = [r["cat"] or self.TOOL_CAT.get(r["tool"]) for r in rows]
         return [c for c in cats if c], rows
 
+    def places_lines(self):
+        """Plain facts about where he has and has not been, over EVERY place (buildings, the lake, the hills): the ones he has not been to for longest, and the ones he keeps going back to.
+        (This replaced a line that only ever named the lake and the two hills, which kept sending him there.)"""
+        import re as _re
+        from collections import Counter
+        s, out = self.state, []
+        rows = self.db.q("SELECT result FROM actions WHERE tool='move_to' AND result LIKE 'You arrived at%' ORDER BY id DESC LIMIT 24")
+        trips = Counter(_re.sub(r"^You arrived at (the )?", "", r["result"]).rstrip(".").strip() for r in rows)
+        often = [f"{k} ({v})" for k, v in trips.most_common(3) if v >= 5]
+        if often:
+            out.append("LATELY you keep going to: " + ", ".join(often) + " (of your last " + str(len(rows)) + " arrivals).")
+        cands = []
+        for k, p in world.PLACES.items():
+            if k == "exit" or p["label"].endswith(" spot") or world.dist(s["x"], s["z"], p["x"], p["z"]) < 7:
+                continue
+            cands.append((self.ticks_since_visit(k), p["label"]))
+        cands.sort(key=lambda t: -t[0])
+        far = [lab for n, lab in cands[:3] if n > 80]
+        if far:
+            out.append("PLACES you have not been to in a while: " + ", ".join(far) + ".")
+        return out
+
     def ticks_since_visit(self, place):
         """Ticks since he last walked to this named place (a big number if never)."""
         label = (world.PLACES.get(place) or {}).get("label", place)
@@ -994,9 +1016,7 @@ class Agent:
         if len(done) >= 5 and not any(t in config.DOING_TOOLS for t in done):
             L.append("DO SOMETHING: your last several actions were only watching, thinking and writing. Use your hands now: make music or art, collect something, tend or reshape the land, "
                      "rearrange things, read something new, or go and do something at the place you are in. No more reflecting for a while.")
-        newp = [p["label"] for k, p in world.PLACES.items() if k in ("lake", "hill", "hill2") and self.ticks_since_visit(k) > 60]
-        if newp:
-            L.append("CURIOUS ABOUT: you have not visited the " + ", the ".join(newp) + " in a long while.")
+        L.extend(self.places_lines())
         if sketches:
             L.append("SKETCHBOOK IDEAS: " + " | ".join(sketches))
         if n_art or s.get("creativity", 50) < config.LOW_HINT:
@@ -1011,7 +1031,7 @@ class Agent:
             L.append(f"YOUR ART: you have {n_art} piece(s); {where}. Any drawing, painting or pixel art you make_art goes there to be seen" + (", so make something you would like to show." if n_art < 3 else ".") + pub)
         if config.ART_LEARN:
             from . import artlook as _al
-            nt = _al.noticed(db) + _al.habit(db)
+            nt = _al.noticed(db) + _al.progress_line(db) + _al.habit(db)
             if nt:
                 L.append("YOUR DRAWING:" + nt)
             if config.STUDY_ENABLED and not s.get("study") and db.one("SELECT 1 FROM gifts WHERE kind='picture'") and s["tick"] - s.get("last_study_tick", -999) >= config.STUDY_MIN_TICKS:
