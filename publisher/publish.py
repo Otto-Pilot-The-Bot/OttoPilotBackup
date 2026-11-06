@@ -108,7 +108,15 @@ def git_env(token=None):
 def build_site(db, page_row, token):
     """-> ({relpath: text}, this_page_dict). Previously published pages reuse their stored, already-sanitised html."""
     secrets = [token] if token else []
-    p = sanitize.process_page(page_row["title"], page_row["body"], page_row["tags"], secrets=secrets)        # second gate
+    def art_lookup(ref):
+        ref = str(ref or "").strip().lstrip("#")
+        row = (db.execute("SELECT title,mode,source,content,kind,status FROM art WHERE id=?", (int(ref),)) if ref.isdigit()
+               else db.execute("SELECT title,mode,source,content,kind,status FROM art WHERE lower(title)=lower(?) ORDER BY id DESC", (ref,))).fetchone()
+        if not row or row["kind"] != "drawing" or row["status"] == "broken":
+            return None
+        svg = row["source"] or (row["content"] if row["mode"] == "svg" else None)
+        return (row["title"], svg) if svg else None
+    p = sanitize.process_page(page_row["title"], page_row["body"], page_row["tags"], secrets=secrets, art_lookup=art_lookup)        # second gate
     p["slug"] = page_row["slug"] or p["slug"]
     now = page_row["published_ts"] or time.time()
     files, listing = {}, []
@@ -132,7 +140,8 @@ def build_site(db, page_row, token):
 
 
 def _date(ts):
-    return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%-d %B %Y")
+    dt = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc)
+    return f"{dt.day} {dt:%B %Y}"                                   # no %-d: that fails on Windows
 
 
 def write_tree(root: Path, files):

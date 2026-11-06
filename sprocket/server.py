@@ -495,6 +495,14 @@ async def serve(agent, runner, interval=None):
             else:
                 notice("Not published: " + str(res.get("error", "unknown problem"))[:200], False)
             db.control(f"publish #{pid} {mode} ok={bool(res.get('ok'))}")
+            if res.get("ok") and config.BANK_ENABLED and config.PAGE_REWARD_CENTS > 0:
+                from . import bank
+                try:
+                    bank.post(db, bank.MINT, bank.WALLET, config.PAGE_REWARD_CENTS, "grant", f"Thank-you for your page: {title}"[:120], actor="human", tick=s["tick"], idem=f"page:{pid}:approved")
+                    db.x("INSERT INTO memories(ts,tick,text,importance) VALUES(?,?,?,?)", time.time(), s["tick"], f"My human approved my page \"{title}\" and added a small thank-you of {bank.fmt(config.PAGE_REWARD_CENTS)}."[:220], 3)
+                    db.thought(s["tick"], "system", f"Your human approved your page \"{title}\" and left you a small thank-you ({bank.fmt(config.PAGE_REWARD_CENTS)}).")
+                except Exception:
+                    pass
 
     index_html = (WEB / "index.html").read_text()
     m_ = re.search(r'<script type="importmap">(.*?)</script>', index_html, re.S)

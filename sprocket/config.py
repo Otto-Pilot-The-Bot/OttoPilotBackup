@@ -351,3 +351,6 @@ NET_SESSION_TICKS = 20           # and how long it lasts
 
 # Sites that practically always refuse robots (paywalls, image stock sites, bot walls). They are skipped from the start, not tried: this respects them, it does not get around them.
 KNOWN_BLOCKERS = ("sciencedirect.com", "pinterest.com", "researchgate.net", "shutterstock.com", "mdpi.com", "dreamstime.com", "annualreviews.org", "tandfonline.com", "jstor.org", "istockphoto.com", "gettyimages.com")
+
+# A small thank-you when his human approves one of his pages (deliberately less than an art sale: pages are not for the money).
+PAGE_REWARD_CENTS = 200

@@ -154,8 +154,10 @@ def _schemas(publish_enabled):
              "statement": {"type": "string", "description": "one sentence about what it means to you"}}, ["title", "kind"]),
     ]
     if publish_enabled:
-        t.append(_fn("publish_page", "Write a page for your personal website. body is simple markdown or basic HTML (headings, paragraphs, lists, bold/italic, "
-                                     "https links). NO scripts, images, forms, iframes or remote files, and nothing personal or about this computer. "
+        t.append(_fn("publish_page", "Write a page for your personal website. body is simple markdown (headings, paragraphs, lists, bold/italic, https links) "
+                                     "plus optional DESIGN lines, each on a line of its own: [[theme: night]] (themes: paper, night, sunset, ocean, forest, mint), "
+                                     "[[card]] ... [[/card]], [[callout]] ... [[/callout]], [[columns]] left [[column]] right [[/columns]], and [[art 115]] to show one of your drawings (use its number). "
+                                     "NO scripts, forms, iframes or remote files, and nothing personal or about this computer. "
                                      "It only goes into a queue: your human must approve it before it can go online.",
                      {"title": {"type": "string"}, "body": {"type": "string"}, "tags": {"type": "string", "description": "optional, comma separated, up to 5"}},
                      ["title", "body"]))
@@ -1989,6 +1991,16 @@ async def make_art(ctx, a):
                subject="making art", changed_objects=True, art=True, mood="proud" if v > 1.2 else None)
 
 
+def art_for_page(db, ref):
+    """-> (title, svg source) of one of his drawings (by number or exact title) that can be shown on a page, or None."""
+    ref = str(ref or "").strip().lstrip("#")
+    row = db.one("SELECT title,mode,source,content,kind,status FROM art WHERE id=?", int(ref)) if ref.isdigit() else db.one("SELECT title,mode,source,content,kind,status FROM art WHERE lower(title)=lower(?) ORDER BY id DESC", ref)
+    if not row or row["kind"] != "drawing" or row["status"] == "broken":
+        return None
+    svg = row["source"] or (row["content"] if row["mode"] == "svg" else None)
+    return (row["title"], svg) if svg else None
+
+
 def publish_page(ctx, a):
     """Queues a page for human approval. The model never touches git, the network, or any credential."""
     s, db = ctx.state, ctx.db
@@ -2000,7 +2012,7 @@ def publish_page(ctx, a):
     if db.one("SELECT COUNT(*) n FROM pages WHERE ts>?", now - 86400)["n"] >= config.PUBLISH_MAX_SUBMISSIONS_PER_DAY:
         return out(True, "You have written plenty of pages for today. Rest your pen and do something else.", 0.0, "Idle", noop=True)
     try:
-        p = sanitize.process_page(a.get("title"), a.get("body"), a.get("tags"))
+        p = sanitize.process_page(a.get("title"), a.get("body"), a.get("tags"), art_lookup=lambda ref: art_for_page(db, ref))
     except sanitize.PageError as e:
         return out(False, f"The page was not accepted: {e}. Fix that and try again.", -0.05)
     base, slug, n = p["slug"], p["slug"], 2

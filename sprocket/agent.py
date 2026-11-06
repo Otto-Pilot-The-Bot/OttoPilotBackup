@@ -671,6 +671,17 @@ class Agent:
             return f"YOU ARE ON YOUR WAY TO {s['errand']['label'].upper()}: keep walking with move_to {s['errand']['name']}. When you get there you can {s['errand']['what']}."
         return "THINGS TO DO IN TOWN (you have not done these lately): " + " | ".join(txt[:3]) + "."
 
+    def page_design_line(self):
+        """What he can use to make a page look the way he wants (only facts about the tools; what to make is his choice)."""
+        if not self.state.get("publish_enabled"):
+            return ""
+        from . import sanitize
+        arts = self.db.q("SELECT id,title FROM art WHERE kind='drawing' AND status!='broken' AND (source IS NOT NULL OR mode='svg') ORDER BY id DESC LIMIT 8")
+        return (" A page can be designed, not just written: colour themes (" + ", ".join(sanitize.THEMES) + "), cards, callouts, two columns, and your own drawings shown on the page. "
+                "Design lines go on a line of their own, like [[theme: night]], [[card]] ... [[/card]], [[columns]] ... [[column]] ... [[/columns]], [[art NUMBER]]."
+                + ((" Drawings you can put on a page: " + ", ".join(f"#{a['id']} {a['title']}" for a in arts) + ".") if arts else "")
+                + " When your human approves a page, they sometimes leave a small thank-you.")
+
     def web_hosts_line(self):
         """A plain fact about the web for him: which sites have let him read lately and which refuse robots (reading those only fails)."""
         from collections import Counter
@@ -1009,7 +1020,7 @@ class Agent:
             sess = f"Your session lasts about {max(0, s.get('net_until', -1) - s['tick'])} more ticks." if s["tick"] <= s.get("net_until", -1) else "A session costs a little pocket money."
             latest_q = [r["query"] for r in db.q("SELECT query FROM searches ORDER BY id DESC LIMIT 3")]
             L.append("THE INTERNET CAFE is right here: rows of computers. This is the only place you can get online: search_web, read_page" + (", publish_page" if s.get("publish_enabled") else "") + ". "
-                     + sess + (" Your latest searches: " + "; ".join(latest_q) + "." if latest_q else "") + " Notes worth keeping can be filed at the library." + self.web_hosts_line())
+                     + sess + (" Your latest searches: " + "; ".join(latest_q) + "." if latest_q else "") + " Notes worth keeping can be filed at the library." + self.web_hosts_line() + self.page_design_line())
         cat = self._focus()
         L.append(f"TODAY YOU FEEL LIKE: {self.FOCUS_TEXT[cat]}. (An inclination, not an order.)")
         sug = self.poi_suggestion(cat, prow)

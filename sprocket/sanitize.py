@@ -8,7 +8,7 @@ import socket
 from html.parser import HTMLParser
 from pathlib import Path
 
-from . import config
+from . import artcheck, config
 
 
 class PageError(Exception):
@@ -150,6 +150,84 @@ def to_text(html):
     return re.sub(r"\s+", " ", htmllib.unescape(re.sub(r"<[^>]+>", "", t))).strip()
 
 
+# ---------------------------------------------------------------------------------- page design (themes, layout blocks, his own drawings)
+# The sanitizer above is untouched: every piece of TEXT still goes through it. Design is added around the text by this code, from fixed templates:
+# a colour theme (a CSS class from a short list), cards / callouts / two columns (fixed div classes), and his own drawings as inline SVG that passes the SVG allow-list again.
+# He writes plain directive lines such as  [[theme: night]]  [[card]] ... [[/card]]  [[art 115]];  nothing he writes is ever copied into a tag or an attribute.
+THEMES = ("paper", "night", "sunset", "ocean", "forest", "mint")
+_TOKEN = re.compile(r"^\s*\[\[\s*(/?)(theme|art|card|callout|columns|column)\s*:?\s*([^\]]*?)\s*\]\]\s*$", re.I)
+MAX_ART_ON_PAGE = 6
+
+
+def _text_html(text):
+    raw = text if re.search(r"<\s*[a-zA-Z/!]", text) else markdown_to_html(text)
+    return sanitize_html(raw)
+
+
+def _art_figure(ref, art_lookup):
+    if not art_lookup:
+        raise PageError("drawings cannot be shown on this page")
+    found = art_lookup(ref)
+    if not found:
+        raise PageError("there is no drawing of yours with that number or title (use the number from your list of drawings)")
+    title, svg = found
+    if not svg or len(svg) > 24000:
+        raise PageError("that drawing cannot be shown on a page")
+    try:
+        clean = artcheck.sanitize_svg(svg)
+    except artcheck.ArtError:
+        raise PageError("that drawing cannot be shown on a page")
+    cap = htmllib.escape(re.sub(r"\s+", " ", str(title or "a drawing")).strip()[:80], quote=True)
+    return f'<figure class="art">{clean}<figcaption>{cap}</figcaption></figure>'
+
+
+def build_body(body, art_lookup=None):
+    """body text with directive lines -> the finished inner html. Raises PageError (safe to show him)."""
+    theme, parts, buf, stack, arts = "paper", [], [], [], 0
+
+    def flush():
+        text = "\n".join(buf).strip()
+        buf.clear()
+        if text:
+            parts.append(_text_html(text))
+    for line in body.replace("\r", "").split("\n"):
+        m = _TOKEN.match(line)
+        if not m:
+            buf.append(line)
+            continue
+        flush()
+        closing, tok, arg = m.group(1) == "/", m.group(2).lower(), m.group(3).strip()
+        if tok == "theme" and not closing:
+            if arg.lower() not in THEMES:
+                raise PageError("the theme must be one of: " + ", ".join(THEMES))
+            theme = arg.lower()
+        elif tok == "art" and not closing:
+            arts += 1
+            if arts > MAX_ART_ON_PAGE:
+                raise PageError(f"too many drawings on one page (max {MAX_ART_ON_PAGE})")
+            parts.append(_art_figure(arg, art_lookup))
+        elif tok in ("card", "callout", "columns") and not closing:
+            if stack:
+                raise PageError("blocks cannot be put inside other blocks (a drawing can)")
+            stack.append(tok)
+            parts.append({"card": '<div class="card">', "callout": '<div class="callout">', "columns": '<div class="cols"><div class="col">'}[tok])
+        elif tok == "column" and not closing:
+            if stack != ["columns"]:
+                raise PageError("[[column]] only goes inside [[columns]] ... [[/columns]]")
+            parts.append('</div><div class="col">')
+        elif closing and tok in ("card", "callout", "columns"):
+            if stack != [tok]:
+                raise PageError(f"[[/{tok}]] has no matching [[{tok}]]")
+            stack.pop()
+            parts.append("</div></div>" if tok == "columns" else "</div>")
+        else:
+            raise PageError("that design line is not understood. Use: [[theme: name]], [[card]]...[[/card]], [[callout]]...[[/callout]], [[columns]]...[[column]]...[[/columns]], [[art number]]")
+    flush()
+    if stack:
+        raise PageError(f"[[/{stack[0]}]] is missing")
+    return f'<div class="page theme-{theme}">' + "\n".join(parts) + "</div>"
+
+
 # ---------------------------------------------------------------------------------- privacy
 def _machine_terms():
     terms = set()
@@ -225,16 +303,30 @@ def clean_tags(tags):
 FINAL_BAD = re.compile(r"<\s*(script|style|iframe|form|img|object|embed|link|meta|svg|input|video|audio)\b|\bon\w+\s*=|javascript:|\bsrc\s*=|srcset|@import|url\(", re.I)
 
 
+_ART_FIG = re.compile(r'<figure class="art">(<svg\b.*?</svg>)<figcaption>[^<]*</figcaption></figure>', re.S)
+
+
+def _check_figure(m):
+    svg = m.group(1)
+    try:
+        same = artcheck.sanitize_svg(svg) == svg
+    except artcheck.ArtError:
+        same = False
+    if not same:
+        raise PageError("page contains something that is not static text")
+    return '<figure class="art"></figure>'
+
+
 def assert_static(html, allow_shell=False):
-    """Last-gate check on finished HTML; the publisher calls this too."""
-    h = html
+    """Last-gate check on finished HTML; the publisher calls this too. The one exception to 'no svg': a drawing figure whose svg is unchanged by the SVG allow-list."""
+    h = _ART_FIG.sub(_check_figure, html)
     if allow_shell:                                          # our own page shell legitimately has one <meta CSP>, <link css>, <style-free>
         h = re.sub(r"<meta [^>]*>|<link rel=\"stylesheet\" href=\"(?:\.\./)?style\.css\">", "", h)
     if FINAL_BAD.search(h):
         raise PageError("page contains something that is not static text")
 
 
-def process_page(title, body, tags=None, secrets=()):
+def process_page(title, body, tags=None, secrets=(), art_lookup=None):
     """-> {'title','slug','tags','html','text'} or raises PageError."""
     title = re.sub(r"\s+", " ", str(title or "")).strip()
     if not 3 <= len(title) <= config.TITLE_MAX or re.search(r"[<>]", title):
@@ -244,8 +336,7 @@ def process_page(title, body, tags=None, secrets=()):
         raise PageError(f"the body must be {config.PAGE_MIN_CHARS}-{config.PAGE_MAX_CHARS} characters")
     if re.search(r"!\[[^\]]*\]\(", body):
         raise PageError("images are not allowed: pages are static text only")
-    raw_html = body if re.search(r"<\s*[a-zA-Z/!]", body) else markdown_to_html(body)
-    html = sanitize_html(raw_html)
+    html = build_body(body, art_lookup)
     text = to_text(html)
     if len(text) < config.PAGE_MIN_CHARS:
         raise PageError("the page has almost no readable text")
@@ -264,6 +355,18 @@ header.site a{color:var(--ink);text-decoration:none;font-weight:700;font-size:20
 a{color:var(--acc)}code,pre{background:#f1e6c6;border-radius:6px;padding:2px 6px}pre{padding:12px;overflow:auto}blockquote{margin:1em 0;padding:.1em 1em;border-left:4px solid var(--line);color:var(--dim)}
 .meta,.tags{color:var(--dim);font-size:14px}.tags span{background:#f1e6c6;border-radius:99px;padding:1px 9px;margin-right:6px}
 ul.posts{list-style:none;padding:0}ul.posts li{padding:14px 0;border-bottom:1px dashed var(--line)}ul.posts a{font-size:20px;font-weight:600}
+.page{border-radius:14px;padding:4px 4px}.page.theme-paper{background:transparent}
+.theme-night{--paper:#1d2030;--ink:#e8e9f5;--dim:#a3a8c4;--acc:#8fb4ff;--line:#3a3f5c;background:#1d2030;color:#e8e9f5;padding:8px 22px;--cardbg:#2a2e45}
+.theme-sunset{--ink:#4a2a2a;--dim:#8a5a4a;--acc:#d9532b;--line:#f0b98f;background:linear-gradient(180deg,#ffe3c2,#ffc9a3);color:#4a2a2a;padding:8px 22px;--cardbg:#fff2e3}
+.theme-ocean{--ink:#17324d;--dim:#4a6d8c;--acc:#1c6fb8;--line:#9cc7e6;background:linear-gradient(180deg,#dff1fb,#bcdff4);color:#17324d;padding:8px 22px;--cardbg:#f1faff}
+.theme-forest{--ink:#223a22;--dim:#5a7a56;--acc:#2f7a3a;--line:#a9cf9c;background:linear-gradient(180deg,#e6f3dc,#cbe5b8);color:#223a22;padding:8px 22px;--cardbg:#f4fbee}
+.theme-mint{--ink:#1f3d3a;--dim:#4f7f78;--acc:#1f9a8a;--line:#a6dcd2;background:linear-gradient(180deg,#e3faf4,#c4f0e5);color:#1f3d3a;padding:8px 22px;--cardbg:#f2fffb}
+.theme-night a,.theme-night h2,.theme-night h3{color:var(--acc)}
+.card{background:var(--cardbg,#fffaf0);border:1px solid var(--line);border-radius:12px;padding:4px 18px;margin:16px 0}
+.callout{border-left:5px solid var(--acc);background:var(--cardbg,#f6e9c6);padding:4px 18px;margin:16px 0;border-radius:0 12px 12px 0}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin:16px 0}@media(max-width:620px){.cols{grid-template-columns:1fr}}
+figure.art{margin:18px auto;max-width:440px;text-align:center}figure.art svg{width:100%;height:auto;border-radius:12px;border:1px solid var(--line);background:#fff}
+figcaption{color:var(--dim);font-size:14px;margin-top:6px}
 footer{margin-top:48px;color:var(--dim);font-size:13px;border-top:1px solid var(--line);padding-top:12px}table{border-collapse:collapse}td,th{border:1px solid var(--line);padding:4px 8px}
 """
 CSP_META = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'self\'; base-uri \'none\'; form-action \'none\'">'
