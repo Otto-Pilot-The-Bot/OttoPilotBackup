@@ -108,6 +108,8 @@ def check_js(src):
     m = _JS_FORBID.search(src)
     if m:
         raise ArtError(f"'{m.group(0)}' is not available. You only get ctx (2D canvas 256x256), W, H, rand() and Math")
+    if "ctx" not in src:
+        raise ArtError("that is not drawing code. Draw with an <svg viewBox=\"0 0 100 100\">...</svg>, or canvas code that uses ctx")
     if src.count("{") != src.count("}") or src.count("(") != src.count(")"):
         raise ArtError("unbalanced brackets in the canvas code")
     return src

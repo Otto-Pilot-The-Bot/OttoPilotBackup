@@ -671,6 +671,16 @@ class Agent:
             return f"YOU ARE ON YOUR WAY TO {s['errand']['label'].upper()}: keep walking with move_to {s['errand']['name']}. When you get there you can {s['errand']['what']}."
         return "THINGS TO DO IN TOWN (you have not done these lately): " + " | ".join(txt[:3]) + "."
 
+    def web_hosts_line(self):
+        """A plain fact about the web for him: which sites have let him read lately and which refuse robots (reading those only fails)."""
+        from collections import Counter
+        db = self.db
+        host = lambda u: tools._bare(tools._host(u))
+        worked = Counter(host(r["url"]) for r in db.q("SELECT url FROM reads WHERE ok=1 ORDER BY id DESC LIMIT 80"))
+        good = [h for h, n in worked.most_common(6) if h and not tools.is_blocked(db, h)]
+        bad = sorted({tools._bare(r["host"]) for r in db.q("SELECT host FROM blocked_sites WHERE until>?", time.time())} | set(config.KNOWN_BLOCKERS))[:25]
+        return ((" Sites that have let you read lately: " + ", ".join(good) + ".") if good else "") + " Sites that refuse robots (reading them just fails): " + ", ".join(bad) + "."
+
     def ticks_since(self, cat):
         r = self.db.one("SELECT tick FROM actions WHERE cat=? ORDER BY id DESC LIMIT 1", cat)
         return None if not r else self.state["tick"] - r["tick"]
@@ -999,7 +1009,7 @@ class Agent:
             sess = f"Your session lasts about {max(0, s.get('net_until', -1) - s['tick'])} more ticks." if s["tick"] <= s.get("net_until", -1) else "A session costs a little pocket money."
             latest_q = [r["query"] for r in db.q("SELECT query FROM searches ORDER BY id DESC LIMIT 3")]
             L.append("THE INTERNET CAFE is right here: rows of computers. This is the only place you can get online: search_web, read_page" + (", publish_page" if s.get("publish_enabled") else "") + ". "
-                     + sess + (" Your latest searches: " + "; ".join(latest_q) + "." if latest_q else "") + " Notes worth keeping can be filed at the library.")
+                     + sess + (" Your latest searches: " + "; ".join(latest_q) + "." if latest_q else "") + " Notes worth keeping can be filed at the library." + self.web_hosts_line())
         cat = self._focus()
         L.append(f"TODAY YOU FEEL LIKE: {self.FOCUS_TEXT[cat]}. (An inclination, not an order.)")
         sug = self.poi_suggestion(cat, prow)

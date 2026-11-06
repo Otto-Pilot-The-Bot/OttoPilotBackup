@@ -109,7 +109,8 @@ ASSET_LIMITS = {"assets/meshy": (150_000_000, 3_000_000)}     # (max file bytes,
 ROBOT_HEIGHT = 1.7                       # Otto's height in world units (the 3D robot is scaled to this)
 # Packs whose models look tiny next to Otto get a uniform scale-up (pieces of one pack keep fitting together).
 # Things with a known real-world size (longest side in world units; Otto is 1.7 tall). Matched on the lowercase file name; beats the pack scale.
-BLOCKED_SITE_HOURS = 6                   # how long he remembers a site that refused him
+BLOCKED_SITE_HOURS = 24 * 365 * 20       # a site that refused him stays on his list for good (it was 6 hours: he kept walking into the same closed doors). Delete its row in blocked_sites to try it again
+_OLD_BLOCKED_SITE_HOURS = 6                   # how long he remembers a site that refused him
 MAX_GOALS = 3                    # active goals kept at once (near-duplicates are merged)
 GOAL_THEME_CAP = 1               # a new goal that shares a key word with this many active goals is the same theme and is not added (stops one obsession filling every slot)
 SKY_KEYS = ("sky", "cloud", "star", "weather", "moon", "sun", "rain", "snow", "fog", "wind", "storm")
@@ -347,3 +348,6 @@ STUDY_MAX_TRIES = 2
 NET_CAFE_ENABLED = True
 NET_FEE_CENTS = 50               # a session at a computer
 NET_SESSION_TICKS = 20           # and how long it lasts
+
+# Sites that practically always refuse robots (paywalls, image stock sites, bot walls). They are skipped from the start, not tried: this respects them, it does not get around them.
+KNOWN_BLOCKERS = ("sciencedirect.com", "pinterest.com", "researchgate.net", "shutterstock.com", "mdpi.com", "dreamstime.com", "annualreviews.org", "tandfonline.com", "jstor.org", "istockphoto.com", "gettyimages.com")

@@ -25,7 +25,7 @@ function ensureSandbox() {
 }
 
 async function runJs(code) {
-  await ensureSandbox();
+  await Promise.race([ensureSandbox(), new Promise((_, rej) => setTimeout(() => rej(new Error('the drawing sandbox did not start')), 4000))]);
   const id = nextId++;
   return new Promise((res, rej) => {
     waiting.set(id, { res, rej });
@@ -68,7 +68,7 @@ export class ArtStore {
   receive(msg) {
     this.chain = this.chain.then(async () => {
       try {
-        const c = await draw(msg);
+        const c = await Promise.race([draw(msg), new Promise((_, rej) => setTimeout(() => rej(new Error('picture took too long to load')), 9000))]);   // one stuck picture must never hold up all the others
         this.done.add(msg.id);
         if (c) { this.canvas.set(msg.id, c); this.thumbs.set(msg.id, c.toDataURL('image/png')); }
         this.listeners.forEach((cb) => cb());

@@ -490,7 +490,7 @@ function setMood(m) {
 
 // ------------------------------------------------------------------ websocket
 let ws, last = null, placesBuilt = false, snapHour = 8, snapAt = 0, intervalMs = 12000, paused = false, follow = true, placing = null, wasConnected = false;
-const art = new ArtStore((o) => send(o));
+const art = new ArtStore((o) => send(o)); window.__art = art;
 let EDITOR = null;
 const MV = createMapView({ scene, art });
 MV.groundStyle = LOOK.mode === 'flat' ? LOOK.ground : 'pink';
