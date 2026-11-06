@@ -21,8 +21,12 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
+// Shadows are redrawn only when something changed (the sun moved, or something is moving) instead of on every screen refresh: buildings never move, so most of that work was repeated for nothing.
+// Add ?shadows=auto to the address to switch back to redrawing every frame (for comparing).
+const SHADOWS_AUTO = new URLSearchParams(location.search).get('shadows') === 'auto';
+renderer.shadowMap.autoUpdate = SHADOWS_AUTO; window.__renderer = renderer;
 document.body.prepend(renderer.domElement);
-const scene = new THREE.Scene();
+const scene = new THREE.Scene(); window.__scene = scene;
 scene.background = new THREE.Color(0x9ec5e8);
 scene.fog = new THREE.Fog(0x9ec5e8, 90, 200);
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 520);
@@ -661,6 +665,7 @@ UI.init({ send, art, startPlace, cancelPlace, setFollow: (v) => { follow = v; },
 // ------------------------------------------------------------------ frame loop
 const clock = new THREE.Clock(), tmp = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
 let lastClock = '', frameN = 0, walkSpeed = 3;
+let shadowAt = 0; const lastSunPos = new THREE.Vector3(1e9, 0, 0);
 const shortest = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 let fpsEma = 60, fpsCheck = 0, prNow = Math.min(devicePixelRatio, 2);
 function adaptQuality(rawDt, now, cap) {                          // a slow machine drops the render resolution a step at a time (never back up) until it runs smoothly
@@ -735,6 +740,11 @@ function frame() {
   if (CAM.mode === 'overhead') { if (follow && robot) controls.target.lerp(tmp.set(robotPos.x, 1, robotPos.z), Math.min(1, dt * 2)); controls.update(); }
   CAM.update(dt);
   if ((frameN++ & 3) === 0) updateLabels();
+  if (!SHADOWS_AUTO) {
+    const sunMoved = sun.position.distanceToSquared(lastSunPos) > 0.0004;
+    const moving = (current && current.name !== 'Idle') || rideAnim || TRAFFIC.cars.length > 0 || mixers.size > 0;
+    if (sunMoved || now - shadowAt > (moving ? 50 : 250)) { renderer.shadowMap.needsUpdate = true; shadowAt = now; lastSunPos.copy(sun.position); }   // moving things 20 times a second, a quiet scene 4 times
+  }
   LOOK.render();
 }
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
