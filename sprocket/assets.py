@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import config
 
-FORBIDDEN_EXT = {"KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu", "EXT_texture_webp"}  # we ship no decoders
+FORBIDDEN_EXT = {"KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu"}  # we ship no decoders for these (WebP is decoded by the browser itself, so it is allowed)
 TRUNC = [("Corner Inn", "Corner Inner"), ("Diagona", "Diagonal"), ("Patch Larg", "Patch Large"), ("Wide Rou", "Wide Round"), ("Wide Ro", "Wide Round"),
          ("Round De", "Round Detail"), ("Square D", "Square Detail"), ("Corner D", "Corner Diagonal"), ("Corner R", "Corner Round"),
          ("Corner S", "Corner Small"), ("Column B", "Column Big"), ("Column S", "Column Small")]

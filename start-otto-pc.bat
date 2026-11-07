@@ -16,6 +16,8 @@ if "%SPROCKET_HOST%"=="" (
   pause
   exit /b 1
 )
+REM His brain. To go back to the small model, change this to gemma4:e4b (or delete the line) and run: powershell -File tools\server.ps1 restart
+set SPROCKET_MODEL=gemma4:12b
 set SPROCKET_NUM_CTX=8192
 set SPROCKET_KEEP_ALIVE=30m
 REM A machine-wide OLLAMA_HOST of 0.0.0.0 makes Otto's connection fail; this one is for Otto only.
